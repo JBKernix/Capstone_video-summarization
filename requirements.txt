@@ -1,0 +1,7 @@
+paddleocr==3.5.0
+paddlepaddle==3.3.1
+opencv-python
+Pillow
+PyYAML
+requests
+typing-extensions
