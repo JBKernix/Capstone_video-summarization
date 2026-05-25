@@ -4,7 +4,7 @@ import sys
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(PROJECT_ROOT))
 
-from modules.vision.vision_formatter import analyze_frames_metadata
+from modules.vision import analyze_frames_metadata
 
 
 def main():
