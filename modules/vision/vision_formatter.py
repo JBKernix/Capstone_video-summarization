@@ -63,6 +63,28 @@ def analyze_single_frame(frame_info: Dict[str, Any], ocr_extractor: OCRExtractor
     }
 
 
+def _resolve_image_path(image_path: str, metadata_path: Path) -> str:
+    path = Path(image_path)
+    if path.is_absolute():
+        return str(path)
+
+    metadata_path = metadata_path.resolve()
+    project_root = metadata_path.parents[3] if len(metadata_path.parents) > 3 else metadata_path.parent
+
+    candidates = [
+        Path.cwd() / path,
+        project_root / path,
+        metadata_path.parent / path,
+        metadata_path.parent.parent / path,
+    ]
+
+    for candidate in candidates:
+        if candidate.is_file():
+            return str(candidate)
+
+    return str(candidates[0])
+
+
 def analyze_frames_metadata(metadata_path: str, output_path: str, lang: str) -> List[Dict[str, Any]]:
     """프레임 메타데이터 파일을 분석하고 시각 정보 결과 JSON을 저장합니다.
 
@@ -90,11 +112,14 @@ def analyze_frames_metadata(metadata_path: str, output_path: str, lang: str) -> 
 
     # OCR 모델은 프레임마다 새로 만들지 않고 하나의 인스턴스를 재사용합니다.
     ocr_extractor = OCRExtractor(lang=lang)
+    ocr_extractor.load_model()
 
     results = []
     failed_count = 0
 
     for frame_info in frames_metadata:
+        frame_info = dict(frame_info)
+        frame_info["image_path"] = _resolve_image_path(frame_info.get("image_path", ""), metadata_path)
         frame_id = frame_info.get("frame_id")
         try:
             result = analyze_single_frame(frame_info, ocr_extractor)

@@ -2,7 +2,28 @@
 
 from pathlib import Path
 from typing import Any, Dict, List
+import os
 import re
+import sysconfig
+
+
+def _add_paddle_cuda_dll_path() -> None:
+    site_packages = Path(sysconfig.get_paths()["purelib"])
+    nvidia_dir = site_packages / "nvidia"
+
+    if not nvidia_dir.is_dir():
+        return
+
+    dll_dirs = sorted({dll.parent for dll in nvidia_dir.rglob("*.dll")})
+    if not dll_dirs:
+        return
+
+    dll_path = os.pathsep.join(str(path) for path in dll_dirs)
+    os.environ["PATH"] = dll_path + os.pathsep + os.environ.get("PATH", "")
+
+    if hasattr(os, "add_dll_directory"):
+        for dll_dir in dll_dirs:
+            os.add_dll_directory(str(dll_dir))
 
 
 def detect_text_language(text: str) -> str:
@@ -44,6 +65,7 @@ class OCRExtractor:
     def __init__(self, lang: str):
         self.lang = lang
         self.ocr = None
+        self._load_error = None
 
     def load_model(self):
         """PaddleOCR 모델을 초기화합니다.
@@ -51,7 +73,20 @@ class OCRExtractor:
         모델은 OCR이 처음 필요할 때 한 번만 로드되며, 이후 프레임 분석에서는
         같은 모델 인스턴스를 재사용합니다.
         """
+        if self.ocr is not None:
+            return
+        if self._load_error is not None:
+            raise RuntimeError(self._load_error)
+
         try:
+            import torch  # noqa: F401
+        except Exception:
+            pass
+
+        _add_paddle_cuda_dll_path()
+
+        try:
+            import paddle
             from paddleocr import PaddleOCR
         except ImportError as e:
             raise ImportError(
@@ -59,17 +94,30 @@ class OCRExtractor:
                 "pip install paddleocr paddlepaddle 명령으로 설치하세요."
             ) from e
 
+        device = "cpu"
+        if paddle.device.is_compiled_with_cuda() and paddle.device.cuda.device_count() > 0:
+            device = "gpu"
+            paddle.set_device("gpu")
+
         # 현재 환경은 GPU 대신 CPU를 사용합니다.
         # 문서 방향/보정/텍스트라인 방향 모델은 프레임 OCR에 필수는 아니므로 끕니다.
         # enable_mkldnn=False는 Windows CPU 환경의 oneDNN 관련 실행 오류를 피하기 위한 설정입니다.
-        self.ocr = PaddleOCR(
-            lang=self.lang,
-            device="cpu",
-            use_doc_orientation_classify=False,
-            use_doc_unwarping=False,
-            use_textline_orientation=False,
-            enable_mkldnn=False,
-        )
+        try:
+            self.ocr = PaddleOCR(
+                lang=self.lang,
+                device=device,
+                use_doc_orientation_classify=False,
+                use_doc_unwarping=False,
+                use_textline_orientation=False,
+                enable_mkldnn=False,
+            )
+        except Exception as e:
+            self._load_error = (
+                "PaddleOCR model initialization failed. "
+                "Check whether paddlepaddle can be imported in the current Python environment. "
+                f"Cause: {e}"
+            )
+            raise RuntimeError(self._load_error) from e
 
     def _run_ocr(self, image_path: str):
         """이미지 파일에 대해 PaddleOCR 예측을 실행합니다.
