@@ -1,22 +1,39 @@
-import ffmpeg
-import json
+# modules/common/json_utils.py
 
-video_file = "video.mp4"
-probe = ffmpeg.probe(video_file)
-video_stream = next(
-    stream for stream in probe['streams']
-    if stream['codec_type'] == 'video'
-)
-audio_exists = any(
-    stream['codec_type'] == 'audio'
-    for stream in probe['streams']
-)
-video_info = {
-    "파일명": video_file,
-    "해상도": f"{video_stream['width']}x{video_stream['height']}",
-    "FPS": eval(video_stream['r_frame_rate']),
-    "코덱": video_stream['codec_name'],
-    "영상 길이(초)": probe['format']['duration'],
-    "오디오 포함 여부": audio_exists
-}
-print(json.dumps(video_info, indent=4, ensure_ascii=False))
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any, Dict
+
+
+def load_json(json_path: str | Path) -> Dict[str, Any]:
+    """JSON 파일 내용을 딕셔너리로 읽습니다.
+
+    Args:
+        json_path: 읽을 JSON 파일 경로입니다.
+
+    Returns:
+        파싱된 JSON 데이터입니다.
+
+    Raises:
+        FileNotFoundError: JSON 파일이 존재하지 않을 때 발생합니다.
+        json.JSONDecodeError: JSON 파일 형식이 올바르지 않을 때 발생합니다.
+    """
+    json_path = Path(json_path)
+    with json_path.open("r", encoding="utf-8-sig") as f:
+        return json.load(f)
+
+
+def save_json(data: Dict[str, Any], json_path: str | Path) -> None:
+    """딕셔너리 데이터를 JSON 파일로 저장합니다.
+
+    Args:
+        data: JSON으로 직렬화할 수 있는 딕셔너리입니다.
+        json_path: JSON 파일을 저장할 경로입니다.
+    """
+    json_path = Path(json_path)
+    json_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with json_path.open("w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
