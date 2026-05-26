@@ -9,7 +9,7 @@ from modules.vision import analyze_frames_metadata
 
 def main():
     """샘플 실행 디렉터리의 프레임 메타데이터를 분석해 vision_result.json을 생성합니다."""
-    run_dir = PROJECT_ROOT / "runs" / "sample"
+    run_dir = PROJECT_ROOT / "runs"
 
     metadata_path = run_dir / "metadata" / "frame_metadata.json"
     output_path = run_dir / "vision" / "vision_result.json"

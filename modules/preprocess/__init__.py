@@ -6,9 +6,11 @@ from modules.preprocess.frame_sampler import (
     sample_scene_change_frames,
 )
 from modules.preprocess.audio_extractor import extract_audio
+from modules.preprocess.ffmpeg_utils import ensure_mp4_video
 from modules.preprocess.video_info import VideoInfo, get_video_info
 
 __all__ = [
+    "ensure_mp4_video",
     "extract_audio",
     "FrameMetadata",
     "VideoInfo",

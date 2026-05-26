@@ -5,7 +5,7 @@ import sys
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(PROJECT_ROOT))
 
-from modules.preprocess import get_video_info, sample_frames
+from modules.preprocess import ensure_mp4_video, get_video_info, sample_frames
 
 
 def parse_args():
@@ -14,12 +14,12 @@ def parse_args():
 
     parser.add_argument(
         "--video",
-        default=str(PROJECT_ROOT / "data" / "input" / "input.mp4"),
-        help="프레임을 추출할 영상 파일 경로입니다. 기본값은 data/input/input.mp4입니다.",
+        default=str(PROJECT_ROOT / "data" / "input" / "video.mp4"),
+        help="프레임을 추출할 영상 파일 경로입니다. 기본값은 data/input/video.mp4입니다.",
     )
     parser.add_argument(
         "--run-dir",
-        default=str(PROJECT_ROOT / "runs" / "sample"),
+        default=str(PROJECT_ROOT / "runs"),
         help="프레임 이미지와 메타데이터를 저장할 실행 디렉터리입니다.",
     )
     parser.add_argument(
@@ -50,6 +50,7 @@ def main():
 
     video_path = Path(args.video)
     run_dir = Path(args.run_dir)
+    video_path = ensure_mp4_video(video_path, run_dir / "input")
 
     if not video_path.exists():
         raise FileNotFoundError(f"영상 파일이 존재하지 않습니다: {video_path}")

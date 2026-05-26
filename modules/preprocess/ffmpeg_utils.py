@@ -70,6 +70,39 @@ def run_ffmpeg(args: Sequence[str]) -> subprocess.CompletedProcess[str]:
     return run_command([ensure_command("ffmpeg"), *args])
 
 
+def ensure_mp4_video(video_path: str | Path, output_dir: str | Path) -> Path:
+    """Convert input video to mp4 when its extension is not .mp4."""
+    video_path = Path(video_path)
+    output_dir = Path(output_dir)
+
+    if not video_path.exists():
+        raise FileNotFoundError(f"Video file does not exist: {video_path}")
+
+    if video_path.suffix.lower() == ".mp4":
+        return video_path
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / f"{video_path.stem}.mp4"
+
+    run_ffmpeg(
+        [
+            "-y",
+            "-i",
+            str(video_path),
+            "-c:v",
+            "libx264",
+            "-c:a",
+            "aac",
+            "-movflags",
+            "+faststart",
+            str(output_path),
+        ]
+    )
+
+    print(f"MP4 conversion complete: {output_path}")
+    return output_path
+
+
 def run_ffprobe_json(args: Sequence[str]) -> dict:
     """ffprobe 명령어를 실행하고 JSON 출력을 딕셔너리로 변환합니다.
 

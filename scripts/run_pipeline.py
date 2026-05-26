@@ -5,7 +5,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(PROJECT_ROOT))
 
-from modules.preprocess import extract_audio, get_video_info, sample_frames
+from modules.preprocess import ensure_mp4_video, extract_audio, get_video_info, sample_frames
 from modules.vision import analyze_frames_metadata
 
 
@@ -16,12 +16,12 @@ def parse_args():
     )
     parser.add_argument(
         "--video",
-        default=str(PROJECT_ROOT / "data" / "input" / "input.mp4"),
-        help="분석할 원본 영상 파일 경로입니다. 기본값은 data/input/input.mp4입니다.",
+        default=str(PROJECT_ROOT / "data" / "input" / "video.mp4"),
+        help="분석할 원본 영상 파일 경로입니다. 기본값은 data/input/video.mp4입니다.",
     )
     parser.add_argument(
         "--run-dir",
-        default=str(PROJECT_ROOT / "runs" / "sample"),
+        default=str(PROJECT_ROOT / "runs" ),
         help="파이프라인 결과를 저장할 실행 디렉터리입니다.",
     )
     parser.add_argument(
@@ -112,6 +112,7 @@ def main():
     args = parse_args()
     video_path = Path(args.video)
     run_dir = Path(args.run_dir)
+    video_path = ensure_mp4_video(video_path, run_dir / "input")
 
     print("[1/3] 영상 전처리를 시작합니다.")
     metadata_path = run_preprocess_step(
