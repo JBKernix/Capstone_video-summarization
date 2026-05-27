@@ -16,8 +16,8 @@ def parse_args():
     )
     parser.add_argument(
         "--video",
-        default=str(PROJECT_ROOT / "data" / "input" / "video.mp4"),
-        help="분석할 원본 영상 파일 경로입니다. 기본값은 data/input/video.mp4입니다.",
+        default=str(PROJECT_ROOT / "data" / "input" / "input.mp4"),
+        help="분석할 원본 영상 파일 경로입니다. 기본값은 data/input/input.mp4입니다.",
     )
     parser.add_argument(
         "--run-dir",
