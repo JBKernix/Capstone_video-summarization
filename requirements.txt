@@ -1,5 +1,4 @@
 --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu130/
---extra-index-url https://download.pytorch.org/whl/cpu
 
 paddleocr==3.5.0
 paddlepaddle-gpu==3.3.0
@@ -9,6 +8,7 @@ opencv-contrib-python==4.10.0.84
 Pillow==12.2.0
 PyYAML==6.0.2
 requests==2.34.2
-torch==2.12.0+cpu
-torchvision==0.27.0+cpu
+openai-whisper
+torch==2.12.0+cu130
+torchvision==0.27.0+cu130
 typing-extensions==4.15.0

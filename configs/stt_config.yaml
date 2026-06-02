@@ -1,0 +1,6 @@
+model_size: small
+language: ko
+device:
+chunked: true
+chunk_seconds: 30
+overlap_seconds: 2

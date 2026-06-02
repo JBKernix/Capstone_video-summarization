@@ -78,11 +78,6 @@ class OCRExtractor:
         if self._load_error is not None:
             raise RuntimeError(self._load_error)
 
-        try:
-            import torch  # noqa: F401
-        except Exception:
-            pass
-
         _add_paddle_cuda_dll_path()
 
         try:

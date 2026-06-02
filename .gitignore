@@ -11,9 +11,8 @@ env/
 .ipynb_checkpoints/
 
 runs/
-data/raw/
-data/uploads/
-data/processed/
+data/input/
+
 
 .DS_Store
 Thumbs.db
