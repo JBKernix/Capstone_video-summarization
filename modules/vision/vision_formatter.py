@@ -64,12 +64,25 @@ def analyze_single_frame(frame_info: Dict[str, Any], ocr_extractor: OCRExtractor
 
 
 def _resolve_image_path(image_path: str, metadata_path: Path) -> str:
+    """프레임 메타데이터의 이미지 경로를 실제 파일 경로로 변환합니다.
+
+    Args:
+        image_path: 메타데이터에 저장된 이미지 경로입니다. 절대경로 또는 프로젝트 기준 상대경로일 수 있습니다.
+        metadata_path: 이미지 경로를 해석할 때 기준으로 사용할 메타데이터 파일 경로입니다.
+
+    Returns:
+        실제 파일을 찾은 이미지 경로 문자열입니다. 후보 경로에서 파일을 찾지 못하면 첫 번째 후보 경로를 반환합니다.
+    """
     path = Path(image_path)
     if path.is_absolute():
         return str(path)
 
     metadata_path = metadata_path.resolve()
-    project_root = metadata_path.parents[3] if len(metadata_path.parents) > 3 else metadata_path.parent
+    project_root = metadata_path.parent
+    for parent in metadata_path.parents:
+        if (parent / "modules").is_dir() and (parent / "scripts").is_dir():
+            project_root = parent
+            break
 
     candidates = [
         Path.cwd() / path,
@@ -91,7 +104,7 @@ def analyze_frames_metadata(metadata_path: str, output_path: str, lang: str) -> 
     Args:
         metadata_path: 프레임 메타데이터 JSON 파일 경로입니다.
         output_path: 분석 결과를 저장할 JSON 파일 경로입니다.
-        lang: PaddleOCR에 전달할 언어 코드입니다. 예: ``korean``.
+        lang: OCR 엔진에 전달할 언어 설정입니다. 예: ``korean``.
 
     Returns:
         프레임별 시각 정보 딕셔너리 리스트입니다.

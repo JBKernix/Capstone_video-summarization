@@ -1,110 +1,70 @@
-# Common Utilities
+# Common Modules
 
-이 문서는 `modules/common` 모듈의 공통 유틸리티 역할을 설명한다. 현재 구현된 공통 유틸은 JSON 파일 입출력 중심이며, 일부 파일은 향후 설정, 파일 처리, 시간 처리 기능을 확장하기 위한 자리로 남아 있다.
+## 개요
+
+`modules/common`은 여러 단계에서 함께 사용할 수 있는 공통 유틸리티를 두는 영역이다.
+
+현재 실제 구현이 들어 있는 파일은 `json_utils.py` 중심이며, 나머지 파일은 향후 설정, 파일 처리, 시간 처리 공통 로직을 넣기 위한 자리로 남아 있다.
 
 ## 관련 파일
 
-| 파일 | 역할 |
-| --- | --- |
-| `modules/common/json_utils.py` | JSON 파일 로드/저장 유틸 |
-| `modules/common/config.py` | 현재 구현 없음 |
-| `modules/common/file_utils.py` | 현재 구현 없음 |
-| `modules/common/time_utils.py` | 현재 구현 없음 |
+| 파일 | 상태 | 역할 |
+| --- | --- | --- |
+| `modules/common/json_utils.py` | 구현됨 | JSON 읽기/쓰기 유틸리티 |
+| `modules/common/config.py` | 비어 있음 | 설정 로딩 공통화 예정 |
+| `modules/common/file_utils.py` | 비어 있음 | 파일/경로 유틸리티 예정 |
+| `modules/common/time_utils.py` | 비어 있음 | timestamp 변환 유틸리티 예정 |
+| `modules/common/__init__.py` | 구현됨 | common 모듈 export |
 
-## 전체 구조
+## 사용 목적
+
+공통 모듈은 특정 파이프라인 단계에 종속되지 않는 코드를 모으기 위한 위치다.
+
+예시:
 
 ```text
-modules/common
-    -> json_utils.py
-        -> load_json()
-        -> save_json()
-    -> config.py
-    -> file_utils.py
-    -> time_utils.py
+JSON 저장
+JSON 로드
+경로 생성
+시간 포맷 변환
+설정 파일 로드
 ```
 
-현재 실제 동작은 `json_utils.py`에 집중되어 있다.
+## 실행 흐름
 
-## 1. `json_utils.py`
+현재 공통 모듈은 독립 실행 단계가 아니라 다른 모듈에서 필요할 때 import해 사용하는 구조다.
 
-`json_utils.py`는 프로젝트 여러 단계에서 사용할 수 있는 JSON 파일 입출력 함수를 제공한다.
-
-### `load_json()`
-
-JSON 파일을 읽어 딕셔너리로 반환한다.
-
-```python
-data = load_json("runs/stt/stt_result.json")
+```text
+preprocess / vision / stt
+  -> modules.common 유틸리티 import
+  -> JSON, 경로, 설정, 시간 처리 같은 반복 작업 수행
 ```
 
-내부에서는 다음처럼 `utf-8-sig` 인코딩을 사용한다.
+아직 대부분의 공통 파일은 비어 있으므로, 실제 사용 흐름은 `json_utils.py` 중심으로 제한되어 있다.
 
-```python
-with json_path.open("r", encoding="utf-8-sig") as f:
-    return json.load(f)
+## `json_utils.py`
+
+JSON 파일을 저장하거나 읽는 기능을 제공한다.
+
+일반적으로 파이프라인 결과는 다음처럼 JSON 파일로 저장된다.
+
+```text
+runs/metadata/frame_metadata.json
+runs/vision/vision_result.json
+runs/stt/stt_result.json
 ```
 
-`utf-8-sig`를 사용하는 이유는 Windows 환경에서 UTF-8 BOM이 붙은 JSON 파일도 정상적으로 읽기 위해서다. 이 방식은 `vision_formatter.py`에서 프레임 메타데이터를 읽는 방식과 같은 목적을 가진다.
+공통 JSON 유틸리티는 이런 저장 방식을 한곳에 모으기 위한 파일이다.
 
-### `save_json()`
+## 설계 기준
 
-딕셔너리 데이터를 JSON 파일로 저장한다.
+1. 특정 단계 전용 로직은 `preprocess`, `vision`, `stt`에 둔다.
+2. 여러 단계에서 반복되는 파일 처리만 `common`으로 올린다.
+3. JSON 저장 시 기본 인코딩은 UTF-8을 사용한다.
+4. Windows 환경에서 BOM이 붙은 파일을 읽을 수 있도록 `utf-8-sig` 사용을 고려한다.
 
-```python
-save_json(data, "runs/output/result.json")
-```
+## 현재 제한
 
-저장 전에 부모 디렉터리를 자동으로 생성한다.
-
-```python
-json_path.parent.mkdir(parents=True, exist_ok=True)
-```
-
-저장 시에는 한글이 깨지지 않도록 `ensure_ascii=False`를 사용하고, 사람이 읽기 쉽도록 `indent=2`를 적용한다.
-
-```python
-json.dump(data, f, ensure_ascii=False, indent=2)
-```
-
-## 입력 파일 형식
-
-`load_json()`은 표준 JSON 파일을 입력으로 받는다.
-
-```json
-{
-  "key": "value"
-}
-```
-
-현재 타입 힌트는 `Dict[str, Any]`이므로 최상위 구조가 딕셔너리인 JSON을 기본 대상으로 한다.
-
-## 출력 파일 형식
-
-`save_json()`은 딕셔너리를 JSON 파일로 저장한다.
-
-```json
-{
-  "language": "ko",
-  "segment_count": 3
-}
-```
-
-프로젝트의 다른 모듈과 마찬가지로 UTF-8 인코딩, 한글 유지, 2칸 들여쓰기를 사용한다.
-
-## 실패 처리
-
-`load_json()`은 별도 예외 래핑을 하지 않는다. 따라서 다음 예외가 그대로 호출부로 전달된다.
-
-| 상황 | 예외 |
-| --- | --- |
-| 파일이 없음 | `FileNotFoundError` |
-| JSON 형식이 올바르지 않음 | `json.JSONDecodeError` |
-
-`save_json()`은 부모 디렉터리를 자동 생성하지만, 권한 문제나 직렬화할 수 없는 값이 들어오면 표준 Python 예외가 발생한다.
-
-## 현재 한계
-
-1. `load_json()`의 반환 타입이 딕셔너리로 고정되어 있어 JSON 배열을 읽는 용도와는 맞지 않는다.
-2. JSON schema 검증은 수행하지 않는다.
-3. `config.py`, `file_utils.py`, `time_utils.py`는 아직 구현되지 않았다.
-4. 일부 모듈은 아직 자체적으로 `json.load()`와 `json.dump()`를 사용하므로, 향후 공통 유틸로 통일할 수 있다.
+1. `config.py`, `file_utils.py`, `time_utils.py`는 아직 구현되지 않았다.
+2. 기존 코드 일부는 아직 `common` 유틸리티를 사용하지 않고 각 모듈에서 직접 파일을 처리한다.
+3. 공통 유틸리티를 확장할 때는 기존 파이프라인 동작을 먼저 유지해야 한다.

@@ -51,10 +51,10 @@ LLM 기반 요약
 
 | 이름 | 담당 |
 |---|---|
-| 함도연 | 음성 인식 |
-| 김승민 | 영상 전처리 |
-| 정병두 | 시각 정보 추출 |
-| 조윤호 | 입출력 UI |
+| 함도연 | STT 데이터, AI 모델 조사 |
+| 김승민 | 영상 전처리(프레임, 오디오 분할), 입출력 UI |
+| 정병두 | OCR 데이터, VLM, LLM 모듈 설계 |
+| 조윤호 |  |
 
 
 ## 📂 폴더 구조
@@ -78,9 +78,9 @@ Capstone_video-summarization/
 
 - Language: Python
 - 영상 처리: FFmpeg, OpenCV
-- OCR: PaddleOCR
-- 딥러닝 프레임워크: PaddlePaddle, PyTorch
-- 개발 환경: Conda
+- OCR: EasyOCR
+- 딥러닝 프레임워크: PyTorch
+- 개발 환경: VSCode
 
 
 ## 🛠 설치 방법
