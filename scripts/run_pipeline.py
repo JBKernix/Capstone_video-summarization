@@ -371,7 +371,24 @@ def validate_process_isolation(args: argparse.Namespace) -> None:
             "--vision-same-process와 --stt-same-process를 동시에 사용하지 마세요."
         )
 
+def resolve_video_path(video_path: Path) -> Path:
+    """*.mp4 같은 glob 패턴을 실제 영상 파일 경로로 변환합니다."""
+    if "*" not in video_path.name:
+        return video_path
 
+    video_files = sorted(video_path.parent.glob(video_path.name))
+
+    if not video_files:
+        raise FileNotFoundError(f"mp4 파일을 찾을 수 없습니다: {video_path}")
+
+    if len(video_files) > 1:
+        raise ValueError(
+            "mp4 파일이 여러 개 있습니다. "
+            f"하나만 남기거나 --video 옵션으로 직접 지정하세요: {video_files}"
+        )
+
+    return video_files[0]
+    
 def run_preprocess_step(
     video_path: Path,
     run_dir: Path,
@@ -539,6 +556,7 @@ def main():
     video_path = Path(args.video)
     run_dir = Path(args.run_dir)
     stt_options = build_stt_options(args)
+    video_path = resolve_video_path(video_path)
     video_path = ensure_mp4_video(video_path, run_dir / "input")
 
     print("[1/4] 영상 전처리를 시작합니다.")
