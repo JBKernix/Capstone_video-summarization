@@ -9,7 +9,37 @@ from typing import Any
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(PROJECT_ROOT))
 
-from modules.preprocess import ensure_mp4_video, extract_audio, get_video_info, sample_frames
+from modules.common import (  # noqa: E402
+    DEFAULT_AUDIO_RELATIVE_PATH,
+    DEFAULT_FRAME_METADATA_RELATIVE_PATH,
+    DEFAULT_INPUT_VIDEO_RELATIVE_PATH,
+    DEFAULT_RUN_DIR_RELATIVE_PATH,
+    DEFAULT_STT_CONFIG_RELATIVE_PATH,
+    DEFAULT_STT_JSON_RELATIVE_PATH,
+    DEFAULT_STT_TEXT_RELATIVE_PATH,
+    DEFAULT_VISION_RESULT_RELATIVE_PATH,
+    project_path,
+    run_path,
+)
+from modules.preprocess import (
+    DEFAULT_INTERVAL_SECONDS,
+    DEFAULT_SAMPLING_METHOD,
+    DEFAULT_SCENE_THRESHOLD,
+    SAMPLING_METHOD_CHOICES,
+    ensure_mp4_video,
+    extract_audio,
+    get_video_info,
+    sample_frames,
+)
+from modules.stt import (  # noqa: E402
+    DEFAULT_STT_CHUNK_SECONDS,
+    DEFAULT_STT_CHUNKED,
+    DEFAULT_STT_DEVICE,
+    DEFAULT_STT_LANGUAGE,
+    DEFAULT_STT_MODEL_SIZE,
+    DEFAULT_STT_OVERLAP_SECONDS,
+)
+from modules.vision import DEFAULT_OCR_LANGUAGE  # noqa: E402
 
 
 def _put_worker_error(result_queue, exc: BaseException) -> None:
@@ -69,12 +99,12 @@ def _run_isolated_worker(worker_name: str, target: Any, args: tuple[Any, ...]) -
 
 
 def _vision_worker(metadata_path: str, output_path: str, ocr_lang: str, result_queue) -> None:
-    """PaddleOCR 비전 분석을 자식 프로세스에서 실행합니다.
+    """비전 분석을 자식 프로세스에서 실행합니다.
 
     Args:
         metadata_path: 프레임 메타데이터 JSON 파일 경로입니다.
         output_path: 시각 정보 결과 JSON을 저장할 경로입니다.
-        ocr_lang: PaddleOCR에 전달할 언어 코드입니다.
+        ocr_lang: OCR 엔진에 전달할 언어 설정입니다.
         result_queue: 부모 프로세스로 결과를 전달할 multiprocessing 큐입니다.
     """
     try:
@@ -164,36 +194,36 @@ def parse_args():
     )
     parser.add_argument(
         "--video",
-        default=str(PROJECT_ROOT / "data" / "input" / "input.mp4"),
-        help="분석할 원본 영상 파일 경로입니다. 기본값은 data/input/input.mp4입니다.",
+        default=str(project_path(PROJECT_ROOT, DEFAULT_INPUT_VIDEO_RELATIVE_PATH)),
+        help=f"분석할 원본 영상 파일 경로입니다. 기본값은 {DEFAULT_INPUT_VIDEO_RELATIVE_PATH.as_posix()}입니다.",
     )
     parser.add_argument(
         "--run-dir",
-        default=str(PROJECT_ROOT / "runs"),
+        default=str(project_path(PROJECT_ROOT, DEFAULT_RUN_DIR_RELATIVE_PATH)),
         help="파이프라인 결과를 저장할 실행 디렉터리입니다.",
     )
     parser.add_argument(
         "--method",
-        choices=["interval", "scene_change"],
-        default="interval",
-        help="프레임 추출 방식입니다. interval 또는 scene_change를 사용할 수 있습니다.",
+        choices=SAMPLING_METHOD_CHOICES,
+        default=DEFAULT_SAMPLING_METHOD,
+        help="프레임 추출 방식입니다. interval, scene_change, interval_scene_change를 사용할 수 있습니다.",
     )
     parser.add_argument(
         "--interval-seconds",
         type=float,
-        default=5.0,
+        default=DEFAULT_INTERVAL_SECONDS,
         help="interval 방식에서 프레임을 추출할 시간 간격입니다. 단위는 초입니다.",
     )
     parser.add_argument(
         "--scene-threshold",
         type=float,
-        default=0.35,
+        default=DEFAULT_SCENE_THRESHOLD,
         help="scene_change 방식에서 사용할 장면 전환 임계값입니다.",
     )
     parser.add_argument(
         "--ocr-lang",
-        default="korean",
-        help="PaddleOCR에 전달할 언어 코드입니다.",
+        default=DEFAULT_OCR_LANGUAGE,
+        help="OCR 엔진에 전달할 언어 설정입니다.",
     )
     parser.add_argument(
         "--skip-vision",
@@ -203,7 +233,7 @@ def parse_args():
     parser.add_argument(
         "--vision-same-process",
         action="store_true",
-        help="PaddleOCR 비전 단계를 별도 프로세스로 분리하지 않고 현재 프로세스에서 실행합니다.",
+        help="비전 단계를 별도 프로세스로 분리하지 않고 현재 프로세스에서 실행합니다.",
     )
     parser.add_argument("--skip-stt", action="store_true", help="STT 단계를 건너뜁니다.")
     parser.add_argument(
@@ -213,7 +243,7 @@ def parse_args():
     )
     parser.add_argument(
         "--stt-config",
-        default=str(PROJECT_ROOT / "configs" / "stt_config.yaml"),
+        default=str(project_path(PROJECT_ROOT, DEFAULT_STT_CONFIG_RELATIVE_PATH)),
         help="STT 설정 YAML 경로입니다.",
     )
     parser.add_argument(
@@ -311,21 +341,23 @@ def build_stt_options(args: argparse.Namespace) -> dict:
     elif args.stt_no_chunked:
         chunked = False
     else:
-        chunked = bool(config.get("chunked", True))
+        chunked = bool(config.get("chunked", DEFAULT_STT_CHUNKED))
 
     return {
-        "model_size": args.stt_model_size or config.get("model_size", "small"),
-        "language": args.stt_language or config.get("language", "ko"),
-        "device": args.stt_device if args.stt_device is not None else config.get("device"),
+        "model_size": args.stt_model_size or config.get("model_size", DEFAULT_STT_MODEL_SIZE),
+        "language": args.stt_language or config.get("language", DEFAULT_STT_LANGUAGE),
+        "device": args.stt_device if args.stt_device is not None else config.get("device", DEFAULT_STT_DEVICE),
         "chunked": chunked,
-        "chunk_seconds": args.stt_chunk_seconds or int(config.get("chunk_seconds", 30)),
-        "overlap_seconds": args.stt_overlap_seconds or int(config.get("overlap_seconds", 2)),
+        "chunk_seconds": args.stt_chunk_seconds or int(config.get("chunk_seconds", DEFAULT_STT_CHUNK_SECONDS)),
+        "overlap_seconds": args.stt_overlap_seconds or int(
+            config.get("overlap_seconds", DEFAULT_STT_OVERLAP_SECONDS)
+        ),
         "timestamps": args.stt_timestamps,
     }
 
 
 def validate_process_isolation(args: argparse.Namespace) -> None:
-    """Whisper와 PaddleOCR가 같은 프로세스에 함께 로드되는 설정을 차단합니다.
+    """Whisper와 OCR 엔진이 같은 프로세스에 함께 로드되는 설정을 차단합니다.
 
     Args:
         args: ``parse_args``가 반환한 명령줄 인자입니다.
@@ -335,7 +367,7 @@ def validate_process_isolation(args: argparse.Namespace) -> None:
     """
     if not args.skip_vision and not args.skip_stt and args.vision_same_process and args.stt_same_process:
         raise ValueError(
-            "Whisper STT와 PaddleOCR를 같은 프로세스에서 실행하면 cuDNN DLL 충돌이 발생할 수 있습니다. "
+            "Whisper STT와 OCR 엔진을 같은 프로세스에서 실행하면 cuDNN DLL 충돌이 발생할 수 있습니다. "
             "--vision-same-process와 --stt-same-process를 동시에 사용하지 마세요."
         )
 
@@ -368,7 +400,7 @@ def run_preprocess_step(
         project_root=PROJECT_ROOT,
     )
 
-    metadata_path = run_dir / "metadata" / "frame_metadata.json"
+    metadata_path = run_path(run_dir, DEFAULT_FRAME_METADATA_RELATIVE_PATH)
     print(f"프레임 추출 완료: {metadata_path}")
     print(f"추출 프레임 수: {len(metadata)}")
     return metadata_path
@@ -376,7 +408,7 @@ def run_preprocess_step(
 
 def run_audio_step(video_path: Path, run_dir: Path) -> Path:
     """영상에서 오디오 파일을 추출합니다."""
-    audio_path = run_dir / "audio" / "audio.wav"
+    audio_path = run_path(run_dir, DEFAULT_AUDIO_RELATIVE_PATH)
     return extract_audio(video_path, audio_path)
 
 
@@ -386,7 +418,7 @@ def _run_vision_step_in_child_process(metadata_path: Path, output_path: Path, oc
     Args:
         metadata_path: 프레임 메타데이터 JSON 파일 경로입니다.
         output_path: 시각 정보 결과 JSON을 저장할 경로입니다.
-        ocr_lang: PaddleOCR에 전달할 언어 코드입니다.
+        ocr_lang: OCR 엔진에 전달할 언어 설정입니다.
     """
     _run_isolated_worker(
         worker_name="Vision step",
@@ -401,13 +433,13 @@ def run_vision_step(metadata_path: Path, run_dir: Path, ocr_lang: str, isolated:
     Args:
         metadata_path: 프레임 메타데이터 JSON 파일 경로입니다.
         run_dir: 파이프라인 실행 결과를 저장할 디렉터리입니다.
-        ocr_lang: PaddleOCR에 전달할 언어 코드입니다.
+        ocr_lang: OCR 엔진에 전달할 언어 설정입니다.
         isolated: 별도 프로세스에서 실행할지 여부입니다.
 
     Returns:
         생성된 시각 정보 결과 JSON 파일 경로입니다.
     """
-    output_path = run_dir / "vision" / "vision_result.json"
+    output_path = run_path(run_dir, DEFAULT_VISION_RESULT_RELATIVE_PATH)
 
     if isolated:
         _run_vision_step_in_child_process(metadata_path, output_path, ocr_lang)
@@ -486,8 +518,8 @@ def run_stt_step(
     Returns:
         STT JSON 결과 경로와 텍스트 결과 경로입니다.
     """
-    output_json = run_dir / "stt" / "stt_result.json"
-    output_text = run_dir / "stt" / "stt_result.txt"
+    output_json = run_path(run_dir, DEFAULT_STT_JSON_RELATIVE_PATH)
+    output_text = run_path(run_dir, DEFAULT_STT_TEXT_RELATIVE_PATH)
 
     if isolated:
         segment_count = _run_stt_step_in_child_process(audio_path, output_json, output_text, stt_options)

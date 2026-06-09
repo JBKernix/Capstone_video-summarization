@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List
 
-from modules.vision.ocr_extractor import OCRExtractor
+from modules.vision.ocr_extractor import DEFAULT_OCR_LANGUAGE, OCRExtractor
 from modules.vision.image_caption import generate_text_based_caption, classify_scene_type
 
 
@@ -98,7 +98,11 @@ def _resolve_image_path(image_path: str, metadata_path: Path) -> str:
     return str(candidates[0])
 
 
-def analyze_frames_metadata(metadata_path: str, output_path: str, lang: str) -> List[Dict[str, Any]]:
+def analyze_frames_metadata(
+    metadata_path: str,
+    output_path: str,
+    lang: str = DEFAULT_OCR_LANGUAGE,
+) -> List[Dict[str, Any]]:
     """프레임 메타데이터 파일을 분석하고 시각 정보 결과 JSON을 저장합니다.
 
     Args:

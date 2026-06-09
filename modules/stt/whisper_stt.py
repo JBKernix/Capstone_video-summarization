@@ -7,6 +7,12 @@ import math
 
 
 WHISPER_SAMPLE_RATE = 16000
+DEFAULT_STT_MODEL_SIZE = "medium"
+DEFAULT_STT_LANGUAGE = "ko"
+DEFAULT_STT_DEVICE = None
+DEFAULT_STT_CHUNKED = True
+DEFAULT_STT_CHUNK_SECONDS = 30
+DEFAULT_STT_OVERLAP_SECONDS = 2
 
 
 def _load_whisper_module():
@@ -33,7 +39,7 @@ def _load_model(model_size: str, device: str | None):
     """Whisper 모델을 로드하고 캐시에 저장합니다.
 
     Args:
-        model_size: 로드할 Whisper 모델 크기입니다. 예: ``tiny``, ``base``, ``small``.
+        model_size: 로드할 Whisper 모델 크기입니다. 예: ``base``, ``small``. ``medium``, ``large``
         device: 모델을 실행할 장치입니다. 예: ``cpu``, ``cuda``.
 
     Returns:
@@ -78,9 +84,9 @@ def _clean_transcribe_options(options: dict[str, Any]) -> dict[str, Any]:
 
 def run_whisper_stt(
     audio_path: str | Path,
-    model_size: str = "small",
-    language: str = "ko",
-    device: str | None = None,
+    model_size: str = DEFAULT_STT_MODEL_SIZE,
+    language: str = DEFAULT_STT_LANGUAGE,
+    device: str | None = DEFAULT_STT_DEVICE,
     **transcribe_options: Any,
 ) -> dict[str, Any]:
     """하나의 오디오 파일을 Whisper로 음성 인식합니다.
@@ -110,11 +116,11 @@ def run_whisper_stt(
 
 def run_chunked_whisper_stt(
     audio_path: str | Path,
-    model_size: str = "small",
-    language: str = "ko",
-    chunk_seconds: int = 30,
-    overlap_seconds: int = 2,
-    device: str | None = None,
+    model_size: str = DEFAULT_STT_MODEL_SIZE,
+    language: str = DEFAULT_STT_LANGUAGE,
+    chunk_seconds: int = DEFAULT_STT_CHUNK_SECONDS,
+    overlap_seconds: int = DEFAULT_STT_OVERLAP_SECONDS,
+    device: str | None = DEFAULT_STT_DEVICE,
     **transcribe_options: Any,
 ) -> dict[str, Any]:
     """긴 오디오를 일정 길이로 나누어 Whisper STT를 수행합니다.

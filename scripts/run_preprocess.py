@@ -5,7 +5,22 @@ import sys
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(PROJECT_ROOT))
 
-from modules.preprocess import ensure_mp4_video, get_video_info, sample_frames
+from modules.common import (  # noqa: E402
+    DEFAULT_FRAME_METADATA_RELATIVE_PATH,
+    DEFAULT_INPUT_VIDEO_RELATIVE_PATH,
+    DEFAULT_RUN_DIR_RELATIVE_PATH,
+    project_path,
+    run_path,
+)
+from modules.preprocess import (
+    DEFAULT_INTERVAL_SECONDS,
+    DEFAULT_SAMPLING_METHOD,
+    DEFAULT_SCENE_THRESHOLD,
+    SAMPLING_METHOD_CHOICES,
+    ensure_mp4_video,
+    get_video_info,
+    sample_frames,
+)
 
 
 def parse_args():
@@ -14,30 +29,30 @@ def parse_args():
 
     parser.add_argument(
         "--video",
-        default=str(PROJECT_ROOT / "data" / "input" / "input.mp4"),
-        help="프레임을 추출할 영상 파일 경로입니다. 기본값은 data/input/input.mp4입니다.",
+        default=str(project_path(PROJECT_ROOT, DEFAULT_INPUT_VIDEO_RELATIVE_PATH)),
+        help=f"프레임을 추출할 영상 파일 경로입니다. 기본값은 {DEFAULT_INPUT_VIDEO_RELATIVE_PATH.as_posix()}입니다.",
     )
     parser.add_argument(
         "--run-dir",
-        default=str(PROJECT_ROOT / "runs"),
+        default=str(project_path(PROJECT_ROOT, DEFAULT_RUN_DIR_RELATIVE_PATH)),
         help="프레임 이미지와 메타데이터를 저장할 실행 디렉터리입니다.",
     )
     parser.add_argument(
         "--method",
-        choices=["interval", "scene_change"],
-        default="interval",
-        help="프레임 추출 방식입니다. interval 또는 scene_change를 사용할 수 있습니다.",
+        choices=SAMPLING_METHOD_CHOICES,
+        default=DEFAULT_SAMPLING_METHOD,
+        help="프레임 추출 방식입니다. interval, scene_change, interval_scene_change를 사용할 수 있습니다.",
     )
     parser.add_argument(
         "--interval-seconds",
         type=float,
-        default=5.0,
+        default=DEFAULT_INTERVAL_SECONDS,
         help="일정 간격 추출에서 사용할 시간 간격입니다. 단위는 초입니다.",
     )
     parser.add_argument(
         "--scene-threshold",
         type=float,
-        default=0.35,
+        default=DEFAULT_SCENE_THRESHOLD,
         help="장면 전환 추출에서 사용할 임계값입니다.",
     )
 
@@ -72,7 +87,7 @@ def main():
         project_root=PROJECT_ROOT,
     )
 
-    metadata_path = run_dir / "metadata" / "frame_metadata.json"
+    metadata_path = run_path(run_dir, DEFAULT_FRAME_METADATA_RELATIVE_PATH)
     print(f"프레임 샘플링 완료: {metadata_path}")
     print(f"추출 프레임 수: {len(metadata)}")
 

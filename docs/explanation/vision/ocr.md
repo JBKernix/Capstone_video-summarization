@@ -38,7 +38,7 @@ analyze_frames_metadata()
 OCR이 직접 처리하는 입력은 프레임 이미지 파일이다.
 
 ```text
-runs/frames/frame_000001.jpg
+runs/frames/interval_000001.jpg
 ```
 
 프레임 경로는 `frame_metadata.json`에서 읽는다.
@@ -47,7 +47,7 @@ runs/frames/frame_000001.jpg
 {
   "frame_id": 0,
   "timestamp": 0.0,
-  "image_path": "runs/frames/frame_000001.jpg",
+  "image_path": "runs/frames/interval_000001.jpg",
   "sampling_method": "interval"
 }
 ```

@@ -3,6 +3,9 @@ from typing import Any, Dict, List
 import re
 
 
+DEFAULT_OCR_LANGUAGE = "korean"
+
+
 def _normalize_easyocr_languages(lang: str) -> list[str]:
     """프로젝트 언어 설정을 EasyOCR 언어 코드 목록으로 변환합니다.
 
@@ -74,11 +77,11 @@ class OCRExtractor:
         lang: OCR에 사용할 언어 설정입니다. 예: ``korean``, ``ko``, ``en``.
 
     Typical usage:
-        extractor = OCRExtractor(lang="korean")
+        extractor = OCRExtractor()
         text = extractor.extract_text("runs/frames/frame_000001.jpg")
     """
 
-    def __init__(self, lang: str):
+    def __init__(self, lang: str = DEFAULT_OCR_LANGUAGE):
         self.lang = lang
         self.ocr = None
         self._load_error = None

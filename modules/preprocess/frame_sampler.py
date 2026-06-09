@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Literal, Optional
 
+from modules.common import DEFAULT_FRAME_METADATA_RELATIVE_PATH, run_path
 from modules.preprocess.ffmpeg_utils import (
     parse_showinfo_timestamps,
     remove_files,
@@ -14,7 +15,12 @@ from modules.preprocess.ffmpeg_utils import (
 )
 from modules.preprocess.video_info import get_video_info
 
-SamplingMethod = Literal["interval", "scene_change"]
+SamplingMethod = Literal["interval", "scene_change", "interval_scene_change"]
+SAMPLING_METHOD_CHOICES: tuple[str, ...] = ("interval", "scene_change", "interval_scene_change")
+DEFAULT_SAMPLING_METHOD: SamplingMethod = "interval_scene_change"
+DEFAULT_INTERVAL_SECONDS = 60.0
+DEFAULT_SCENE_THRESHOLD = 0.35
+DEFAULT_COMBINED_MIN_GAP_SECONDS = 1.0
 
 
 @dataclass(frozen=True)
@@ -25,7 +31,7 @@ class FrameMetadata:
         frame_id: 프레임 식별자입니다.
         timestamp: 영상 내 프레임 시간입니다. 단위는 초입니다.
         image_path: 저장된 프레임 이미지 경로입니다.
-        sampling_method: 프레임 추출 방식입니다. ``interval`` 또는 ``scene_change``입니다.
+        sampling_method: 프레임 추출 방식입니다.
     """
 
     frame_id: int
@@ -65,11 +71,54 @@ def _write_metadata(metadata: List[FrameMetadata], metadata_path: str | Path) ->
     print(f"프레임 메타데이터 저장 완료: {metadata_path}")
 
 
+def _reindex_metadata(metadata: List[FrameMetadata]) -> List[FrameMetadata]:
+    """프레임 메타데이터의 frame_id를 시간순으로 다시 부여합니다."""
+    return [
+        FrameMetadata(
+            frame_id=index,
+            timestamp=item.timestamp,
+            image_path=item.image_path,
+            sampling_method=item.sampling_method,
+        )
+        for index, item in enumerate(sorted(metadata, key=lambda item: item.timestamp))
+    ]
+
+
+def _merge_frame_metadata(
+    interval_metadata: List[FrameMetadata],
+    scene_metadata: List[FrameMetadata],
+    min_gap_seconds: float,
+) -> List[FrameMetadata]:
+    """interval 결과를 기본으로 scene_change 결과를 추가하고 가까운 중복을 제거합니다."""
+    if min_gap_seconds < 0:
+        raise ValueError("프레임 병합 최소 간격은 0 이상이어야 합니다.")
+
+    merged: List[FrameMetadata] = []
+    for item in sorted([*interval_metadata, *scene_metadata], key=lambda item: item.timestamp):
+        duplicate_index = next(
+            (
+                index
+                for index, existing in enumerate(merged)
+                if abs(existing.timestamp - item.timestamp) < min_gap_seconds
+            ),
+            None,
+        )
+        if duplicate_index is None:
+            merged.append(item)
+            continue
+
+        existing = merged[duplicate_index]
+        if existing.sampling_method == "interval" and item.sampling_method == "scene_change":
+            merged[duplicate_index] = item
+
+    return _reindex_metadata(merged)
+
+
 def sample_interval_frames(
     video_path: str | Path,
     frames_dir: str | Path,
     metadata_path: str | Path,
-    interval_seconds: float = 5.0,
+    interval_seconds: float = DEFAULT_INTERVAL_SECONDS,
     project_root: Optional[str | Path] = None,
     image_prefix: str = "frame",
 ) -> List[FrameMetadata]:
@@ -135,11 +184,66 @@ def sample_interval_frames(
     return metadata
 
 
+def sample_interval_scene_change_frames(
+    video_path: str | Path,
+    frames_dir: str | Path,
+    metadata_path: str | Path,
+    interval_seconds: float = DEFAULT_INTERVAL_SECONDS,
+    scene_threshold: float = DEFAULT_SCENE_THRESHOLD,
+    project_root: Optional[str | Path] = None,
+    min_gap_seconds: float = DEFAULT_COMBINED_MIN_GAP_SECONDS,
+) -> List[FrameMetadata]:
+    """interval 프레임을 기본으로 추출하고 scene_change 프레임을 추가 보강합니다.
+
+    Args:
+        video_path: 프레임을 추출할 영상 파일 경로입니다.
+        frames_dir: 추출된 이미지 파일을 저장할 디렉터리입니다.
+        metadata_path: 병합된 프레임 메타데이터 JSON을 저장할 경로입니다.
+        interval_seconds: 일정 간격 추출에서 사용할 시간 간격입니다.
+        scene_threshold: 장면 전환 추출에서 사용할 임계값입니다.
+        project_root: ``image_path``를 상대 경로로 만들 기준 디렉터리입니다.
+        min_gap_seconds: 너무 가까운 interval/scene_change 프레임을 중복으로 볼 시간 간격입니다.
+
+    Returns:
+        interval과 scene_change 결과를 병합한 프레임 메타데이터 목록입니다.
+    """
+    frames_dir = Path(frames_dir)
+    frames_dir.mkdir(parents=True, exist_ok=True)
+    remove_files(frames_dir.glob("frame_*.jpg"))
+    remove_files(frames_dir.glob("interval_*.jpg"))
+    remove_files(frames_dir.glob("scene_*.jpg"))
+
+    interval_metadata = sample_interval_frames(
+        video_path=video_path,
+        frames_dir=frames_dir,
+        metadata_path=metadata_path,
+        interval_seconds=interval_seconds,
+        project_root=project_root,
+        image_prefix="interval",
+    )
+    scene_metadata = sample_scene_change_frames(
+        video_path=video_path,
+        frames_dir=frames_dir,
+        metadata_path=metadata_path,
+        threshold=scene_threshold,
+        project_root=project_root,
+        image_prefix="scene",
+    )
+    metadata = _merge_frame_metadata(interval_metadata, scene_metadata, min_gap_seconds)
+
+    _write_metadata(metadata, metadata_path)
+    print(
+        "interval + scene_change 프레임 추출 완료. "
+        f"interval: {len(interval_metadata)}, scene_change: {len(scene_metadata)}, 병합 후: {len(metadata)}"
+    )
+    return metadata
+
+
 def sample_scene_change_frames(
     video_path: str | Path,
     frames_dir: str | Path,
     metadata_path: str | Path,
-    threshold: float = 0.35,
+    threshold: float = DEFAULT_SCENE_THRESHOLD,
     project_root: Optional[str | Path] = None,
     image_prefix: str = "scene",
     min_scene_gap_seconds: float = 1.0,
@@ -223,9 +327,9 @@ def sample_scene_change_frames(
 def sample_frames(
     video_path: str | Path,
     run_dir: str | Path,
-    method: SamplingMethod = "interval",
-    interval_seconds: float = 5.0,
-    scene_threshold: float = 0.35,
+    method: SamplingMethod = DEFAULT_SAMPLING_METHOD,
+    interval_seconds: float = DEFAULT_INTERVAL_SECONDS,
+    scene_threshold: float = DEFAULT_SCENE_THRESHOLD,
     project_root: Optional[str | Path] = None,
 ) -> List[FrameMetadata]:
     """run 디렉터리 구조에 맞춰 프레임 이미지와 메타데이터를 생성합니다.
@@ -233,7 +337,7 @@ def sample_frames(
     Args:
         video_path: 프레임을 추출할 영상 파일 경로입니다.
         run_dir: 실행 결과를 저장할 run 디렉터리입니다.
-        method: 프레임 추출 방식입니다. ``interval`` 또는 ``scene_change``입니다.
+        method: 프레임 추출 방식입니다.
         interval_seconds: 일정 간격 추출에서 사용할 시간 간격입니다.
         scene_threshold: 장면 전환 추출에서 사용할 임계값입니다.
         project_root: ``image_path``를 상대 경로로 만들 기준 디렉터리입니다.
@@ -247,7 +351,7 @@ def sample_frames(
     run_dir = Path(run_dir)
     project_root = Path(project_root) if project_root else run_dir.parent.parent
     frames_dir = run_dir / "frames"
-    metadata_path = run_dir / "metadata" / "frame_metadata.json"
+    metadata_path = run_path(run_dir, DEFAULT_FRAME_METADATA_RELATIVE_PATH)
 
     if method == "interval":
         return sample_interval_frames(
@@ -267,6 +371,16 @@ def sample_frames(
             threshold=scene_threshold,
             project_root=project_root,
             image_prefix="frame",
+        )
+
+    if method == "interval_scene_change":
+        return sample_interval_scene_change_frames(
+            video_path=video_path,
+            frames_dir=frames_dir,
+            metadata_path=metadata_path,
+            interval_seconds=interval_seconds,
+            scene_threshold=scene_threshold,
+            project_root=project_root,
         )
 
     raise ValueError(f"지원하지 않는 프레임 추출 방식입니다: {method}")

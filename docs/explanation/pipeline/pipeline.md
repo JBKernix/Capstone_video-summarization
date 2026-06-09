@@ -65,17 +65,19 @@ main()
 
 `run_preprocess_step()`은 영상 정보 확인 후 `sample_frames()`를 호출한다.
 
-지원하는 추출 방식은 두 가지다.
+지원하는 추출 방식은 세 가지다. 기본값은 `interval_scene_change`다.
 
 | 방식 | 설명 |
 | --- | --- |
 | `interval` | 일정 시간 간격으로 프레임 추출 |
 | `scene_change` | 장면 전환 기준으로 프레임 추출 |
+| `interval_scene_change` | 일정 간격 프레임을 기본으로 장면 전환 프레임을 추가한 뒤 가까운 중복 제거 |
 
 결과 파일:
 
 ```text
-runs/frames/frame_000001.jpg
+runs/frames/interval_000001.jpg
+runs/frames/scene_000001.jpg
 runs/metadata/frame_metadata.json
 ```
 
@@ -114,9 +116,9 @@ runs/stt/stt_result.txt
 | --- | --- |
 | `--video` | 입력 영상 경로 |
 | `--run-dir` | 결과 저장 디렉터리 |
-| `--method` | 프레임 추출 방식: `interval`, `scene_change` |
-| `--interval-seconds` | interval 방식의 추출 간격 |
-| `--scene-threshold` | scene_change 방식의 장면 전환 임계값 |
+| `--method` | 프레임 추출 방식: `interval`, `scene_change`, `interval_scene_change`. 기본값은 `interval_scene_change` |
+| `--interval-seconds` | interval 방식의 추출 간격. 기본값은 `60.0`초 |
+| `--scene-threshold` | scene_change 방식의 장면 전환 임계값. 기본값은 `0.35` |
 | `--ocr-lang` | OCR 언어 설정. 기본값은 `korean` |
 | `--skip-vision` | 프레임 OCR 분석 생략 |
 | `--vision-same-process` | vision 단계를 부모 프로세스에서 실행 |
@@ -135,7 +137,8 @@ runs/stt/stt_result.txt
 runs/
   input/
   frames/
-    frame_000001.jpg
+    interval_000001.jpg
+    scene_000001.jpg
   metadata/
     frame_metadata.json
   audio/

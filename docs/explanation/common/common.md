@@ -4,12 +4,13 @@
 
 `modules/common`은 여러 단계에서 함께 사용할 수 있는 공통 유틸리티를 두는 영역이다.
 
-현재 실제 구현이 들어 있는 파일은 `json_utils.py` 중심이며, 나머지 파일은 향후 설정, 파일 처리, 시간 처리 공통 로직을 넣기 위한 자리로 남아 있다.
+현재 실제 구현이 들어 있는 파일은 `json_utils.py`와 `defaults.py`다. `defaults.py`는 파이프라인 스크립트들이 함께 사용하는 기본 입력/출력 경로 상수와 경로 생성 함수를 제공한다.
 
 ## 관련 파일
 
 | 파일 | 상태 | 역할 |
 | --- | --- | --- |
+| `modules/common/defaults.py` | 구현됨 | 기본 입력/출력 상대 경로와 경로 생성 유틸리티 |
 | `modules/common/json_utils.py` | 구현됨 | JSON 읽기/쓰기 유틸리티 |
 | `modules/common/config.py` | 비어 있음 | 설정 로딩 공통화 예정 |
 | `modules/common/file_utils.py` | 비어 있음 | 파일/경로 유틸리티 예정 |
@@ -36,11 +37,33 @@ JSON 로드
 
 ```text
 preprocess / vision / stt
-  -> modules.common 유틸리티 import
-  -> JSON, 경로, 설정, 시간 처리 같은 반복 작업 수행
+  -> modules.common 기본 경로 또는 JSON 유틸리티 import
+  -> 실행 경로와 JSON 입출력 처리
 ```
 
-아직 대부분의 공통 파일은 비어 있으므로, 실제 사용 흐름은 `json_utils.py` 중심으로 제한되어 있다.
+아직 일부 공통 파일은 비어 있지만, 기본 산출물 경로는 `defaults.py`를 통해 여러 스크립트에서 공유한다.
+
+## `defaults.py`
+
+파이프라인에서 반복해서 쓰는 기본 상대 경로를 한곳에 모은다.
+
+| 상수 | 기본 경로 |
+| --- | --- |
+| `DEFAULT_INPUT_VIDEO_RELATIVE_PATH` | `data/input/input.mp4` |
+| `DEFAULT_RUN_DIR_RELATIVE_PATH` | `runs` |
+| `DEFAULT_STT_CONFIG_RELATIVE_PATH` | `configs/stt_config.yaml` |
+| `DEFAULT_AUDIO_RELATIVE_PATH` | `audio/audio.wav` |
+| `DEFAULT_FRAME_METADATA_RELATIVE_PATH` | `metadata/frame_metadata.json` |
+| `DEFAULT_STT_JSON_RELATIVE_PATH` | `stt/stt_result.json` |
+| `DEFAULT_STT_TEXT_RELATIVE_PATH` | `stt/stt_result.txt` |
+| `DEFAULT_VISION_RESULT_RELATIVE_PATH` | `vision/vision_result.json` |
+
+경로 생성 함수:
+
+| 함수 | 역할 |
+| --- | --- |
+| `project_path(project_root, relative_path)` | 프로젝트 루트 기준 경로 생성 |
+| `run_path(run_dir, relative_path)` | 실행 디렉터리 기준 산출물 경로 생성 |
 
 ## `json_utils.py`
 

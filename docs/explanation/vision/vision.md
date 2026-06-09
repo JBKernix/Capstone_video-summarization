@@ -51,7 +51,7 @@ runs/metadata/frame_metadata.json
   {
     "frame_id": 0,
     "timestamp": 0.0,
-    "image_path": "runs/frames/frame_000001.jpg",
+    "image_path": "runs/frames/interval_000001.jpg",
     "sampling_method": "interval"
   }
 ]
@@ -74,7 +74,7 @@ runs/vision/vision_result.json
   {
     "frame_id": 0,
     "timestamp": 0.0,
-    "image_path": "C:\\developers_program\\Capstone\\Capstone_video-summarization\\runs\\frames\\frame_000001.jpg",
+    "image_path": "C:\\developers_program\\Capstone\\Capstone_video-summarization\\runs\\frames\\interval_000001.jpg",
     "ocr_text": "인식된 텍스트",
     "detected_language": "ko",
     "scene_type": "text_screen",
@@ -220,4 +220,4 @@ OCR 텍스트를 기반으로 간단한 화면 유형과 캡션을 만든다.
 1. EasyOCR 첫 실행 시 모델 파일을 다운로드한다.
 2. 프레임 수가 많으면 OCR 단계가 오래 걸린다.
 3. 한국어 OCR 결과는 글꼴, 해상도, 자막 위치에 따라 오인식이 생길 수 있다.
-4. `scripts/run_vision.py`는 고정 경로를 사용하므로 일반 실행은 `scripts/run_pipeline.py`를 권장한다.
+4. `scripts/run_vision.py`는 공통 기본 경로 상수를 사용해 `runs/metadata/frame_metadata.json`을 읽고 `runs/vision/vision_result.json`을 만든다.

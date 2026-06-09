@@ -1,5 +1,5 @@
 from modules.vision.image_caption import classify_scene_type, generate_text_based_caption
-from modules.vision.ocr_extractor import OCRExtractor, detect_text_language
+from modules.vision.ocr_extractor import DEFAULT_OCR_LANGUAGE, OCRExtractor, detect_text_language
 from modules.vision.vision_formatter import (
     analyze_frames_metadata,
     analyze_single_frame,
@@ -7,6 +7,7 @@ from modules.vision.vision_formatter import (
 )
 
 __all__ = [
+    "DEFAULT_OCR_LANGUAGE",
     "OCRExtractor",
     "analyze_frames_metadata",
     "analyze_single_frame",

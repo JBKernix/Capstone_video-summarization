@@ -49,6 +49,17 @@ chunk_seconds: 30
 overlap_seconds: 2
 ```
 
+코드의 fallback 기본값은 `modules/stt/whisper_stt.py`의 상수로 관리한다. 기본 설정 파일에 값이 있으면 설정 파일 값이 우선한다.
+
+| 상수 | fallback 값 |
+| --- | --- |
+| `DEFAULT_STT_MODEL_SIZE` | `medium` |
+| `DEFAULT_STT_LANGUAGE` | `ko` |
+| `DEFAULT_STT_DEVICE` | `None` |
+| `DEFAULT_STT_CHUNKED` | `True` |
+| `DEFAULT_STT_CHUNK_SECONDS` | `30` |
+| `DEFAULT_STT_OVERLAP_SECONDS` | `2` |
+
 | 설정 | 설명 |
 | --- | --- |
 | `model_size` | Whisper 모델 크기 |

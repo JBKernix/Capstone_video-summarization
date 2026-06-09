@@ -7,7 +7,22 @@ import sys
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(PROJECT_ROOT))
 
+from modules.common import (  # noqa: E402
+    DEFAULT_AUDIO_RELATIVE_PATH,
+    DEFAULT_RUN_DIR_RELATIVE_PATH,
+    DEFAULT_STT_CONFIG_RELATIVE_PATH,
+    DEFAULT_STT_JSON_RELATIVE_PATH,
+    DEFAULT_STT_TEXT_RELATIVE_PATH,
+    project_path,
+    run_path,
+)
 from modules.stt import (  # noqa: E402
+    DEFAULT_STT_CHUNK_SECONDS,
+    DEFAULT_STT_CHUNKED,
+    DEFAULT_STT_DEVICE,
+    DEFAULT_STT_LANGUAGE,
+    DEFAULT_STT_MODEL_SIZE,
+    DEFAULT_STT_OVERLAP_SECONDS,
     format_chunked_stt_result,
     format_stt_result,
     run_chunked_whisper_stt,
@@ -34,24 +49,25 @@ def load_config(config_path: Path) -> dict:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="오디오 파일에서 STT 결과를 생성합니다.")
+    run_dir = project_path(PROJECT_ROOT, DEFAULT_RUN_DIR_RELATIVE_PATH)
     parser.add_argument(
         "--audio",
-        default=str(PROJECT_ROOT / "runs" / "audio" / "audio.wav"),
+        default=str(run_path(run_dir, DEFAULT_AUDIO_RELATIVE_PATH)),
         help="STT를 수행할 오디오 파일 경로입니다.",
     )
     parser.add_argument(
         "--output-json",
-        default=str(PROJECT_ROOT / "runs" / "stt" / "stt_result.json"),
+        default=str(run_path(run_dir, DEFAULT_STT_JSON_RELATIVE_PATH)),
         help="STT JSON 결과 저장 경로입니다.",
     )
     parser.add_argument(
         "--output-text",
-        default=str(PROJECT_ROOT / "runs" / "stt" / "stt_result.txt"),
+        default=str(run_path(run_dir, DEFAULT_STT_TEXT_RELATIVE_PATH)),
         help="STT 텍스트 결과 저장 경로입니다.",
     )
     parser.add_argument(
         "--config",
-        default=str(PROJECT_ROOT / "configs" / "stt_config.yaml"),
+        default=str(project_path(PROJECT_ROOT, DEFAULT_STT_CONFIG_RELATIVE_PATH)),
         help="STT 설정 YAML 경로입니다.",
     )
     parser.add_argument("--model-size", help="Whisper 모델 크기입니다. 예: tiny, base, small, medium")
@@ -72,12 +88,12 @@ def main() -> None:
     args = parse_args()
     config = load_config(Path(args.config))
 
-    model_size = args.model_size or config.get("model_size", "small")
-    language = args.language or config.get("language", "ko")
-    device = args.device if args.device is not None else config.get("device")
-    chunked = args.chunked or bool(config.get("chunked", True))
-    chunk_seconds = args.chunk_seconds or int(config.get("chunk_seconds", 30))
-    overlap_seconds = args.overlap_seconds or int(config.get("overlap_seconds", 2))
+    model_size = args.model_size or config.get("model_size", DEFAULT_STT_MODEL_SIZE)
+    language = args.language or config.get("language", DEFAULT_STT_LANGUAGE)
+    device = args.device if args.device is not None else config.get("device", DEFAULT_STT_DEVICE)
+    chunked = args.chunked or bool(config.get("chunked", DEFAULT_STT_CHUNKED))
+    chunk_seconds = args.chunk_seconds or int(config.get("chunk_seconds", DEFAULT_STT_CHUNK_SECONDS))
+    overlap_seconds = args.overlap_seconds or int(config.get("overlap_seconds", DEFAULT_STT_OVERLAP_SECONDS))
 
     audio_path = Path(args.audio)
     if chunked:
