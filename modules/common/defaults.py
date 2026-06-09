@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-DEFAULT_INPUT_VIDEO_RELATIVE_PATH = Path("data") / "input" / "input.mp4"
+DEFAULT_INPUT_VIDEO_RELATIVE_PATH = Path("data") / "input" / "*.mp4"
 DEFAULT_RUN_DIR_RELATIVE_PATH = Path("runs")
 DEFAULT_STT_CONFIG_RELATIVE_PATH = Path("configs") / "stt_config.yaml"
 DEFAULT_AUDIO_RELATIVE_PATH = Path("audio") / "audio.wav"
