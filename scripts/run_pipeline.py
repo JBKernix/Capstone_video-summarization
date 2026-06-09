@@ -571,30 +571,105 @@ def main():
     print("[2/4] 오디오 추출을 시작합니다.")
     audio_path = run_audio_step(video_path=video_path, run_dir=run_dir)
 
+    # if args.skip_vision:
+    #     print("[3/4] 시각 정보 분석을 건너뜁니다.")
+    #     vision_path = None
+    # else:
+    #     print("[3/4] 시각 정보 분석을 시작합니다.")
+    #     vision_path = run_vision_step(
+    #         metadata_path=metadata_path,
+    #         run_dir=run_dir,
+    #         ocr_lang=args.ocr_lang,
+    #         isolated=not args.vision_same_process,
+    #     )
+
+    # if args.skip_stt:
+    #     print("[4/4] STT 단계를 건너뜁니다.")
+    #     stt_json_path = None
+    #     stt_text_path = None
+    # else:
+    #     print("[4/4] STT를 시작합니다.")
+    #     stt_json_path, stt_text_path = run_stt_step(
+    #         audio_path=audio_path,
+    #         run_dir=run_dir,
+    #         stt_options=stt_options,
+    #         isolated=not args.stt_same_process,
+    #     )
+
+    vision_process = None
+    stt_process = None
+    vision_queue = None
+    stt_queue = None
+
+    vision_path = run_path(run_dir, DEFAULT_VISION_RESULT_RELATIVE_PATH)
+    stt_json_path = run_path(run_dir, DEFAULT_STT_JSON_RELATIVE_PATH)
+    stt_text_path = run_path(run_dir, DEFAULT_STT_TEXT_RELATIVE_PATH)
+
+    print("\n>>> Vision(OCR) 및 STT 단계를 백그라운드 병렬 프로세스로 동시 시작합니다...")
+
+    # (A) 비전(Vision) 프로세스 생성 및 시작
     if args.skip_vision:
         print("[3/4] 시각 정보 분석을 건너뜁니다.")
         vision_path = None
+    elif args.vision_same_process:
+        print("[3/4] 시각 정보 분석을 현재 프로세스에서 실행합니다. (병렬 이점 없음)")
+        from modules.vision import analyze_frames_metadata
+        analyze_frames_metadata(metadata_path=str(metadata_path), output_path=str(vision_path), lang=args.ocr_lang)
     else:
-        print("[3/4] 시각 정보 분석을 시작합니다.")
-        vision_path = run_vision_step(
-            metadata_path=metadata_path,
-            run_dir=run_dir,
-            ocr_lang=args.ocr_lang,
-            isolated=not args.vision_same_process,
+        print("[3/4] 시각 정보 분석 자식 프로세스를 론칭합니다.")
+        ctx = get_context("spawn")  # 파일 최상단에 선언된 get_context 사용
+        vision_queue = ctx.Queue()
+        vision_process = ctx.Process(
+            target=_vision_worker,
+            args=(str(metadata_path), str(vision_path), args.ocr_lang, vision_queue)
         )
+        vision_process.start()  # 백그라운드에서 즉시 실행 (대기하지 않음)
 
+    # (B) 음성 인식(STT) 프로세스 생성 및 시작
     if args.skip_stt:
         print("[4/4] STT 단계를 건너뜁니다.")
         stt_json_path = None
         stt_text_path = None
+    elif args.stt_same_process:
+        print("[4/4] STT 단계를 현재 프로세스에서 실행합니다. (병렬 이점 없음)")
+        _execute_stt(audio_path, stt_json_path, stt_text_path, stt_options)
     else:
-        print("[4/4] STT를 시작합니다.")
-        stt_json_path, stt_text_path = run_stt_step(
-            audio_path=audio_path,
-            run_dir=run_dir,
-            stt_options=stt_options,
-            isolated=not args.stt_same_process,
+        print("[4/4] STT 자식 프로세스를 론칭합니다.")
+        ctx = get_context("spawn")  # 파일 최상단에 선언된 get_context 사용
+        stt_queue = ctx.Queue()
+        stt_process = ctx.Process(
+            target=_stt_worker,
+            args=(str(audio_path), str(stt_json_path), str(stt_text_path), stt_options, stt_queue)
         )
+        stt_process.start()  # 백그라운드에서 즉시 실행 (대기하지 않음)
+
+    # (C) 동시 실행 중인 두 프로세스가 모두 완료될 때까지 메인 프로세스에서 대기 및 동기화 (Join)
+    stt_segment_count = 0
+
+    if vision_process is not None:
+        print("시각 정보 분석 프로세스가 완료되기를 기다리는 중...")
+        vision_process.join()  # 비전 프로세스가 끝날 때까지 블로킹 대기
+        
+        # 자식 프로세스 에러 발생 여부 검증 및 전파
+        if vision_queue is not None and not vision_queue.empty():
+            res = vision_queue.get()
+            if not res.get("ok"):
+                raise RuntimeError(f"Vision 자식 프로세스 실패:\n{res.get('traceback') or res.get('error')}")
+        print(f"시각 정보 추출 완료: {vision_path}")
+
+    if stt_process is not None:
+        print("STT 프로세스가 완료되기를 기다리는 중...")
+        stt_process.join()  # STT 프로세스가 끝날 때까지 블로킹 대기
+        
+        # 자식 프로세스 결과 수집 및 에러 전파
+        if stt_queue is not None and not stt_queue.empty():
+            res = stt_queue.get()
+            if not res.get("ok"):
+                raise RuntimeError(f"STT 자식 프로세스 실패:\n{res.get('traceback') or res.get('error')}")
+            stt_segment_count = int(res.get("segment_count", 0))
+        print(f"STT 완료: {stt_json_path}")
+        print(f"STT 텍스트 저장: {stt_text_path}")
+        print(f"STT segment 수: {stt_segment_count}")
 
     print("파이프라인 실행이 완료되었습니다.")
     print(f"프레임 메타데이터: {metadata_path}")
