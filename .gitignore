@@ -1,0 +1,15 @@
+# model files
+models/
+*.pt
+*.pth
+*.bin
+*.safetensors
+
+# runtime data
+data/input/*
+data/output/*
+runs/*
+
+# env
+.env
+__pycache__/
