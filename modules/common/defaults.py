@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from glob import glob, has_magic
 from pathlib import Path
 
-DEFAULT_INPUT_VIDEO_RELATIVE_PATH = Path("data") / "input" / "input.mp4"
+DEFAULT_INPUT_VIDEO_RELATIVE_PATH = Path("data") / "input" / "*.mp4"
 DEFAULT_RUN_DIR_RELATIVE_PATH = Path("runs")
 DEFAULT_STT_CONFIG_RELATIVE_PATH = Path("configs") / "stt_config.yaml"
 DEFAULT_AUDIO_RELATIVE_PATH = Path("audio") / "audio.wav"
@@ -10,6 +11,22 @@ DEFAULT_FRAME_METADATA_RELATIVE_PATH = Path("metadata") / "frame_metadata.json"
 DEFAULT_STT_JSON_RELATIVE_PATH = Path("stt") / "stt_result.json"
 DEFAULT_STT_TEXT_RELATIVE_PATH = Path("stt") / "stt_result.txt"
 DEFAULT_VISION_RESULT_RELATIVE_PATH = Path("vision") / "vision_result.json"
+
+
+def resolve_path_pattern(path: str | Path) -> Path:
+    """Return a real path, expanding shell-style wildcards when present."""
+    path = Path(path)
+    path_text = str(path)
+
+    if not has_magic(path_text):
+        return path
+
+    matches = sorted(Path(match) for match in glob(path_text))
+    files = [match for match in matches if match.is_file()]
+    if not files:
+        raise FileNotFoundError(f"No files match path pattern: {path}")
+
+    return files[0]
 
 
 def project_path(project_root: str | Path, relative_path: str | Path) -> Path:

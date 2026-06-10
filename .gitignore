@@ -11,7 +11,7 @@ env/
 .ipynb_checkpoints/
 
 runs/
-data/input/
+data/input/*.mp4
 
 
 .DS_Store

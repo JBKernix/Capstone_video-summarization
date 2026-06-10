@@ -8,6 +8,7 @@ from modules.common.defaults import (
     DEFAULT_STT_TEXT_RELATIVE_PATH,
     DEFAULT_VISION_RESULT_RELATIVE_PATH,
     project_path,
+    resolve_path_pattern,
     run_path,
 )
 from modules.common.json_utils import load_json, save_json
@@ -23,6 +24,7 @@ __all__ = [
     "DEFAULT_VISION_RESULT_RELATIVE_PATH",
     "load_json",
     "project_path",
+    "resolve_path_pattern",
     "run_path",
     "save_json",
 ]

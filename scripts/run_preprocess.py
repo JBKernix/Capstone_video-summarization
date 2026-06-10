@@ -10,6 +10,7 @@ from modules.common import (  # noqa: E402
     DEFAULT_INPUT_VIDEO_RELATIVE_PATH,
     DEFAULT_RUN_DIR_RELATIVE_PATH,
     project_path,
+    resolve_path_pattern,
     run_path,
 )
 from modules.preprocess import (
@@ -63,7 +64,7 @@ def main():
     """영상에서 프레임을 추출하고 frame_metadata.json을 생성합니다."""
     args = parse_args()
 
-    video_path = Path(args.video)
+    video_path = resolve_path_pattern(args.video)
     run_dir = Path(args.run_dir)
     video_path = ensure_mp4_video(video_path, run_dir / "input")
 

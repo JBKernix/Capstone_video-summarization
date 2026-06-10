@@ -17,9 +17,9 @@ from modules.preprocess.video_info import get_video_info
 
 SamplingMethod = Literal["interval", "scene_change", "interval_scene_change"]
 SAMPLING_METHOD_CHOICES: tuple[str, ...] = ("interval", "scene_change", "interval_scene_change")
-DEFAULT_SAMPLING_METHOD: SamplingMethod = "interval_scene_change"
+DEFAULT_SAMPLING_METHOD: SamplingMethod = "scene_change"
 DEFAULT_INTERVAL_SECONDS = 60.0
-DEFAULT_SCENE_THRESHOLD = 0.35
+DEFAULT_SCENE_THRESHOLD = 0.7
 DEFAULT_COMBINED_MIN_GAP_SECONDS = 1.0
 
 

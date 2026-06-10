@@ -19,6 +19,7 @@ from modules.common import (  # noqa: E402
     DEFAULT_STT_TEXT_RELATIVE_PATH,
     DEFAULT_VISION_RESULT_RELATIVE_PATH,
     project_path,
+    resolve_path_pattern,
     run_path,
 )
 from modules.preprocess import (
@@ -536,41 +537,20 @@ def main():
     """구현되어 있는 파이프라인 단계를 순서대로 실행합니다."""
     args = parse_args()
     validate_process_isolation(args)
-    video_path = Path(args.video)
+    video_path = resolve_path_pattern(args.video)
     run_dir = Path(args.run_dir)
     stt_options = build_stt_options(args)
-    video_path = ensure_mp4_video(video_path, run_dir / "input")
+    video_path = ensure_mp4_video(video_path, run_dir / "data" / "input")
 
-    print("[1/4] 영상 전처리를 시작합니다.")
-    metadata_path = run_preprocess_step(
-        video_path=video_path,
-        run_dir=run_dir,
-        method=args.method,
-        interval_seconds=args.interval_seconds,
-        scene_threshold=args.scene_threshold,
-    )
-
-    print("[2/4] 오디오 추출을 시작합니다.")
+    print("[1/4] 오디오 추출을 시작합니다.")
     audio_path = run_audio_step(video_path=video_path, run_dir=run_dir)
 
-    if args.skip_vision:
-        print("[3/4] 시각 정보 분석을 건너뜁니다.")
-        vision_path = None
-    else:
-        print("[3/4] 시각 정보 분석을 시작합니다.")
-        vision_path = run_vision_step(
-            metadata_path=metadata_path,
-            run_dir=run_dir,
-            ocr_lang=args.ocr_lang,
-            isolated=not args.vision_same_process,
-        )
-
     if args.skip_stt:
-        print("[4/4] STT 단계를 건너뜁니다.")
+        print("[2/4] STT 단계를 건너뜁니다.")
         stt_json_path = None
         stt_text_path = None
     else:
-        print("[4/4] STT를 시작합니다.")
+        print("[2/4] STT를 시작합니다.")
         stt_json_path, stt_text_path = run_stt_step(
             audio_path=audio_path,
             run_dir=run_dir,
@@ -578,11 +558,34 @@ def main():
             isolated=not args.stt_same_process,
         )
 
+    #VLM
+
+    # print("[3/4] 영상 전처리를 시작합니다.")
+    # metadata_path = run_preprocess_step(
+    #     video_path=video_path,
+    #     run_dir=run_dir,
+    #     method=args.method,
+    #     interval_seconds=args.interval_seconds,
+    #     scene_threshold=args.scene_threshold,
+    # )
+
+    # if args.skip_vision:
+    #     print("[4/4] 시각 정보 분석을 건너뜁니다.")
+    #     vision_path = None
+    # else:
+    #     print("[4/4] 시각 정보 분석을 시작합니다.")
+    #     vision_path = run_vision_step(
+    #         metadata_path=metadata_path,
+    #         run_dir=run_dir,
+    #         ocr_lang=args.ocr_lang,
+    #         isolated=not args.vision_same_process,
+    #     )
+
     print("파이프라인 실행이 완료되었습니다.")
-    print(f"프레임 메타데이터: {metadata_path}")
+    # print(f"프레임 메타데이터: {metadata_path}")
     print(f"오디오 파일: {audio_path}")
-    if vision_path is not None:
-        print(f"시각 정보 결과: {vision_path}")
+    # if vision_path is not None:
+    #     print(f"시각 정보 결과: {vision_path}")
 
     if stt_json_path is not None:
         print(f"STT JSON 결과: {stt_json_path}")
