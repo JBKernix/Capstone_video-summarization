@@ -2,12 +2,16 @@
 
 영상의 STT 결과를 요약하고, OCR/VLM 분석에 사용할 중요 구간을 추출하는 FastAPI 서버입니다.
 
+현재 HTTP API는 STT 요약과 중요 구간 추출을 제공합니다. VLM 프레임 분석 기능은
+`VLMService`로 구현되어 있지만 별도의 HTTP 엔드포인트는 아직 제공하지 않습니다.
+
 ## 주요 기능
 
 - Qwen3-8B를 사용한 한국어 STT 요약
 - STT 타임스탬프 기반 중요 영상 구간 추출
 - Qwen2.5-VL-7B-Instruct를 사용한 프레임 및 OCR 내용 요약
-- 하나의 GPU에서 LLM/VLM 추론이 동시에 실행되지 않도록 요청 직렬화
+- 단일 작업 실행기와 공용 lock을 사용한 GPU 추론 직렬화
+- 작업 ID 기반 비동기 처리와 진행 상태 조회
 
 ## 사용 모델
 
@@ -51,6 +55,7 @@ python scripts\download_models.py
 ## 서버 실행
 
 Windows 탐색기에서 `scripts/start_server.bat`를 더블클릭하면 서버가 실행됩니다. 이 파일은 `video_summarization` Conda 환경의 Python을 사용합니다.
+기본 서버 주소는 `http://10.30.2.224:8000`이며, 환경 경로나 서버 주소가 다르면 배치 파일의 `PYTHON_EXE`, `SERVER_HOST`, `SERVER_PORT` 값을 수정해야 합니다.
 
 `scripts/server.py`를 직접 실행할 수 있습니다.
 
@@ -63,6 +68,8 @@ python scripts\server.py
 ```powershell
 .\scripts\start_server.ps1
 ```
+
+PowerShell 스크립트의 기본 호스트와 포트는 `10.30.2.224:8000`입니다.
 
 호스트와 포트를 변경하려면 다음과 같이 실행합니다.
 
@@ -82,15 +89,45 @@ python -m uvicorn scripts.server:app --host 0.0.0.0 --port 8000 --workers 1
 python -m uvicorn scripts.server:app --reload --port 8000
 ```
 
+GPU 모델과 작업 상태가 프로세스 메모리에 유지되므로 운영 시에는 반드시
+`--workers 1`을 사용합니다. `--reload`는 개발 환경에서만 사용합니다.
+
+기본적으로 각 작업이 끝나면 LLM을 GPU 메모리에서 내립니다. 다음 요청의 모델
+재로딩 시간을 줄이려면 서버 실행 전에 환경 변수를 설정합니다.
+
+```powershell
+$env:KEEP_LLM_LOADED = "1"
+.\scripts\start_server.ps1
+```
+
+`scripts/server.py`를 직접 실행할 때는 `SERVER_HOST`, `SERVER_PORT` 환경 변수로
+주소를 변경할 수 있습니다.
+
+```powershell
+$env:SERVER_HOST = "127.0.0.1"
+$env:SERVER_PORT = "8080"
+python scripts\server.py
+```
+
 서버 실행 후 API 문서를 확인할 수 있습니다.
 
 - Swagger UI: `http://localhost:8000/docs`
 - ReDoc: `http://localhost:8000/redoc`
 - 상태 확인: `http://localhost:8000/health`
 
+`GET /health` 응답 예시는 다음과 같습니다.
+
+```json
+{
+  "status": "ok",
+  "active_jobs": 1
+}
+```
+
 ## STT 요청 형식
 
-`POST /llm/summarize`는 STT JSON을 요청 본문으로 받고 즉시 작업 ID를 반환합니다. 추론 중에는 작업 상태 API를 주기적으로 조회합니다.
+`POST /llm/summarize`는 STT JSON을 요청 본문으로 받고 HTTP `202 Accepted`와
+작업 ID를 즉시 반환합니다. 추론 중에는 작업 상태 API를 주기적으로 조회합니다.
 
 작업 ID는 `stt-summary-a1b2c3d4e5f6` 형식입니다. 작업 종류와 고유 식별자가 포함되어 서버 로그에서 작업을 쉽게 구분할 수 있습니다. 생성 시각은 각 로그 줄에 별도로 기록됩니다.
 
@@ -159,7 +196,14 @@ $status.result
 
 상태 값은 `queued`, `running`, `completed`, `failed` 중 하나입니다. 추론 중에는 `message`, `current_step`, `total_steps`로 진행 상황을 확인할 수 있습니다.
 
+상태 응답에는 `created_at`, `updated_at`, `elapsed_seconds`가 항상 포함됩니다.
+실패한 작업은 `error`에 오류 메시지가 기록되며, 완료 전에는 `result`가 `null`입니다.
+
+작업 대기열과 상태는 서버 프로세스의 메모리에만 저장됩니다. 서버를 재시작하면
+기존 작업 ID와 결과는 사라지며, 여러 worker를 실행하면 worker별로 상태가 분리됩니다.
+
 서버 진행 로그는 콘솔과 `logs/server.log`에 함께 기록됩니다. 긴 추론 단계에서는 10초마다 단계별 및 전체 경과 시간이 기록되며, 상태 API의 `elapsed_seconds`에서도 전체 경과 시간을 확인할 수 있습니다.
+로그 파일은 최대 10MB 단위로 회전하며 이전 로그를 최대 5개까지 보관합니다.
 
 ## 완료 응답 형식
 
@@ -210,9 +254,30 @@ $status.result
 |   |-- summary_service.py
 |   `-- vlm_service.py
 |-- test/
-|   `-- stt_result.json
+|   |-- stt_result.json
+|   |-- llm_service_result.json
+|   `-- test_llm_service.py
+|-- logs/
+|   `-- server.log           # 실행 중 생성, Git 제외
+|-- README.md
 `-- requirements.txt
 ```
+
+## LLM 서비스 직접 실행
+
+API 서버를 거치지 않고 샘플 STT 파일로 LLM 서비스를 실행할 수 있습니다.
+
+```powershell
+python test\test_llm_service.py `
+  --input test\stt_result.json `
+  --output test\llm_service_result.json `
+  --max-new-tokens 256 `
+  --important-max-new-tokens 192 `
+  --segment-chunk-chars 12000
+```
+
+이 명령은 실제 Qwen3-8B 모델을 로드하므로 CUDA GPU와 다운로드된 모델이 필요하며
+실행 시간이 오래 걸릴 수 있습니다.
 
 ## 처리 흐름
 
@@ -228,4 +293,5 @@ $status.result
 - 두 모델은 크기가 크므로 GPU VRAM과 시스템 메모리를 충분히 확보해야 합니다.
 - `/health`는 서버 프로세스 상태만 확인하며 CUDA 및 모델 로딩 성공 여부까지 검사하지 않습니다.
 - LLM 작업이 끝나면 기본적으로 모델을 GPU에서 내립니다. 다음 요청의 재로딩 시간을 줄이려면 서버 실행 전에 `KEEP_LLM_LOADED=1`을 설정합니다.
-- LLM 출력은 생성 모델 특성상 항상 완전한 JSON이라고 보장되지 않으므로 후속 단계에서 파싱 오류를 처리해야 합니다.
+- 중요 구간은 LLM의 구분자 형식 출력을 파싱합니다. 형식이 잘못된 묶음은 건너뛰므로 결과 개수가 입력이나 예상과 다를 수 있습니다.
+- 현재 작업 취소, 결과 영속화, 만료된 작업 정리 기능은 구현되어 있지 않습니다.
