@@ -1,21 +1,35 @@
 from pathlib import Path
+from threading import Lock
 
 from models.vlm_loader import VLMLoader, VLMConfig
 
+MAX_NEW_TOKENS = 2048
+
 
 class VLMService:
-    def __init__(self):
+    def __init__(self, generation_lock=None):
         config = VLMConfig(
             device="cuda",
             torch_dtype="float16",
         )
         self.loader = VLMLoader(config)
+        # 전달받은 공용 lock으로 LLM/VLM의 GPU 사용을 함께 직렬화합니다.
+        self._generation_lock = generation_lock or Lock()
 
-    def summarize_frame(self, image_path: str, ocr_text: str = "") -> str:
+    def summarize_frame(
+        self,
+        image_path: str,
+        ocr_text: str = "",
+        max_new_tokens: int = 512,
+    ) -> str:
         path = Path(image_path)
 
         if not path.exists():
             raise FileNotFoundError(f"이미지 파일을 찾을 수 없습니다: {path}")
+        if not 1 <= max_new_tokens <= MAX_NEW_TOKENS:
+            raise ValueError(
+                f"max_new_tokens는 1 이상 {MAX_NEW_TOKENS} 이하여야 합니다."
+            )
 
         prompt = f"""
 이 이미지는 영상에서 중요 구간으로 판단되어 추출된 프레임입니다.
@@ -45,8 +59,9 @@ class VLMService:
 -
 """
 
-        return self.loader.describe_image(
-            image=path,
-            prompt=prompt,
-            max_new_tokens=512,
-        )
+        with self._generation_lock:
+            return self.loader.describe_image(
+                image=path,
+                prompt=prompt,
+                max_new_tokens=max_new_tokens,
+            )

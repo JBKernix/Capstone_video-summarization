@@ -9,6 +9,7 @@ models/
 data/input/*
 data/output/*
 runs/*
+logs/*
 
 # env
 .env

@@ -1,0 +1,14 @@
+# API server
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.32,<1.0
+pydantic>=2.10,<3.0
+
+# LLM/VLM inference
+torch>=2.5,<3.0
+transformers>=4.51,<5.0
+accelerate>=1.2,<2.0
+pillow>=11.0,<13.0
+safetensors>=0.4,<1.0
+
+# Local model download
+huggingface-hub>=0.27,<2.0
