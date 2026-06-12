@@ -567,7 +567,7 @@ def main():
         stt_json_path = None
         stt_text_path = None
     elif args.stt_same_process:
-        print("[4/4] STT 단계를 현재 프로세스에서 실행합니다. (병렬 이점 없음)")
+        print("[2/4] STT 단계를 현재 프로세스에서 실행합니다. (병렬 이점 없음)")
         _execute_stt(audio_path, stt_json_path, stt_text_path, stt_options)
     else:
         print("[2/4] STT를 시작합니다.")
@@ -578,7 +578,9 @@ def main():
             isolated=not args.stt_same_process,
         )
 
-    #VLM
+    #LLM 요약 요청
+    print("[3/4] LLM 요약을 시작합니다.")
+    
 
     # print("[3/4] 영상 전처리를 시작합니다.")
     # metadata_path = run_preprocess_step(
