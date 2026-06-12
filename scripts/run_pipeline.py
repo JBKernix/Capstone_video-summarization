@@ -1,10 +1,6 @@
 import argparse
 import sys
-import traceback
-from multiprocessing import get_context
 from pathlib import Path
-from queue import Empty
-from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(PROJECT_ROOT))
@@ -46,84 +42,6 @@ from scripts.run_llm_summary import (  # noqa: E402
     DEFAULT_LLM_SUMMARY_RELATIVE_PATH,
     run_llm_summary_step,
 )
-
-
-def _put_worker_error(result_queue, exc: BaseException) -> None:
-    """자식 프로세스에서 발생한 예외 정보를 결과 큐에 기록합니다.
-
-    Args:
-        result_queue: 부모 프로세스로 결과를 전달할 multiprocessing 큐입니다.
-        exc: 자식 프로세스에서 발생한 예외입니다.
-    """
-    result_queue.put(
-        {
-            "ok": False,
-            "error": repr(exc),
-            "traceback": traceback.format_exc(),
-        }
-    )
-
-
-def _run_isolated_worker(worker_name: str, target: Any, args: tuple[Any, ...]) -> dict[str, Any]:
-    """작업 함수를 spawn 자식 프로세스에서 실행하고 결과를 반환합니다.
-
-    Args:
-        worker_name: 오류 메시지에 사용할 작업 이름입니다.
-        target: 자식 프로세스에서 실행할 함수입니다.
-        args: ``result_queue``를 제외하고 target에 전달할 인자입니다.
-
-    Returns:
-        자식 프로세스가 큐에 넣은 결과 딕셔너리입니다.
-
-    Raises:
-        RuntimeError: 자식 프로세스가 실패했거나 결과를 반환하지 못했을 때 발생합니다.
-    """
-    ctx = get_context("spawn")
-    result_queue = ctx.Queue()
-    process = ctx.Process(target=target, args=(*args, result_queue))
-    process.start()
-    process.join()
-
-    try:
-        result = result_queue.get(timeout=1)
-    except Empty:
-        result = None
-
-    if result is None:
-        raise RuntimeError(
-            f"{worker_name} failed before returning a result from the isolated process. "
-            f"Child exit code: {process.exitcode}"
-        )
-
-    if not result.get("ok"):
-        raise RuntimeError(
-            f"{worker_name} failed in the isolated process.\n"
-            f"{result.get('traceback') or result.get('error')}"
-        )
-
-    return result
-
-
-def _vision_worker(metadata_path: str, output_path: str, ocr_lang: str, result_queue) -> None:
-    """비전 분석을 자식 프로세스에서 실행합니다.
-
-    Args:
-        metadata_path: 프레임 메타데이터 JSON 파일 경로입니다.
-        output_path: 시각 정보 결과 JSON을 저장할 경로입니다.
-        ocr_lang: OCR 엔진에 전달할 언어 설정입니다.
-        result_queue: 부모 프로세스로 결과를 전달할 multiprocessing 큐입니다.
-    """
-    try:
-        from modules.vision import analyze_frames_metadata
-
-        analyze_frames_metadata(
-            metadata_path=metadata_path,
-            output_path=output_path,
-            lang=ocr_lang,
-        )
-        result_queue.put({"ok": True})
-    except BaseException as exc:
-        _put_worker_error(result_queue, exc)
 
 
 def _execute_stt(
@@ -176,23 +94,6 @@ def _execute_stt(
     return int(stt_result.get("segment_count", 0))
 
 
-def _stt_worker(audio_path: str, output_json: str, output_text: str, stt_options: dict, result_queue) -> None:
-    """Whisper/PyTorch STT를 자식 프로세스에서 실행합니다.
-
-    Args:
-        audio_path: STT를 수행할 오디오 파일 경로입니다.
-        output_json: STT JSON 결과를 저장할 경로입니다.
-        output_text: STT 텍스트 결과를 저장할 경로입니다.
-        stt_options: STT 모델, 언어, chunk 설정을 담은 딕셔너리입니다.
-        result_queue: 부모 프로세스로 결과를 전달할 multiprocessing 큐입니다.
-    """
-    try:
-        segment_count = _execute_stt(audio_path, output_json, output_text, stt_options)
-        result_queue.put({"ok": True, "segment_count": segment_count})
-    except BaseException as exc:
-        _put_worker_error(result_queue, exc)
-
-
 def parse_args():
     """전체 영상 요약 파이프라인 실행에 필요한 명령줄 인자를 해석합니다."""
     parser = argparse.ArgumentParser(
@@ -236,17 +137,7 @@ def parse_args():
         action="store_true",
         help="시각 정보 분석 단계를 건너뜁니다.",
     )
-    parser.add_argument(
-        "--vision-same-process",
-        action="store_true",
-        help="비전 단계를 별도 프로세스로 분리하지 않고 현재 프로세스에서 실행합니다.",
-    )
     parser.add_argument("--skip-stt", action="store_true", help="STT 단계를 건너뜁니다.")
-    parser.add_argument(
-        "--stt-same-process",
-        action="store_true",
-        help="Whisper STT 단계를 별도 프로세스로 분리하지 않고 현재 프로세스에서 실행합니다.",
-    )
     parser.add_argument(
         "--stt-config",
         default=str(project_path(PROJECT_ROOT, DEFAULT_STT_CONFIG_RELATIVE_PATH)),
@@ -361,22 +252,6 @@ def build_stt_options(args: argparse.Namespace) -> dict:
         "timestamps": args.stt_timestamps,
     }
 
-
-def validate_process_isolation(args: argparse.Namespace) -> None:
-    """Whisper와 OCR 엔진이 같은 프로세스에 함께 로드되는 설정을 차단합니다.
-
-    Args:
-        args: ``parse_args``가 반환한 명령줄 인자입니다.
-
-    Raises:
-        ValueError: 비전 단계와 STT 단계를 모두 same-process로 실행하려 할 때 발생합니다.
-    """
-    if not args.skip_vision and not args.skip_stt and args.vision_same_process and args.stt_same_process:
-        raise ValueError(
-            "Whisper STT와 OCR 엔진을 같은 프로세스에서 실행하면 cuDNN DLL 충돌이 발생할 수 있습니다. "
-            "--vision-same-process와 --stt-same-process를 동시에 사용하지 마세요."
-        )
-
 def resolve_video_path(video_path: Path) -> Path:
     """*.mp4 같은 glob 패턴을 실제 영상 파일 경로로 변환합니다."""
     if "*" not in video_path.name:
@@ -437,100 +312,35 @@ def run_audio_step(video_path: Path, run_dir: Path) -> Path:
     return extract_audio(video_path, audio_path)
 
 
-def _run_vision_step_in_child_process(metadata_path: Path, output_path: Path, ocr_lang: str) -> None:
-    """시각 정보 분석 단계를 별도 프로세스에서 실행합니다.
-
-    Args:
-        metadata_path: 프레임 메타데이터 JSON 파일 경로입니다.
-        output_path: 시각 정보 결과 JSON을 저장할 경로입니다.
-        ocr_lang: OCR 엔진에 전달할 언어 설정입니다.
-    """
-    _run_isolated_worker(
-        worker_name="Vision step",
-        target=_vision_worker,
-        args=(str(metadata_path), str(output_path), ocr_lang),
-    )
-
-
-def run_vision_step(metadata_path: Path, run_dir: Path, ocr_lang: str, isolated: bool = True) -> Path:
+def run_vision_step(metadata_path: Path, run_dir: Path, ocr_lang: str) -> Path:
     """프레임 메타데이터를 분석해 시각 정보 결과를 생성합니다.
 
     Args:
         metadata_path: 프레임 메타데이터 JSON 파일 경로입니다.
         run_dir: 파이프라인 실행 결과를 저장할 디렉터리입니다.
         ocr_lang: OCR 엔진에 전달할 언어 설정입니다.
-        isolated: 별도 프로세스에서 실행할지 여부입니다.
 
     Returns:
         생성된 시각 정보 결과 JSON 파일 경로입니다.
     """
+    from modules.vision import analyze_frames_metadata
+
     output_path = run_path(run_dir, DEFAULT_VISION_RESULT_RELATIVE_PATH)
 
-    if isolated:
-        _run_vision_step_in_child_process(metadata_path, output_path, ocr_lang)
-    else:
-        from modules.vision import analyze_frames_metadata
-
-        analyze_frames_metadata(
-            metadata_path=str(metadata_path),
-            output_path=str(output_path),
-            lang=ocr_lang,
-        )
+    analyze_frames_metadata(
+        metadata_path=str(metadata_path),
+        output_path=str(output_path),
+        lang=ocr_lang,
+    )
 
     print(f"시각 정보 추출 완료: {output_path}")
     return output_path
-
-
-def _run_stt_step_in_child_process(
-    audio_path: Path,
-    output_json: Path,
-    output_text: Path,
-    stt_options: dict,
-) -> int:
-    """STT 단계를 별도 프로세스에서 실행합니다.
-
-    Args:
-        audio_path: STT를 수행할 오디오 파일 경로입니다.
-        output_json: STT JSON 결과를 저장할 경로입니다.
-        output_text: STT 텍스트 결과를 저장할 경로입니다.
-        stt_options: STT 모델, 언어, chunk 설정을 담은 딕셔너리입니다.
-
-    Returns:
-        저장된 STT 결과의 segment 개수입니다.
-    """
-    result = _run_isolated_worker(
-        worker_name="STT step",
-        target=_stt_worker,
-        args=(str(audio_path), str(output_json), str(output_text), stt_options),
-    )
-    return int(result.get("segment_count", 0))
-
-
-def _run_stt_step_in_current_process(
-    audio_path: Path,
-    output_json: Path,
-    output_text: Path,
-    stt_options: dict,
-) -> int:
-    """STT 단계를 현재 프로세스에서 실행합니다.
-
-    Args:
-        audio_path: STT를 수행할 오디오 파일 경로입니다.
-        output_json: STT JSON 결과를 저장할 경로입니다.
-        output_text: STT 텍스트 결과를 저장할 경로입니다.
-        stt_options: STT 모델, 언어, chunk 설정을 담은 딕셔너리입니다.
-
-    Returns:
-        저장된 STT 결과의 segment 개수입니다.
-    """
-    return _execute_stt(audio_path, output_json, output_text, stt_options)
 
 
 def run_stt_step(
     audio_path: Path,
     run_dir: Path,
     stt_options: dict,
-    isolated: bool = True,
 ) -> tuple[Path, Path]:
     """오디오 파일에서 STT 결과 JSON/TXT를 생성합니다.
 
@@ -538,7 +348,6 @@ def run_stt_step(
         audio_path: STT를 수행할 오디오 파일 경로입니다.
         run_dir: 파이프라인 실행 결과를 저장할 디렉터리입니다.
         stt_options: STT 모델, 언어, chunk 설정을 담은 딕셔너리입니다.
-        isolated: 별도 프로세스에서 실행할지 여부입니다.
 
     Returns:
         STT JSON 결과 경로와 텍스트 결과 경로입니다.
@@ -546,10 +355,7 @@ def run_stt_step(
     output_json = run_path(run_dir, DEFAULT_STT_JSON_RELATIVE_PATH)
     output_text = run_path(run_dir, DEFAULT_STT_TEXT_RELATIVE_PATH)
 
-    if isolated:
-        segment_count = _run_stt_step_in_child_process(audio_path, output_json, output_text, stt_options)
-    else:
-        segment_count = _run_stt_step_in_current_process(audio_path, output_json, output_text, stt_options)
+    segment_count = _execute_stt(audio_path, output_json, output_text, stt_options)
 
     print(f"STT 완료: {output_json}")
     print(f"STT 텍스트 저장: {output_text}")
@@ -560,7 +366,6 @@ def run_stt_step(
 def main():
     """구현되어 있는 파이프라인 단계를 순서대로 실행합니다."""
     args = parse_args()
-    validate_process_isolation(args)
     video_path = resolve_path_pattern(args.video)
     run_dir = Path(args.run_dir)
     stt_options = build_stt_options(args)
@@ -573,18 +378,12 @@ def main():
         print("[2/5] STT 단계를 건너뜁니다.")
         stt_json_path = None
         stt_text_path = None
-    elif args.stt_same_process:
-        print("[2/5] STT 단계를 현재 프로세스에서 실행합니다. (병렬 이점 없음)")
-        stt_json_path = run_path(run_dir, DEFAULT_STT_JSON_RELATIVE_PATH)
-        stt_text_path = run_path(run_dir, DEFAULT_STT_TEXT_RELATIVE_PATH)
-        _execute_stt(audio_path, stt_json_path, stt_text_path, stt_options)
     else:
         print("[2/5] STT를 시작합니다.")
         stt_json_path, stt_text_path = run_stt_step(
             audio_path=audio_path,
             run_dir=run_dir,
             stt_options=stt_options,
-            isolated=not args.stt_same_process,
         )
 
     print("[3/5] STT 요약을 시작합니다.")
@@ -615,20 +414,19 @@ def main():
             important_segments_path=llm_summary_json_path,
         )
 
-    # if metadata_path is None:
-    #     print("[5/5] 시각 정보 분석을 건너뜁니다.")
-    #     vision_path = None
-    # elif args.skip_vision:
-    #     print("[5/5] 시각 정보 분석을 건너뜁니다.")
-    #     vision_path = None
-    # else:
-    #     print("[5/5] 시각 정보 분석을 시작합니다.")
-    #     vision_path = run_vision_step(
-    #         metadata_path=metadata_path,
-    #         run_dir=run_dir,
-    #         ocr_lang=args.ocr_lang,
-    #         isolated=not args.vision_same_process,
-    #     )
+    if metadata_path is None:
+        print("[5/5] 시각 정보 분석을 건너뜁니다.")
+        vision_path = None
+    elif args.skip_vision:
+        print("[5/5] 시각 정보 분석을 건너뜁니다.")
+        vision_path = None
+    else:
+        print("[5/5] 시각 정보 분석을 시작합니다.")
+        vision_path = run_vision_step(
+            metadata_path=metadata_path,
+            run_dir=run_dir,
+            ocr_lang=args.ocr_lang,
+        )
 
     print("파이프라인 실행이 완료되었습니다.")
     print(f"오디오 파일: {audio_path}")
@@ -641,8 +439,8 @@ def main():
         print(f"STT 요약 JSON 결과: {llm_summary_json_path}")
     if metadata_path is not None:
         print(f"프레임 메타데이터: {metadata_path}")
-    # if vision_path is not None:
-    #     print(f"시각 정보 결과: {vision_path}")
+    if vision_path is not None:
+        print(f"시각 정보 결과: {vision_path}")
     
 if __name__ == "__main__":
     main()

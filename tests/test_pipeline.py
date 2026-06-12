@@ -8,23 +8,26 @@ from scripts.run_pipeline import (
     build_stt_options,
     run_stt_step,
     run_vision_step,
-    validate_process_isolation,
 )
 
 
 class PipelineVisionProcessTests(unittest.TestCase):
-    def test_run_vision_step_uses_child_process_by_default(self):
+    def test_run_vision_step_runs_in_current_process(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             run_dir = Path(temp_dir)
             metadata_path = run_dir / "metadata.json"
             metadata_path.write_text("[]", encoding="utf-8")
             output_path = run_dir / "vision" / "vision_result.json"
 
-            with patch("scripts.run_pipeline._run_vision_step_in_child_process") as run_child:
+            with patch("modules.vision.analyze_frames_metadata") as analyze_frames:
                 result = run_vision_step(metadata_path, run_dir, "korean")
 
         self.assertEqual(result, output_path)
-        run_child.assert_called_once_with(metadata_path, output_path, "korean")
+        analyze_frames.assert_called_once_with(
+            metadata_path=str(metadata_path),
+            output_path=str(output_path),
+            lang="korean",
+        )
 
 
 class PipelineSttTests(unittest.TestCase):
@@ -63,7 +66,7 @@ class PipelineSttTests(unittest.TestCase):
         self.assertTrue(options["chunked"])
         self.assertEqual(options["chunk_seconds"], 12)
 
-    def test_run_stt_step_uses_child_process_by_default(self):
+    def test_run_stt_step_runs_in_current_process(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             run_dir = Path(temp_dir)
             audio_path = run_dir / "audio.wav"
@@ -80,24 +83,11 @@ class PipelineSttTests(unittest.TestCase):
                 "timestamps": False,
             }
 
-            with patch("scripts.run_pipeline._run_stt_step_in_child_process", return_value=3) as run_child:
+            with patch("scripts.run_pipeline._execute_stt", return_value=3) as execute_stt:
                 result = run_stt_step(audio_path, run_dir, stt_options)
 
         self.assertEqual(result, (output_json, output_text))
-        run_child.assert_called_once_with(audio_path, output_json, output_text, stt_options)
-
-
-class PipelineIsolationTests(unittest.TestCase):
-    def test_rejects_same_process_vision_and_stt_combination(self):
-        args = SimpleNamespace(
-            skip_vision=False,
-            skip_stt=False,
-            vision_same_process=True,
-            stt_same_process=True,
-        )
-
-        with self.assertRaises(ValueError):
-            validate_process_isolation(args)
+        execute_stt.assert_called_once_with(audio_path, output_json, output_text, stt_options)
 
 
 if __name__ == "__main__":
