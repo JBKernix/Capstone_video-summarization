@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Literal, Optional
+from typing import Dict, List, Literal, Optional, Sequence, Tuple
 
 from modules.common import DEFAULT_FRAME_METADATA_RELATIVE_PATH, run_path
 from modules.preprocess.ffmpeg_utils import (
@@ -16,6 +16,7 @@ from modules.preprocess.ffmpeg_utils import (
 from modules.preprocess.video_info import get_video_info
 
 SamplingMethod = Literal["interval", "scene_change", "interval_scene_change"]
+TimeRange = Tuple[float, float]
 SAMPLING_METHOD_CHOICES: tuple[str, ...] = ("interval", "scene_change", "interval_scene_change")
 DEFAULT_SAMPLING_METHOD: SamplingMethod = "scene_change"
 DEFAULT_INTERVAL_SECONDS = 60.0
@@ -71,6 +72,63 @@ def _write_metadata(metadata: List[FrameMetadata], metadata_path: str | Path) ->
     print(f"프레임 메타데이터 저장 완료: {metadata_path}")
 
 
+def _normalize_time_ranges(time_ranges: Optional[Sequence[TimeRange]]) -> Optional[List[TimeRange]]:
+    if not time_ranges:
+        return None
+
+    normalized: List[TimeRange] = []
+    for start, end in time_ranges:
+        start = float(start)
+        end = float(end)
+        if start < 0:
+            start = 0.0
+        if end <= start:
+            continue
+        normalized.append((start, end))
+
+    if not normalized:
+        return None
+
+    normalized.sort(key=lambda item: item[0])
+    merged: List[TimeRange] = []
+    for start, end in normalized:
+        if not merged or start > merged[-1][1]:
+            merged.append((start, end))
+            continue
+        merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+
+    return merged
+
+
+def _time_ranges_to_select_filter(time_ranges: Optional[Sequence[TimeRange]]) -> Optional[str]:
+    normalized = _normalize_time_ranges(time_ranges)
+    if not normalized:
+        return None
+
+    return "+".join(f"between(t\\,{start:.3f}\\,{end:.3f})" for start, end in normalized)
+
+
+def load_important_time_ranges(summary_result_path: str | Path) -> List[TimeRange]:
+    """Load important segment start/end ranges from an LLM summary result JSON file."""
+    summary_result_path = Path(summary_result_path)
+    with summary_result_path.open("r", encoding="utf-8-sig") as file:
+        summary_result = json.load(file)
+
+    important_segments = summary_result.get("important_segments", [])
+    if isinstance(important_segments, str):
+        important_segments = json.loads(important_segments)
+
+    time_ranges: List[TimeRange] = []
+    for segment in important_segments:
+        if not isinstance(segment, dict):
+            continue
+        if "start" not in segment or "end" not in segment:
+            continue
+        time_ranges.append((float(segment["start"]), float(segment["end"])))
+
+    return _normalize_time_ranges(time_ranges) or []
+
+
 def _reindex_metadata(metadata: List[FrameMetadata]) -> List[FrameMetadata]:
     """프레임 메타데이터의 frame_id를 시간순으로 다시 부여합니다."""
     return [
@@ -114,6 +172,67 @@ def _merge_frame_metadata(
     return _reindex_metadata(merged)
 
 
+def _build_interval_timestamps(time_ranges: Sequence[TimeRange], interval_seconds: float) -> List[float]:
+    timestamps: List[float] = []
+    for start, end in time_ranges:
+        timestamp = start
+        while timestamp <= end:
+            timestamps.append(round(timestamp, 3))
+            timestamp += interval_seconds
+
+    return sorted(set(timestamps))
+
+
+def _sample_interval_frames_in_ranges(
+    video_path: Path,
+    frames_dir: Path,
+    metadata_path: str | Path,
+    interval_seconds: float,
+    project_root: Path,
+    image_prefix: str,
+    time_ranges: Sequence[TimeRange],
+) -> List[FrameMetadata]:
+    normalized_ranges = _normalize_time_ranges(time_ranges)
+    if not normalized_ranges:
+        metadata: List[FrameMetadata] = []
+        _write_metadata(metadata, metadata_path)
+        return metadata
+
+    frames_dir.mkdir(parents=True, exist_ok=True)
+    remove_files(frames_dir.glob(f"{image_prefix}_*.jpg"))
+
+    timestamps = _build_interval_timestamps(normalized_ranges, interval_seconds)
+    metadata = []
+    for index, timestamp in enumerate(timestamps):
+        output_path = frames_dir / f"{image_prefix}_{index + 1:06d}.jpg"
+        run_ffmpeg(
+            [
+                "-y",
+                "-ss",
+                f"{timestamp:.3f}",
+                "-i",
+                str(video_path),
+                "-frames:v",
+                "1",
+                "-q:v",
+                "2",
+                str(output_path),
+            ]
+        )
+        metadata.append(
+            FrameMetadata(
+                frame_id=index,
+                timestamp=timestamp,
+                image_path=_project_relative(output_path, project_root),
+                sampling_method="interval",
+            )
+        )
+
+    _write_metadata(metadata, metadata_path)
+    print(f"important segment interval frames extracted: {len(metadata)}")
+    return metadata
+
+
 def sample_interval_frames(
     video_path: str | Path,
     frames_dir: str | Path,
@@ -121,6 +240,7 @@ def sample_interval_frames(
     interval_seconds: float = DEFAULT_INTERVAL_SECONDS,
     project_root: Optional[str | Path] = None,
     image_prefix: str = "frame",
+    time_ranges: Optional[Sequence[TimeRange]] = None,
 ) -> List[FrameMetadata]:
     """일정 시간 간격으로 프레임 이미지를 추출하고 메타데이터를 저장합니다.
 
@@ -151,6 +271,18 @@ def sample_interval_frames(
 
     frames_dir.mkdir(parents=True, exist_ok=True)
     remove_files(frames_dir.glob(f"{image_prefix}_*.jpg"))
+
+    normalized_ranges = _normalize_time_ranges(time_ranges)
+    if normalized_ranges:
+        return _sample_interval_frames_in_ranges(
+            video_path=video_path,
+            frames_dir=frames_dir,
+            metadata_path=metadata_path,
+            interval_seconds=interval_seconds,
+            project_root=project_root,
+            image_prefix=image_prefix,
+            time_ranges=normalized_ranges,
+        )
 
     output_pattern = frames_dir / f"{image_prefix}_%06d.jpg"
     fps_value = 1.0 / interval_seconds
@@ -192,6 +324,7 @@ def sample_interval_scene_change_frames(
     scene_threshold: float = DEFAULT_SCENE_THRESHOLD,
     project_root: Optional[str | Path] = None,
     min_gap_seconds: float = DEFAULT_COMBINED_MIN_GAP_SECONDS,
+    time_ranges: Optional[Sequence[TimeRange]] = None,
 ) -> List[FrameMetadata]:
     """interval 프레임을 기본으로 추출하고 scene_change 프레임을 추가 보강합니다.
 
@@ -220,6 +353,7 @@ def sample_interval_scene_change_frames(
         interval_seconds=interval_seconds,
         project_root=project_root,
         image_prefix="interval",
+        time_ranges=time_ranges,
     )
     scene_metadata = sample_scene_change_frames(
         video_path=video_path,
@@ -228,6 +362,7 @@ def sample_interval_scene_change_frames(
         threshold=scene_threshold,
         project_root=project_root,
         image_prefix="scene",
+        time_ranges=time_ranges,
     )
     metadata = _merge_frame_metadata(interval_metadata, scene_metadata, min_gap_seconds)
 
@@ -247,6 +382,7 @@ def sample_scene_change_frames(
     project_root: Optional[str | Path] = None,
     image_prefix: str = "scene",
     min_scene_gap_seconds: float = 1.0,
+    time_ranges: Optional[Sequence[TimeRange]] = None,
 ) -> List[FrameMetadata]:
     """장면 전환으로 판단되는 프레임 이미지를 추출하고 메타데이터를 저장합니다.
 
@@ -290,6 +426,9 @@ def sample_scene_change_frames(
             f"if(isnan(prev_selected_t)\\,1\\,gte(t-prev_selected_t\\,{min_scene_gap_seconds}))"
         )
     )
+    time_filter = _time_ranges_to_select_filter(time_ranges)
+    if time_filter:
+        select_filter = f"{select_filter}*({time_filter})"
 
     result = run_ffmpeg(
         [
@@ -331,6 +470,8 @@ def sample_frames(
     interval_seconds: float = DEFAULT_INTERVAL_SECONDS,
     scene_threshold: float = DEFAULT_SCENE_THRESHOLD,
     project_root: Optional[str | Path] = None,
+    time_ranges: Optional[Sequence[TimeRange]] = None,
+    important_segments_path: Optional[str | Path] = None,
 ) -> List[FrameMetadata]:
     """run 디렉터리 구조에 맞춰 프레임 이미지와 메타데이터를 생성합니다.
 
@@ -352,6 +493,8 @@ def sample_frames(
     project_root = Path(project_root) if project_root else run_dir.parent.parent
     frames_dir = run_dir / "frames"
     metadata_path = run_path(run_dir, DEFAULT_FRAME_METADATA_RELATIVE_PATH)
+    if important_segments_path is not None:
+        time_ranges = load_important_time_ranges(important_segments_path)
 
     if method == "interval":
         return sample_interval_frames(
@@ -361,6 +504,7 @@ def sample_frames(
             interval_seconds=interval_seconds,
             project_root=project_root,
             image_prefix="frame",
+            time_ranges=time_ranges,
         )
 
     if method == "scene_change":
@@ -371,6 +515,7 @@ def sample_frames(
             threshold=scene_threshold,
             project_root=project_root,
             image_prefix="frame",
+            time_ranges=time_ranges,
         )
 
     if method == "interval_scene_change":
@@ -381,6 +526,7 @@ def sample_frames(
             interval_seconds=interval_seconds,
             scene_threshold=scene_threshold,
             project_root=project_root,
+            time_ranges=time_ranges,
         )
 
     raise ValueError(f"지원하지 않는 프레임 추출 방식입니다: {method}")

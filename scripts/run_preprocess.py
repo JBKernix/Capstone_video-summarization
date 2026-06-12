@@ -57,6 +57,11 @@ def parse_args():
         help="장면 전환 추출에서 사용할 임계값입니다.",
     )
 
+    parser.add_argument(
+        "--important-segments-json",
+        help="LLM summary result JSON path. If set, frames are sampled only between important segment start/end times.",
+    )
+
     return parser.parse_args()
 
 
@@ -86,6 +91,7 @@ def main():
         interval_seconds=args.interval_seconds,
         scene_threshold=args.scene_threshold,
         project_root=PROJECT_ROOT,
+        important_segments_path=args.important_segments_json,
     )
 
     metadata_path = run_path(run_dir, DEFAULT_FRAME_METADATA_RELATIVE_PATH)
