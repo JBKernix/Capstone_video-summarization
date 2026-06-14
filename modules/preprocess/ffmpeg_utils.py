@@ -126,14 +126,7 @@ def run_ffprobe_json(args: Sequence[str]) -> dict:
 
 
 def parse_showinfo_timestamps(stderr: str) -> List[float]:
-    """ffmpeg showinfo 로그에서 선택된 프레임의 시간 정보를 추출합니다.
-
-    Args:
-        stderr: ffmpeg가 표준 오류로 출력한 로그 문자열입니다.
-
-    Returns:
-        선택된 프레임의 timestamp 목록입니다.
-    """
+    """FFmpeg showinfo 로그에서 선택된 프레임의 timestamp를 추출합니다."""
     return [float(match.group("time")) for match in SHOWINFO_TIME_PATTERN.finditer(stderr)]
 
 

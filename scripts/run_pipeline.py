@@ -13,7 +13,7 @@ from modules.common import (  # noqa: E402
     DEFAULT_STT_CONFIG_RELATIVE_PATH,
     DEFAULT_STT_JSON_RELATIVE_PATH,
     DEFAULT_STT_TEXT_RELATIVE_PATH,
-    DEFAULT_VISION_RESULT_RELATIVE_PATH,
+    DEFAULT_OCR_RESULT_RELATIVE_PATH,
     project_path,
     resolve_path_pattern,
     run_path,
@@ -21,6 +21,7 @@ from modules.common import (  # noqa: E402
 from modules.preprocess import (
     DEFAULT_INTERVAL_SECONDS,
     DEFAULT_SAMPLING_METHOD,
+    DEFAULT_SCENE_MIN_GAP_SECONDS,
     DEFAULT_SCENE_THRESHOLD,
     SAMPLING_METHOD_CHOICES,
     ensure_mp4_video,
@@ -36,7 +37,7 @@ from modules.stt import (  # noqa: E402
     DEFAULT_STT_MODEL_SIZE,
     DEFAULT_STT_OVERLAP_SECONDS,
 )
-from modules.vision import DEFAULT_OCR_LANGUAGE  # noqa: E402
+from modules.ocr import DEFAULT_OCR_LANGUAGE  # noqa: E402
 from scripts.run_llm_summary import (  # noqa: E402
     DEFAULT_LLM_SUMMARY_JSON_RELATIVE_PATH,
     DEFAULT_LLM_SUMMARY_RELATIVE_PATH,
@@ -97,7 +98,7 @@ def _execute_stt(
 def parse_args():
     """전체 영상 요약 파이프라인 실행에 필요한 명령줄 인자를 해석합니다."""
     parser = argparse.ArgumentParser(
-        description="영상 전처리, 오디오 추출, 시각 정보 분석, STT를 순서대로 실행합니다."
+        description="영상 전처리, 오디오 추출, OCR 분석, STT를 순서대로 실행합니다."
     )
     parser.add_argument(
         "--video",
@@ -113,7 +114,7 @@ def parse_args():
         "--method",
         choices=SAMPLING_METHOD_CHOICES,
         default=DEFAULT_SAMPLING_METHOD,
-        help="프레임 추출 방식입니다. interval, scene_change, interval_scene_change를 사용할 수 있습니다.",
+        help="중요 구간 프레임 샘플링 방식입니다.",
     )
     parser.add_argument(
         "--interval-seconds",
@@ -125,7 +126,13 @@ def parse_args():
         "--scene-threshold",
         type=float,
         default=DEFAULT_SCENE_THRESHOLD,
-        help="scene_change 방식에서 사용할 장면 전환 임계값입니다.",
+        help="화면 전환으로 판단할 FFmpeg scene 임계값입니다.",
+    )
+    parser.add_argument(
+        "--scene-min-gap-seconds",
+        type=float,
+        default=DEFAULT_SCENE_MIN_GAP_SECONDS,
+        help="연속 화면 전환 프레임 사이의 최소 간격입니다.",
     )
     parser.add_argument(
         "--ocr-lang",
@@ -133,9 +140,9 @@ def parse_args():
         help="OCR 엔진에 전달할 언어 설정입니다.",
     )
     parser.add_argument(
-        "--skip-vision",
+        "--skip-ocr",
         action="store_true",
-        help="시각 정보 분석 단계를 건너뜁니다.",
+        help="OCR 분석 단계를 건너뜁니다.",
     )
     parser.add_argument("--skip-stt", action="store_true", help="STT 단계를 건너뜁니다.")
     parser.add_argument(
@@ -276,6 +283,7 @@ def run_preprocess_step(
     method: str,
     interval_seconds: float,
     scene_threshold: float,
+    scene_min_gap_seconds: float,
     important_segments_path: Path | None = None,
 ) -> Path:
     """영상 정보를 확인하고 프레임 이미지와 메타데이터를 생성합니다."""
@@ -296,6 +304,7 @@ def run_preprocess_step(
         method=method,
         interval_seconds=interval_seconds,
         scene_threshold=scene_threshold,
+        scene_min_gap_seconds=scene_min_gap_seconds,
         project_root=PROJECT_ROOT,
         important_segments_path=important_segments_path,
     )
@@ -312,8 +321,8 @@ def run_audio_step(video_path: Path, run_dir: Path) -> Path:
     return extract_audio(video_path, audio_path)
 
 
-def run_vision_step(metadata_path: Path, run_dir: Path, ocr_lang: str) -> Path:
-    """프레임 메타데이터를 분석해 시각 정보 결과를 생성합니다.
+def run_ocr_step(metadata_path: Path, run_dir: Path, ocr_lang: str) -> Path:
+    """프레임 메타데이터를 분석해 OCR 결과를 생성합니다.
 
     Args:
         metadata_path: 프레임 메타데이터 JSON 파일 경로입니다.
@@ -321,11 +330,11 @@ def run_vision_step(metadata_path: Path, run_dir: Path, ocr_lang: str) -> Path:
         ocr_lang: OCR 엔진에 전달할 언어 설정입니다.
 
     Returns:
-        생성된 시각 정보 결과 JSON 파일 경로입니다.
+        생성된 OCR 결과 JSON 파일 경로입니다.
     """
-    from modules.vision import analyze_frames_metadata
+    from modules.ocr import analyze_frames_metadata
 
-    output_path = run_path(run_dir, DEFAULT_VISION_RESULT_RELATIVE_PATH)
+    output_path = run_path(run_dir, DEFAULT_OCR_RESULT_RELATIVE_PATH)
 
     analyze_frames_metadata(
         metadata_path=str(metadata_path),
@@ -333,7 +342,7 @@ def run_vision_step(metadata_path: Path, run_dir: Path, ocr_lang: str) -> Path:
         lang=ocr_lang,
     )
 
-    print(f"시각 정보 추출 완료: {output_path}")
+    print(f"OCR 결과 저장 완료: {output_path}")
     return output_path
 
 
@@ -411,18 +420,19 @@ def main():
             method=args.method,
             interval_seconds=args.interval_seconds,
             scene_threshold=args.scene_threshold,
+            scene_min_gap_seconds=args.scene_min_gap_seconds,
             important_segments_path=llm_summary_json_path,
         )
 
     if metadata_path is None:
-        print("[5/5] 시각 정보 분석을 건너뜁니다.")
-        vision_path = None
-    elif args.skip_vision:
-        print("[5/5] 시각 정보 분석을 건너뜁니다.")
-        vision_path = None
+        print("[5/5] OCR 분석을 건너뜁니다.")
+        ocr_path = None
+    elif args.skip_ocr:
+        print("[5/5] OCR 분석을 건너뜁니다.")
+        ocr_path = None
     else:
-        print("[5/5] 시각 정보 분석을 시작합니다.")
-        vision_path = run_vision_step(
+        print("[5/5] OCR 분석을 시작합니다.")
+        ocr_path = run_ocr_step(
             metadata_path=metadata_path,
             run_dir=run_dir,
             ocr_lang=args.ocr_lang,
@@ -439,8 +449,8 @@ def main():
         print(f"STT 요약 JSON 결과: {llm_summary_json_path}")
     if metadata_path is not None:
         print(f"프레임 메타데이터: {metadata_path}")
-    if vision_path is not None:
-        print(f"시각 정보 결과: {vision_path}")
+    if ocr_path is not None:
+        print(f"OCR 결과: {ocr_path}")
     
 if __name__ == "__main__":
     main()

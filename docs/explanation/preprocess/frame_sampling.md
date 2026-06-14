@@ -2,29 +2,47 @@
 
 ## 개요
 
-`modules/preprocess/frame_sampler.py`는 입력 영상에서 대표 프레임 이미지를 추출하고, 각 프레임의 metadata를 JSON으로 저장한다.
+`modules/preprocess/frame_sampler.py`는 STT 요약 결과의 중요 구간 안에서 일정 간격으로 프레임을 추출하고, 각 프레임의 timestamp와 이미지 경로를 `frame_metadata.json`에 저장한다.
 
-vision 단계는 이 metadata를 읽어 각 프레임 이미지에 OCR을 수행한다.
+전체 파이프라인에서는 다음 순서로 실행된다.
+
+```text
+STT 결과
+  -> LLM 요약 및 important_segments 생성
+  -> 중요 구간 interval 또는 화면 전환 프레임 추출
+  -> 프레임 OCR 분석
+```
+
+샘플링 방식은 `interval`과 `scene_change` 중에서 선택한다. 두 방식 모두 전체 파이프라인에서는 STT 요약의 중요 구간 내부에만 적용된다.
 
 ## 관련 파일
 
 | 파일 | 역할 |
 | --- | --- |
-| `modules/preprocess/frame_sampler.py` | 프레임 추출과 metadata 생성 |
-| `modules/preprocess/video_info.py` | 영상 정보 조회 |
-| `modules/preprocess/ffmpeg_utils.py` | FFmpeg 실행, showinfo timestamp 파싱 |
+| `modules/preprocess/frame_sampler.py` | 중요 구간 로드, interval/화면 전환 프레임 추출, metadata 생성 |
+| `modules/preprocess/video_info.py` | 영상 길이, 해상도, FPS 조회 |
+| `modules/preprocess/ffmpeg_utils.py` | FFmpeg 실행과 기존 이미지 삭제 |
 | `scripts/run_preprocess.py` | 프레임 추출 단독 실행 |
-| `scripts/run_pipeline.py` | 전체 파이프라인에서 프레임 추출 호출 |
+| `scripts/run_pipeline.py` | STT 요약 이후 중요 구간 프레임 추출 호출 |
+
+## 기본 설정
+
+```python
+DEFAULT_SAMPLING_METHOD = "interval"
+DEFAULT_INTERVAL_SECONDS = 10.0
+DEFAULT_SCENE_THRESHOLD = 0.7
+DEFAULT_SCENE_MIN_GAP_SECONDS = 1.0
+```
+
+기본 방식은 interval이며 각 중요 구간의 시작 시점부터 기본 10초 간격으로 프레임을 추출한다. 화면 전환 방식은 FFmpeg scene score가 임계값을 넘는 프레임을 선택한다.
 
 ## 출력 구조
-
-기본 실행 결과:
 
 ```text
 runs/
   frames/
-    interval_000001.jpg
-    scene_000001.jpg
+    frame_000001.jpg
+    frame_000002.jpg
   metadata/
     frame_metadata.json
 ```
@@ -35,174 +53,125 @@ metadata 예시:
 [
   {
     "frame_id": 0,
-    "timestamp": 0.0,
-    "image_path": "runs/frames/interval_000001.jpg",
+    "timestamp": 120.0,
+    "image_path": "runs/frames/frame_000001.jpg",
     "sampling_method": "interval"
   }
 ]
 ```
 
-`image_path`는 프로젝트 루트 기준 상대경로로 저장된다.
-
-## 주요 데이터 구조
-
-### `FrameMetadata`
-
-프레임 하나의 metadata를 표현하는 dataclass다.
-
-| 필드 | 설명 |
-| --- | --- |
-| `frame_id` | 추출된 프레임 순번 |
-| `timestamp` | 영상 내 시간, 초 단위 |
-| `image_path` | 저장된 이미지 경로 |
-| `sampling_method` | `interval` 또는 `scene_change` |
-
-`to_dict()`는 JSON 저장 가능한 dict로 변환한다.
+`image_path`는 가능하면 `project_root` 기준 상대 경로로 저장한다. 파일이 프로젝트 루트 밖에 있으면 절대 경로를 사용한다.
 
 ## 실행 흐름
 
 ```text
 sample_frames()
-  -> run_dir, frames_dir, metadata_path 결정
+  -> important_segments_path가 있으면 중요 구간 로드
   -> method 확인
-      -> interval이면 sample_interval_frames()
-      -> scene_change이면 sample_scene_change_frames()
-      -> interval_scene_change이면 sample_interval_scene_change_frames()
-  -> frames/*.jpg 생성
-  -> metadata/frame_metadata.json 생성
+      -> interval: sample_interval_frames()
+      -> scene_change: sample_scene_change_frames()
+  -> 기존 frame_*.jpg 삭제
+  -> metadata/frame_metadata.json 저장
 ```
 
-## 추출 방식
+`important_segments_path`를 전달하지 않으면 선택한 방식으로 전체 영상을 추출한다. 전체 파이프라인에서는 LLM 요약 JSON 경로를 항상 전달한다.
 
-기본 추출 방식은 `interval_scene_change`다. 기본 interval은 `60.0`초, 기본 scene threshold는 `0.35`다.
+## 중요 구간 입력
 
-### 1. `interval`
+LLM STT 요약 결과는 `important_segments` 배열을 포함해야 한다.
 
-일정 시간 간격으로 프레임을 추출한다.
+```json
+{
+  "important_segments": [
+    {"start": 10.0, "end": 30.0},
+    {"start": 90.0, "end": 180.0}
+  ]
+}
+```
+
+`important_segments`가 JSON 문자열로 저장된 경우에도 다시 파싱한다. 각 항목에서 `start`와 `end`가 모두 있는 구간만 사용한다.
+
+시간 구간 정규화 규칙:
+
+1. 음수 시작 시점은 `0.0`으로 보정한다.
+2. 종료 시점이 시작 시점 이하인 구간은 제외한다.
+3. 시작 시점 기준으로 정렬한다.
+4. 겹치거나 경계가 맞닿은 구간은 하나로 합친다.
+
+중요 구간 목록이 비어 있거나 유효한 구간이 없으면 전체 영상을 대신 추출하지 않는다. 빈 `frame_metadata.json`을 생성하고 추출 프레임 수는 0이 된다.
+
+## timestamp 생성
+
+### interval
+
+각 구간의 시작점부터 종료점까지 interval을 더해 추출 시점을 만든다.
 
 ```python
-sample_interval_frames(
-    video_path,
-    frames_dir,
-    metadata_path,
-    interval_seconds=60.0,
-)
+timestamp = start
+while timestamp <= end:
+    timestamps.append(timestamp)
+    timestamp += interval_seconds
 ```
 
-FFmpeg 필터:
+예를 들어 `(90, 180)` 구간에 interval이 60초이면 `90`, `150`초 프레임을 추출한다. 종료 시점과 정확히 일치하는 timestamp도 포함하며, 겹친 구간에서 중복된 timestamp는 한 번만 사용한다.
+
+각 프레임은 FFmpeg의 `-ss`와 `-frames:v 1`을 이용해 개별 추출한다.
+
+### scene_change
+
+다음 조건을 조합한 FFmpeg `select` 필터를 사용한다.
 
 ```text
-fps=1/interval_seconds
+scene score > scene_threshold
+AND 이전 선택 프레임과 scene_min_gap_seconds 이상 차이
+AND important_segments 시간 범위 내부
 ```
 
-예를 들어 `interval_seconds=60.0`이면 60초마다 한 장씩 추출한다.
-
-timestamp는 추출 순번과 interval 값으로 계산한다.
-
-```python
-timestamp = index * interval_seconds
-```
-
-### 2. `scene_change`
-
-장면 전환 정도를 기준으로 프레임을 추출한다.
-
-```python
-sample_scene_change_frames(
-    video_path,
-    frames_dir,
-    metadata_path,
-    threshold=0.35,
-    min_scene_gap_seconds=1.0,
-)
-```
-
-FFmpeg `select` 필터를 사용한다.
-
-```text
-select=gt(scene\,threshold)
-```
-
-`min_scene_gap_seconds`는 너무 가까운 장면 전환 프레임이 연속으로 선택되는 것을 줄이기 위한 최소 간격이다.
-
-timestamp는 FFmpeg `showinfo` 로그에서 파싱한다.
-
-### 3. `interval_scene_change`
-
-일정 간격 프레임을 기본으로 추출하고, 장면 전환 프레임을 추가로 보강한다.
-
-```python
-sample_interval_scene_change_frames(
-    video_path,
-    frames_dir,
-    metadata_path,
-    interval_seconds=60.0,
-    scene_threshold=0.35,
-    min_gap_seconds=1.0,
-)
-```
-
-처리 순서:
-
-```text
-기존 frame_*.jpg, interval_*.jpg, scene_*.jpg 삭제
-  -> interval_*.jpg 추출
-  -> scene_*.jpg 추출
-  -> 가까운 중복 프레임 병합
-  -> frame_id를 timestamp 순서로 다시 부여
-  -> metadata/frame_metadata.json 최종 저장
-```
-
-`min_gap_seconds`보다 가까운 프레임은 중복으로 보고 하나만 남긴다. 같은 시간대에 `interval`과 `scene_change`가 함께 있으면 `scene_change` 프레임을 우선한다.
+선택된 timestamp는 `showinfo` 로그의 `pts_time`에서 읽는다. 이미지 수와 timestamp 수가 다르면 잘못된 metadata 생성을 막기 위해 `RuntimeError`를 발생시킨다.
 
 ## 주요 함수
 
-### `_project_relative()`
+| 함수 | 역할 |
+| --- | --- |
+| `sample_frames()` | 선택한 샘플링 방식 호출 |
+| `sample_interval_frames()` | 전체 영상 또는 지정 구간에서 interval 프레임 추출 |
+| `sample_scene_change_frames()` | 전체 영상 또는 지정 구간에서 화면 전환 프레임 추출 |
+| `load_important_time_ranges()` | LLM 요약 JSON에서 중요 구간 로드 |
+| `_normalize_time_ranges()` | 시간 구간 보정, 정렬, 병합 |
+| `_build_interval_timestamps()` | 중요 구간별 추출 timestamp 생성 |
+| `_write_metadata()` | `FrameMetadata` 목록을 UTF-8 JSON으로 저장 |
+| `load_frame_metadata()` | metadata JSON을 `utf-8-sig`로 로드 |
 
-저장된 이미지 경로를 프로젝트 루트 기준 상대경로로 변환한다.
+## CLI 사용
 
-프로젝트 루트 밖의 경로면 절대경로 문자열을 사용한다.
+전체 파이프라인:
 
-### `_write_metadata()`
+```powershell
+python scripts/run_pipeline.py --method interval --interval-seconds 10
 
-`FrameMetadata` 목록을 JSON 파일로 저장한다.
-
-```python
-json.dump([item.to_dict() for item in metadata], f, ensure_ascii=False, indent=2)
+python scripts/run_pipeline.py `
+  --method scene_change `
+  --scene-threshold 0.7 `
+  --scene-min-gap-seconds 1.0
 ```
 
-### `_merge_frame_metadata()`
+전처리 단독 실행:
 
-`interval_scene_change` 방식에서 interval 결과와 scene_change 결과를 합친다.
+```powershell
+python scripts/run_preprocess.py `
+  --method scene_change `
+  --important-segments-json runs/llm/stt_summary_result.json
+```
 
-가까운 중복을 제거한 뒤 timestamp 순서로 정렬하고 `frame_id`를 다시 부여한다.
+## 예외와 주의 사항
 
-### `load_frame_metadata()`
-
-저장된 `frame_metadata.json`을 읽는다.
-
-Windows BOM이 붙은 파일도 읽을 수 있도록 `utf-8-sig`를 사용한다.
-
-### `get_sampling_summary()`
-
-프레임 추출 전 참고용 영상 정보를 반환한다.
-
-내부적으로 `get_video_info()`를 호출한다.
-
-## 예외
-
-| 상황 | 예외 |
+| 상황 | 결과 |
 | --- | --- |
-| interval 값이 0 이하 | `ValueError` |
+| `interval_seconds <= 0` | `ValueError` |
 | scene threshold가 0과 1 사이가 아님 | `ValueError` |
-| 병합 최소 간격이 0 미만 | `ValueError` |
+| scene 최소 간격이 음수 | `ValueError` |
 | 입력 영상이 없음 | `FileNotFoundError` |
-| 지원하지 않는 sampling method | `ValueError` |
+| 중요 구간 JSON 파일이 없음 | `FileNotFoundError` |
+| 중요 구간 JSON 형식이 잘못됨 | JSON 또는 형 변환 예외 전파 |
 
-## 주의 사항
-
-1. 새 프레임 추출 전에 해당 방식의 기존 프레임 파일을 삭제한다.
-2. 같은 `run_dir`을 반복 사용하면 이전 프레임과 metadata가 덮어써진다.
-3. `scene_change` 방식은 영상 특성에 따라 추출 프레임 수가 크게 달라질 수 있다.
-4. `interval` 방식은 예측 가능한 프레임 수를 얻기 쉽다.
-5. `interval_scene_change` 방식은 `interval_*.jpg`와 `scene_*.jpg`를 함께 만들며, 최종 metadata는 병합 결과만 담는다.
+같은 `run_dir`을 재사용하면 기존 `frame_*.jpg`와 metadata를 덮어쓴다.

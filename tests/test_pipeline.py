@@ -7,20 +7,20 @@ from unittest.mock import patch
 from scripts.run_pipeline import (
     build_stt_options,
     run_stt_step,
-    run_vision_step,
+    run_ocr_step,
 )
 
 
-class PipelineVisionProcessTests(unittest.TestCase):
-    def test_run_vision_step_runs_in_current_process(self):
+class PipelineOCRProcessTests(unittest.TestCase):
+    def test_run_ocr_step_runs_in_current_process(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             run_dir = Path(temp_dir)
             metadata_path = run_dir / "metadata.json"
             metadata_path.write_text("[]", encoding="utf-8")
-            output_path = run_dir / "vision" / "vision_result.json"
+            output_path = run_dir / "ocr" / "ocr_result.json"
 
-            with patch("modules.vision.analyze_frames_metadata") as analyze_frames:
-                result = run_vision_step(metadata_path, run_dir, "korean")
+            with patch("modules.ocr.analyze_frames_metadata") as analyze_frames:
+                result = run_ocr_step(metadata_path, run_dir, "korean")
 
         self.assertEqual(result, output_path)
         analyze_frames.assert_called_once_with(

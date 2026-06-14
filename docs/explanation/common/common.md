@@ -56,7 +56,7 @@ preprocess / vision / stt
 | `DEFAULT_FRAME_METADATA_RELATIVE_PATH` | `metadata/frame_metadata.json` |
 | `DEFAULT_STT_JSON_RELATIVE_PATH` | `stt/stt_result.json` |
 | `DEFAULT_STT_TEXT_RELATIVE_PATH` | `stt/stt_result.txt` |
-| `DEFAULT_VISION_RESULT_RELATIVE_PATH` | `vision/vision_result.json` |
+| `DEFAULT_OCR_RESULT_RELATIVE_PATH` | `ocr/ocr_result.json` |
 
 경로 생성 함수:
 
@@ -73,7 +73,7 @@ JSON 파일을 저장하거나 읽는 기능을 제공한다.
 
 ```text
 runs/metadata/frame_metadata.json
-runs/vision/vision_result.json
+runs/ocr/ocr_result.json
 runs/stt/stt_result.json
 ```
 

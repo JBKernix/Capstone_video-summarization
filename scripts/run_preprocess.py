@@ -16,6 +16,7 @@ from modules.common import (  # noqa: E402
 from modules.preprocess import (
     DEFAULT_INTERVAL_SECONDS,
     DEFAULT_SAMPLING_METHOD,
+    DEFAULT_SCENE_MIN_GAP_SECONDS,
     DEFAULT_SCENE_THRESHOLD,
     SAMPLING_METHOD_CHOICES,
     ensure_mp4_video,
@@ -42,7 +43,7 @@ def parse_args():
         "--method",
         choices=SAMPLING_METHOD_CHOICES,
         default=DEFAULT_SAMPLING_METHOD,
-        help="프레임 추출 방식입니다. interval, scene_change, interval_scene_change를 사용할 수 있습니다.",
+        help="프레임 샘플링 방식입니다.",
     )
     parser.add_argument(
         "--interval-seconds",
@@ -54,9 +55,14 @@ def parse_args():
         "--scene-threshold",
         type=float,
         default=DEFAULT_SCENE_THRESHOLD,
-        help="장면 전환 추출에서 사용할 임계값입니다.",
+        help="화면 전환으로 판단할 FFmpeg scene 임계값입니다.",
     )
-
+    parser.add_argument(
+        "--scene-min-gap-seconds",
+        type=float,
+        default=DEFAULT_SCENE_MIN_GAP_SECONDS,
+        help="연속 화면 전환 프레임 사이의 최소 간격입니다.",
+    )
     parser.add_argument(
         "--important-segments-json",
         help="LLM summary result JSON path. If set, frames are sampled only between important segment start/end times.",
@@ -90,6 +96,7 @@ def main():
         method=args.method,
         interval_seconds=args.interval_seconds,
         scene_threshold=args.scene_threshold,
+        scene_min_gap_seconds=args.scene_min_gap_seconds,
         project_root=PROJECT_ROOT,
         important_segments_path=args.important_segments_json,
     )

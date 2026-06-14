@@ -1,8 +1,8 @@
-# Vision Pipeline
+# OCR Pipeline
 
 ## 개요
 
-`modules/vision`은 추출된 프레임 이미지에서 OCR 텍스트를 얻고, 그 텍스트를 기반으로 화면 유형, 간단한 캡션, 중요도 점수를 만든다.
+`modules/ocr`은 추출된 프레임 이미지에서 OCR 텍스트를 얻고, 그 텍스트를 기반으로 화면 유형, 간단한 캡션, 중요도 점수를 만든다.
 
 현재 OCR 엔진은 EasyOCR이다. 기존 PaddleOCR/PaddlePaddle 의존성은 제거되었고, Whisper와 같은 PyTorch 계열 런타임을 사용한다.
 
@@ -10,11 +10,11 @@
 
 | 파일 | 역할 |
 | --- | --- |
-| `scripts/run_vision.py` | vision 단계 단독 실행 스크립트 |
-| `modules/vision/vision_formatter.py` | 프레임 metadata를 읽고 프레임별 분석 결과를 JSON으로 저장 |
-| `modules/vision/ocr_extractor.py` | EasyOCR 모델 로딩, OCR 실행, 결과 파싱 |
-| `modules/vision/image_caption.py` | OCR 텍스트 기반 화면 유형 분류와 캡션 생성 |
-| `modules/vision/__init__.py` | vision 모듈 public API export |
+| `scripts/run_ocr.py` | OCR 단계 단독 실행 스크립트 |
+| `modules/ocr/ocr_formatter.py` | 프레임 metadata를 읽고 프레임별 OCR 결과를 JSON으로 저장 |
+| `modules/ocr/ocr_extractor.py` | EasyOCR 모델 로딩, OCR 실행, 결과 파싱 |
+| `modules/ocr/image_caption.py` | OCR 텍스트 기반 화면 유형 분류와 캡션 생성 |
+| `modules/ocr/__init__.py` | OCR 모듈 public API export |
 
 ## 실행 흐름
 
@@ -33,12 +33,12 @@ analyze_frames_metadata()
           -> classify_scene_type()
           -> generate_text_based_caption()
           -> calculate_importance_score()
-  -> vision_result.json 저장
+  -> ocr_result.json 저장
 ```
 
 ## 입력
 
-vision 단계의 기본 입력은 전처리 단계가 만든 metadata 파일이다.
+OCR 단계의 기본 입력은 전처리 단계가 만든 metadata 파일이다.
 
 ```text
 runs/metadata/frame_metadata.json
@@ -64,7 +64,7 @@ runs/metadata/frame_metadata.json
 기본 출력 파일:
 
 ```text
-runs/vision/vision_result.json
+runs/ocr/ocr_result.json
 ```
 
 예시:
@@ -84,7 +84,7 @@ runs/vision/vision_result.json
 ]
 ```
 
-## `vision_formatter.py`
+## `ocr_formatter.py`
 
 ### `_resolve_image_path()`
 
@@ -101,7 +101,7 @@ metadata에 저장된 이미지 경로를 실제 파일 경로로 복원한다.
 
 ### `analyze_frames_metadata()`
 
-vision 단계의 중심 함수다.
+OCR 단계의 중심 함수다.
 
 처리 순서:
 
@@ -110,7 +110,7 @@ vision 단계의 중심 함수다.
 3. 각 프레임을 `analyze_single_frame()`으로 분석한다.
 4. 일부 프레임 실패는 허용한다.
 5. 모든 프레임이 실패하면 `RuntimeError`를 발생시킨다.
-6. 성공 결과를 `vision_result.json`에 저장한다.
+6. 성공 결과를 `ocr_result.json`에 저장한다.
 
 ### `analyze_single_frame()`
 
@@ -144,7 +144,7 @@ OCR 텍스트와 화면 유형을 기준으로 중요도를 계산한다.
 
 ## `ocr_extractor.py`
 
-OCR 처리의 세부 동작은 `vision/ocr.md`에 별도로 정리되어 있다.
+OCR 처리의 세부 동작은 `ocr/ocr.md`에 별도로 정리되어 있다.
 
 ### 언어 설정
 
@@ -220,4 +220,4 @@ OCR 텍스트를 기반으로 간단한 화면 유형과 캡션을 만든다.
 1. EasyOCR 첫 실행 시 모델 파일을 다운로드한다.
 2. 프레임 수가 많으면 OCR 단계가 오래 걸린다.
 3. 한국어 OCR 결과는 글꼴, 해상도, 자막 위치에 따라 오인식이 생길 수 있다.
-4. `scripts/run_vision.py`는 공통 기본 경로 상수를 사용해 `runs/metadata/frame_metadata.json`을 읽고 `runs/vision/vision_result.json`을 만든다.
+4. `scripts/run_ocr.py`는 공통 기본 경로 상수를 사용해 `runs/metadata/frame_metadata.json`을 읽고 `runs/ocr/ocr_result.json`을 만든다.

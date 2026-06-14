@@ -2,7 +2,7 @@
 
 ## 개요
 
-OCR 단계는 추출된 프레임 이미지에서 화면 텍스트를 읽어 `vision_result.json`에 들어갈 `ocr_text`, `detected_language`, `bbox`, `confidence` 정보를 만든다.
+OCR 단계는 추출된 프레임 이미지에서 화면 텍스트를 읽어 `ocr_result.json`에 들어갈 `ocr_text`, `detected_language`, `bbox`, `confidence` 정보를 만든다.
 
 현재 OCR 엔진은 EasyOCR이다. 기존 PaddleOCR/PaddlePaddle 기반 구현은 제거되었고, Whisper STT와 같은 PyTorch 계열 런타임을 사용한다.
 
@@ -10,10 +10,10 @@ OCR 단계는 추출된 프레임 이미지에서 화면 텍스트를 읽어 `vi
 
 | 파일 | 역할 |
 | --- | --- |
-| `modules/vision/ocr_extractor.py` | EasyOCR Reader 로딩, OCR 실행, 결과 파싱 |
-| `modules/vision/vision_formatter.py` | 프레임 metadata를 읽고 OCR 결과를 시각 정보로 통합 |
-| `modules/vision/image_caption.py` | OCR 텍스트를 기반으로 화면 유형과 캡션 생성 |
-| `docs/explanation/vision/vision.md` | vision 단계 전체 흐름 설명 |
+| `modules/ocr/ocr_extractor.py` | EasyOCR Reader 로딩, OCR 실행, 결과 파싱 |
+| `modules/ocr/ocr_formatter.py` | 프레임 metadata를 읽고 OCR 결과를 구조화 |
+| `modules/ocr/image_caption.py` | OCR 텍스트를 기반으로 화면 유형과 캡션 생성 |
+| `docs/explanation/ocr/ocr_pipeline.md` | OCR 단계 전체 흐름 설명 |
 
 ## 실행 흐름
 
@@ -160,4 +160,4 @@ EasyOCR 원본 결과는 보통 다음 형식이다.
 1. 프레임 수가 많으면 OCR 단계가 오래 걸린다.
 2. 한국어 OCR은 글꼴, 자막 크기, 해상도, 배경 대비에 따라 오인식이 생길 수 있다.
 3. bbox에는 numpy scalar가 섞일 수 있으므로 JSON 저장 전에 변환이 필요하다.
-4. 작업 디렉터리가 달라도 이미지 경로를 찾을 수 있도록 `vision_formatter.py`에서 프로젝트 루트를 탐색한다.
+4. 작업 디렉터리가 달라도 이미지 경로를 찾을 수 있도록 `ocr_formatter.py`에서 프로젝트 루트를 탐색한다.

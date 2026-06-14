@@ -2,8 +2,8 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List
 
-from modules.vision.ocr_extractor import DEFAULT_OCR_LANGUAGE, OCRExtractor
-from modules.vision.image_caption import generate_text_based_caption, classify_scene_type
+from modules.ocr.ocr_extractor import DEFAULT_OCR_LANGUAGE, OCRExtractor
+from modules.ocr.image_caption import generate_text_based_caption, classify_scene_type
 
 
 def calculate_importance_score(ocr_text: str, scene_type: str) -> float:
@@ -31,7 +31,7 @@ def calculate_importance_score(ocr_text: str, scene_type: str) -> float:
 
 
 def analyze_single_frame(frame_info: Dict[str, Any], ocr_extractor: OCRExtractor) -> Dict[str, Any]:
-    """단일 프레임 메타데이터를 분석해 시각 정보 딕셔너리를 생성합니다.
+    """단일 프레임 메타데이터를 분석해 OCR 결과 딕셔너리를 생성합니다.
 
     Args:
         frame_info: ``frame_id``, ``timestamp``, ``image_path``를 포함한 프레임 메타데이터입니다.
@@ -103,7 +103,7 @@ def analyze_frames_metadata(
     output_path: str,
     lang: str = DEFAULT_OCR_LANGUAGE,
 ) -> List[Dict[str, Any]]:
-    """프레임 메타데이터 파일을 분석하고 시각 정보 결과 JSON을 저장합니다.
+    """프레임 메타데이터 파일을 분석하고 OCR 결과 JSON을 저장합니다.
 
     Args:
         metadata_path: 프레임 메타데이터 JSON 파일 경로입니다.
@@ -111,7 +111,7 @@ def analyze_frames_metadata(
         lang: OCR 엔진에 전달할 언어 설정입니다. 예: ``korean``.
 
     Returns:
-        프레임별 시각 정보 딕셔너리 리스트입니다.
+        프레임별 OCR 결과 딕셔너리 리스트입니다.
 
     Raises:
         FileNotFoundError: 메타데이터 파일이 존재하지 않을 때 발생합니다.

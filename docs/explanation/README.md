@@ -25,8 +25,8 @@
 | 전처리 | `preprocess/audio_extraction.md` | 영상에서 STT용 오디오 추출 |
 | 전처리 | `preprocess/video_info.md` | FFprobe 기반 영상 정보 추출 |
 | 전처리 | `preprocess/ffmpeg_utils.md` | FFmpeg/FFprobe 실행 유틸리티 |
-| Vision | `vision/vision.md` | EasyOCR 기반 프레임 분석 |
-| Vision | `vision/ocr.md` | EasyOCR 기반 OCR 처리 상세 |
+| OCR | `ocr/ocr_pipeline.md` | EasyOCR 기반 프레임 분석 |
+| OCR | `ocr/ocr.md` | EasyOCR 처리 상세 |
 | STT | `stt/stt.md` | Whisper 기반 음성 인식 |
 | LLM | `llm/llm.md` | 요약 단계의 현재 상태와 설계 방향 |
 | Common | `common/common.md` | 공통 유틸리티 모듈 |
@@ -38,7 +38,7 @@
 | 영상 전처리 | 구현됨 |
 | 프레임 추출 | 구현됨 |
 | 오디오 추출 | 구현됨 |
-| OCR/vision 분석 | EasyOCR 기반으로 구현됨 |
+| OCR 분석 | EasyOCR 기반으로 구현됨 |
 | STT | Whisper 기반으로 구현됨 |
 | LLM 요약 | 미구현 |
 | UI | 미구현 또는 별도 정리 필요 |

@@ -10,7 +10,7 @@ DEFAULT_AUDIO_RELATIVE_PATH = Path("audio") / "audio.wav"
 DEFAULT_FRAME_METADATA_RELATIVE_PATH = Path("metadata") / "frame_metadata.json"
 DEFAULT_STT_JSON_RELATIVE_PATH = Path("stt") / "stt_result.json"
 DEFAULT_STT_TEXT_RELATIVE_PATH = Path("stt") / "stt_result.txt"
-DEFAULT_VISION_RESULT_RELATIVE_PATH = Path("vision") / "vision_result.json"
+DEFAULT_OCR_RESULT_RELATIVE_PATH = Path("ocr") / "ocr_result.json"
 
 
 def resolve_path_pattern(path: str | Path) -> Path:

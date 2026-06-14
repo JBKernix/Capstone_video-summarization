@@ -23,7 +23,7 @@
 ```text
 run_summary.py 또는 run_pipeline.py
   -> stt_result.json 로드
-  -> vision_result.json 로드
+  -> ocr_result.json 로드
   -> prompt_builder에서 통합 프롬프트 생성
   -> summarizer에서 LLM 호출
   -> summary_result.json 또는 summary_result.md 저장
@@ -40,7 +40,7 @@ runs/stt/stt_result.json
 vision 결과:
 
 ```text
-runs/vision/vision_result.json
+runs/ocr/ocr_result.json
 ```
 
 ## 예상 출력
