@@ -3,24 +3,24 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-# scripts 폴더에서 직접 실행해도 프로젝트 패키지를 찾을 수 있게 합니다.
+# 모듈 또는 파일로 실행해도 프로젝트 패키지를 찾을 수 있게 합니다.
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, status
 
-from scripts.api_models import (
+from configs.inference_config import VLM_INFERENCE_CONFIG
+from app.api_models import (
     JobStatusResponse,
     JobSubmissionResponse,
     SummaryRequest,
 )
-from scripts.inference_jobs import InferenceJobRunner
-from scripts.job_store import JobStore
-from scripts.server_logging import configure_logging
+from app.inference_jobs import InferenceJobRunner
+from app.job_store import JobStore
+from app.server_logging import configure_logging
 from scripts.vlm_upload import (
     MAX_FRAME_BYTES,
-    MAX_FRAME_COUNT,
     MAX_OCR_JSON_BYTES,
     read_upload_limited,
     select_ocr_entries_for_frames,
@@ -108,14 +108,21 @@ def summarize(request: SummaryRequest):
 async def summarize_frames(
     ocr_result: UploadFile = File(...),
     frames: list[UploadFile] = File(...),
-    max_new_tokens: int = Form(default=512, ge=1, le=2048),
+    max_new_tokens: int = Form(
+        default=VLM_INFERENCE_CONFIG.default_max_new_tokens,
+        ge=1,
+        le=VLM_INFERENCE_CONFIG.max_new_tokens_limit,
+    ),
 ):
     if not frames:
         raise HTTPException(status_code=422, detail="프레임 이미지가 필요합니다.")
-    if len(frames) > MAX_FRAME_COUNT:
+    if len(frames) > VLM_INFERENCE_CONFIG.max_frame_count:
         raise HTTPException(
             status_code=422,
-            detail=f"프레임은 최대 {MAX_FRAME_COUNT}장까지 업로드할 수 있습니다.",
+            detail=(
+                f"프레임은 최대 {VLM_INFERENCE_CONFIG.max_frame_count}장까지 "
+                "업로드할 수 있습니다."
+            ),
         )
 
     try:

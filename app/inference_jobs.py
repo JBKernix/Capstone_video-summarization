@@ -4,8 +4,8 @@ from contextlib import contextmanager
 from threading import Event, Thread
 from typing import Any
 
-from scripts.api_models import SummaryRequest, SummaryResponse
-from scripts.job_store import JobStore
+from app.api_models import SummaryRequest, SummaryResponse
+from app.job_store import JobStore
 from services.summary_service import SummaryService
 
 

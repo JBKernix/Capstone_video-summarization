@@ -9,8 +9,7 @@ from typing import Any, BinaryIO, TypeAlias
 
 from PIL import Image, UnidentifiedImageError
 
-DEFAULT_MAX_NEW_TOKENS = 512
-MAX_NEW_TOKENS = 2048
+from configs.inference_config import VLM_INFERENCE_CONFIG
 
 ImageInput: TypeAlias = str | Path | bytes | bytearray | BinaryIO | Image.Image
 OCRInput: TypeAlias = str | Path | list[dict[str, Any]] | dict[str, Any]
@@ -39,43 +38,21 @@ class VLMService:
         self,
         image_path: ImageInput,
         ocr_text: str = "",
-        max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS,
+        max_new_tokens: int = VLM_INFERENCE_CONFIG.default_max_new_tokens,
         frame_metadata: Mapping[str, Any] | None = None,
     ) -> str:
         """한 장의 프레임을 OCR 텍스트와 함께 분석합니다."""
         max_new_tokens = self._validate_max_new_tokens(max_new_tokens)
-        pil_image = self._load_image(image_path)
+        pil_image = self._resize_for_vlm(self._load_image(image_path))
         metadata_text = self._format_metadata(frame_metadata)
 
-        prompt = f"""
-다음 이미지는 영상에서 추출한 한 프레임입니다.
+        prompt = f"""영상 프레임과 OCR을 한국어로 간단히 분석하세요.
+메타데이터: {metadata_text}
+OCR: {ocr_text.strip() or "없음"}
 
-[프레임 메타데이터]
-{metadata_text}
-
-[OCR 분석 결과]
-{ocr_text.strip() or "OCR 텍스트 없음"}
-
-이미지와 OCR 결과를 함께 참고하여 한국어로 분석해 주세요.
-
-[분석 기준]
-1. 화면에서 실제로 확인되는 장면과 주요 객체를 설명
-2. 발표 자료, 웹 페이지, 차트, 표, 코드, 문서 등의 화면 유형을 식별
-3. OCR 텍스트 중 이미지 내용과 관련 있는 핵심 정보만 반영
-4. 영상 요약에 도움이 되는 시각 정보를 구체적으로 정리
-5. OCR이 깨졌거나 불확실한 내용은 추측하지 않기
-
-[출력 형식]
-## 프레임 시각 요약
-
-### 장면 설명
--
-
-### 화면 텍스트 기반 정보
--
-
-### 영상 요약에 반영할 핵심 정보
--
+장면:
+텍스트:
+요약 반영 정보:
 """
 
         try:
@@ -92,7 +69,7 @@ class VLMService:
         self,
         ocr_results: OCRInput,
         frames: Mapping[Any, ImageInput] | Sequence[ImageInput],
-        max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS,
+        max_new_tokens: int = VLM_INFERENCE_CONFIG.default_max_new_tokens,
         progress_callback: ProgressCallback | None = None,
     ) -> list[dict[str, Any]]:
         """OCR 결과와 여러 JPG 프레임을 매칭하여 프레임별로 분석합니다.
@@ -235,6 +212,22 @@ class VLMService:
             raise ValueError("올바른 JPG/이미지 데이터를 읽을 수 없습니다.") from error
 
     @staticmethod
+    def _resize_for_vlm(image: Image.Image) -> Image.Image:
+        width, height = image.size
+        longest_edge = max(width, height)
+        if longest_edge <= VLM_INFERENCE_CONFIG.image_max_side:
+            return image
+
+        scale = VLM_INFERENCE_CONFIG.image_max_side / longest_edge
+        resized_size = (
+            max(1, round(width * scale)),
+            max(1, round(height * scale)),
+        )
+        resized_image = image.resize(resized_size, Image.Resampling.LANCZOS)
+        image.close()
+        return resized_image
+
+    @staticmethod
     def _format_metadata(metadata: Mapping[str, Any] | None) -> str:
         if not metadata:
             return "메타데이터 없음"
@@ -244,8 +237,9 @@ class VLMService:
 
     @staticmethod
     def _validate_max_new_tokens(max_new_tokens: int) -> int:
-        if not 1 <= max_new_tokens <= MAX_NEW_TOKENS:
+        if not 1 <= max_new_tokens <= VLM_INFERENCE_CONFIG.max_new_tokens_limit:
             raise ValueError(
-                f"max_new_tokens는 1 이상 {MAX_NEW_TOKENS} 이하여야 합니다."
+                "max_new_tokens는 1 이상 "
+                f"{VLM_INFERENCE_CONFIG.max_new_tokens_limit} 이하여야 합니다."
             )
         return max_new_tokens

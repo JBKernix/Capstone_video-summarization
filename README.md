@@ -54,7 +54,7 @@ python scripts\download_models.py
 Windows에서는 배치 파일을 실행할 수 있습니다.
 
 ```powershell
-.\scripts\start_server.bat
+.\start_server.bat
 ```
 
 배치 파일은 기본적으로 다음 값을 사용합니다.
@@ -63,16 +63,16 @@ Windows에서는 배치 파일을 실행할 수 있습니다.
 - 서버 주소: `10.30.2.224:8000`
 - Uvicorn worker: `1`
 
-환경 경로나 서버 주소가 다르면 `scripts/start_server.bat`의 `PYTHON_EXE`, `SERVER_HOST`, `SERVER_PORT`를 수정합니다.
+환경 경로나 서버 주소가 다르면 `start_server.bat`의 `PYTHON_EXE`, `SERVER_HOST`, `SERVER_PORT`를 수정합니다.
 
 Python 또는 Uvicorn으로 직접 실행할 수도 있습니다.
 
 ```powershell
-python scripts\server.py
+python -m app.server
 ```
 
 ```powershell
-python -m uvicorn scripts.server:app --host 0.0.0.0 --port 8000 --workers 1
+python -m uvicorn app.server:app --host 0.0.0.0 --port 8000 --workers 1
 ```
 
 GPU 모델과 작업 상태가 프로세스 메모리에 저장되므로 운영 환경에서는 `--workers 1`을 사용해야 합니다.
@@ -171,19 +171,22 @@ curl.exe -X POST "http://localhost:8000/vlm/summarize" `
 
 ```text
 .
+|-- app/
+|   |-- __init__.py
+|   |-- api_models.py
+|   |-- inference_jobs.py
+|   |-- job_store.py
+|   |-- server.py
+|   `-- server_logging.py
+|-- configs/
+|   |-- __init__.py
+|   `-- inference_config.py
 |-- models/
 |   |-- __init__.py
 |   |-- llm_loader.py
 |   `-- vlm_loader.py
 |-- scripts/
-|   |-- __init__.py
-|   |-- api_models.py
 |   |-- download_models.py
-|   |-- inference_jobs.py
-|   |-- job_store.py
-|   |-- server.py
-|   |-- server_logging.py
-|   |-- start_server.bat
 |   `-- vlm_upload.py
 |-- services/
 |   |-- __init__.py
@@ -192,14 +195,15 @@ curl.exe -X POST "http://localhost:8000/vlm/summarize" `
 |   `-- vlm_service.py
 |-- .gitignore
 |-- README.md
+|-- start_server.bat
 `-- requirements.txt
 ```
 
-## Scripts 폴더
+## App 폴더
 
 FastAPI 서버 실행, HTTP 요청 처리, 비동기 작업 관리와 운영 설정을 담당합니다.
 
-상세 설명: [`scripts/README.md`](scripts/README.md)
+상세 설명: [`app/README.md`](app/README.md)
 
 | 파일 | 역할 |
 | --- | --- |
@@ -208,9 +212,17 @@ FastAPI 서버 실행, HTTP 요청 처리, 비동기 작업 관리와 운영 설
 | `inference_jobs.py` | LLM/VLM 백그라운드 추론, 진행률 갱신, 오류 처리, GPU 모델 해제 |
 | `job_store.py` | 작업 ID 생성과 인메모리 작업 상태 저장 및 조회 |
 | `server_logging.py` | 콘솔 컬러 로그와 회전 파일 로그 설정 |
+
+## Scripts 폴더
+
+서버 실행과 모델 다운로드에 필요한 유틸리티만 둡니다.
+
+| 파일 | 역할 |
+| --- | --- |
 | `vlm_upload.py` | OCR JSON과 JPG 업로드 크기 검증, 파일명 기반 OCR-프레임 매칭 |
 | `download_models.py` | 필요한 Hugging Face 모델을 로컬 캐시에 다운로드 |
-| `start_server.bat` | Windows Conda 환경에서 Uvicorn 서버 실행 |
+
+루트의 `start_server.bat`는 Windows Conda 환경에서 Uvicorn 서버를 실행합니다.
 
 ## Models 폴더
 
@@ -254,7 +266,7 @@ Hugging Face 모델의 로딩, 추론과 GPU 메모리 해제를 담당합니다
 
 ## 처리 흐름
 
-1. `scripts/server.py`가 요청을 검증하고 작업을 생성합니다.
+1. `app/server.py`가 요청을 검증하고 작업을 생성합니다.
 2. `JobStore`가 작업 상태와 진행률을 메모리에 저장합니다.
 3. 단일 `ThreadPoolExecutor`가 GPU 추론 작업을 순서대로 실행합니다.
 4. `InferenceJobRunner`가 `SummaryService`를 통해 LLM 또는 VLM 서비스를 호출합니다.

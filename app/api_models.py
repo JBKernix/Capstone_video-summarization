@@ -2,6 +2,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from configs.inference_config import LLM_INFERENCE_CONFIG
+
 
 class STTSegment(BaseModel):
     segment_id: int
@@ -14,7 +16,11 @@ class SummaryRequest(BaseModel):
     language: str = "unknown"
     segments: list[STTSegment] = Field(default_factory=list)
     full_text: str = ""
-    max_new_tokens: int = Field(default=1024, ge=1, le=2048)
+    max_new_tokens: int = Field(
+        default=LLM_INFERENCE_CONFIG.default_max_new_tokens,
+        ge=1,
+        le=LLM_INFERENCE_CONFIG.max_new_tokens_limit,
+    )
 
 
 class ImportantSegment(BaseModel):

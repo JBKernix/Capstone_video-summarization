@@ -2,11 +2,8 @@ import json
 from threading import Lock
 from typing import Any, Callable
 
+from configs.inference_config import LLM_INFERENCE_CONFIG
 from models.llm_loader import LLMLoader, LLMConfig
-
-DEFAULT_MAX_NEW_TOKENS = 1024
-MAX_NEW_TOKENS = 2048
-DEFAULT_SEGMENT_CHUNK_CHARS = 12000
 
 ProgressCallback = Callable[[str, int, int], None]
 
@@ -28,7 +25,7 @@ class LLMService:
     def summarize_stt(
         self,
         stt_text: str,
-        max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS,
+        max_new_tokens: int = LLM_INFERENCE_CONFIG.default_max_new_tokens,
     ) -> str:
         prompt = f"""
 다음은 영상에서 추출한 STT 음성 인식 결과입니다.
@@ -62,15 +59,13 @@ class LLMService:
             return self.loader.generate(
                 prompt=prompt,
                 max_new_tokens=self._validate_max_new_tokens(max_new_tokens),
-                temperature=0.3,
-                top_p=0.9,
             )
 
     def extract_important_segments(
         self,
         stt_segments: list[dict[str, Any]],
         stt_summary: str = "",
-        max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS,
+        max_new_tokens: int = LLM_INFERENCE_CONFIG.default_max_new_tokens,
     ) -> str:
         # JSON보다 짧은 행 형식으로 전달해 긴 프롬프트의 추론 비용을 줄입니다.
         segments_text = "\n".join(
@@ -113,8 +108,6 @@ topic과 reason 안에는 | 문자를 사용하지 마.
             return self.loader.generate(
                 prompt=prompt,
                 max_new_tokens=self._validate_max_new_tokens(max_new_tokens),
-                temperature=0.2,
-                top_p=0.9,
             )
 
     def extract_important_segments_in_chunks(
@@ -122,7 +115,7 @@ topic과 reason 안에는 | 문자를 사용하지 마.
         stt_segments: list[dict[str, Any]],
         stt_summary: str = "",
         max_new_tokens: int = 256,
-        max_chunk_chars: int = DEFAULT_SEGMENT_CHUNK_CHARS,
+        max_chunk_chars: int = LLM_INFERENCE_CONFIG.segment_chunk_chars,
         progress_callback: ProgressCallback | None = None,
     ) -> list[dict[str, Any]]:
         """STT 구간을 나눠 중요 구간을 추출하고 객체 배열로 합칩니다."""
@@ -214,8 +207,9 @@ topic과 reason 안에는 | 문자를 사용하지 마.
 
     @staticmethod
     def _validate_max_new_tokens(max_new_tokens: int) -> int:
-        if not 1 <= max_new_tokens <= MAX_NEW_TOKENS:
+        if not 1 <= max_new_tokens <= LLM_INFERENCE_CONFIG.max_new_tokens_limit:
             raise ValueError(
-                f"max_new_tokens는 1 이상 {MAX_NEW_TOKENS} 이하여야 합니다."
+                "max_new_tokens는 1 이상 "
+                f"{LLM_INFERENCE_CONFIG.max_new_tokens_limit} 이하여야 합니다."
             )
         return max_new_tokens

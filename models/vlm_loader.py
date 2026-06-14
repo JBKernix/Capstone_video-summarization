@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import gc
+import logging
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Union
@@ -9,8 +11,11 @@ import torch
 from PIL import Image
 from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration
 
+from configs.inference_config import VLM_INFERENCE_CONFIG
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -103,7 +108,7 @@ class VLMLoader:
         self,
         image: Union[str, Path, Image.Image],
         prompt: str,
-        max_new_tokens: int = 512,
+        max_new_tokens: int = VLM_INFERENCE_CONFIG.default_max_new_tokens,
     ) -> str:
         model, processor = self.load()
         pil_image = self._load_image(image)
@@ -143,10 +148,34 @@ class VLMLoader:
             for key, value in inputs.items()
         }
 
-        generated_ids = model.generate(
-            **inputs,
-            max_new_tokens=max_new_tokens,
+        input_tokens = inputs["input_ids"].shape[-1]
+        logger.info(
+            "VLM generate start | input_tokens=%d | max_new_tokens=%d | "
+            "image_size=%dx%d",
+            input_tokens,
+            max_new_tokens,
+            pil_image.width,
+            pil_image.height,
         )
+        started_at = time.perf_counter()
+        try:
+            generated_ids = model.generate(
+                **inputs,
+                max_new_tokens=max_new_tokens,
+                do_sample=VLM_INFERENCE_CONFIG.do_sample,
+                num_beams=VLM_INFERENCE_CONFIG.num_beams,
+                use_cache=VLM_INFERENCE_CONFIG.use_cache,
+            )
+        finally:
+            logger.info(
+                "VLM generate end | input_tokens=%d | max_new_tokens=%d | "
+                "image_size=%dx%d | elapsed_seconds=%.3f",
+                input_tokens,
+                max_new_tokens,
+                pil_image.width,
+                pil_image.height,
+                time.perf_counter() - started_at,
+            )
 
         generated_ids_trimmed = generated_ids[:, inputs["input_ids"].shape[-1]:]
 

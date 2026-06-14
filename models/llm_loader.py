@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import gc
+import logging
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -8,8 +10,12 @@ from typing import Optional
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
+from configs.inference_config import LLM_INFERENCE_CONFIG
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+logger = logging.getLogger(__name__)
+
 
 @dataclass
 class LLMConfig:
@@ -107,9 +113,7 @@ class LLMLoader:
     def generate(
         self,
         prompt: str,
-        max_new_tokens: int = 512,
-        temperature: float = 0.7,
-        top_p: float = 0.9,
+        max_new_tokens: int = LLM_INFERENCE_CONFIG.default_max_new_tokens,
     ) -> str:
         model, tokenizer = self.load()
 
@@ -145,14 +149,30 @@ class LLMLoader:
             for key, value in inputs.items()
         }
 
-        outputs = model.generate(
-            **inputs,
-            max_new_tokens=max_new_tokens,
-            do_sample=True,
-            temperature=temperature,
-            top_p=top_p,
-            pad_token_id=tokenizer.eos_token_id,
+        input_tokens = inputs["input_ids"].shape[-1]
+        logger.info(
+            "LLM generate start | input_tokens=%d | max_new_tokens=%d",
+            input_tokens,
+            max_new_tokens,
         )
+        started_at = time.perf_counter()
+        try:
+            outputs = model.generate(
+                **inputs,
+                max_new_tokens=max_new_tokens,
+                do_sample=LLM_INFERENCE_CONFIG.do_sample,
+                num_beams=LLM_INFERENCE_CONFIG.num_beams,
+                use_cache=LLM_INFERENCE_CONFIG.use_cache,
+                pad_token_id=tokenizer.eos_token_id,
+            )
+        finally:
+            logger.info(
+                "LLM generate end | input_tokens=%d | max_new_tokens=%d | "
+                "elapsed_seconds=%.3f",
+                input_tokens,
+                max_new_tokens,
+                time.perf_counter() - started_at,
+            )
 
         generated_ids = outputs[0][inputs["input_ids"].shape[-1]:]
 

@@ -80,6 +80,6 @@ def configure_logging(project_root: Path) -> logging.Logger:
         uvicorn_logger.handlers.clear()
         uvicorn_logger.propagate = True
 
-    logger = logging.getLogger("scripts.server")
+    logger = logging.getLogger("app.server")
     logger.info("File logging enabled: %s", file_handler.baseFilename)
     return logger
