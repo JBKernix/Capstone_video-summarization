@@ -1,5 +1,5 @@
 # model files
-models/
+models/hf_cache/
 *.pt
 *.pth
 *.bin
@@ -10,6 +10,9 @@ data/input/*
 data/output/*
 runs/*
 logs/*
+
+# test files
+/test/
 
 # env
 .env

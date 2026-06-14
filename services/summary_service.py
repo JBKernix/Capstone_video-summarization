@@ -1,4 +1,5 @@
 from threading import Lock
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from services.llm_service import LLMService
@@ -17,6 +18,9 @@ class SummaryService:
 
     def unload_llm(self) -> None:
         self.llm_service.unload()
+
+    def unload_vlm(self) -> None:
+        self.vlm_service.unload()
 
     def get_important_segments(
         self,
@@ -53,4 +57,16 @@ class SummaryService:
             image_path=image_path,
             ocr_text=ocr_text,
             max_new_tokens=max_new_tokens,
+        )
+
+    def summarize_frames(
+        self,
+        ocr_results: Any,
+        frames: Mapping[Any, Any] | Sequence[Any],
+        **kwargs,
+    ) -> list[dict[str, Any]]:
+        return self.vlm_service.summarize_frames(
+            ocr_results=ocr_results,
+            frames=frames,
+            **kwargs,
         )
