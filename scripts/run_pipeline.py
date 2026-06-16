@@ -1,5 +1,8 @@
 import argparse
 import sys
+import time
+from contextlib import contextmanager
+from datetime import datetime
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -30,12 +33,11 @@ from modules.preprocess import (
     sample_frames,
 )
 from modules.stt import (  # noqa: E402
-    DEFAULT_STT_CHUNK_SECONDS,
-    DEFAULT_STT_CHUNKED,
     DEFAULT_STT_DEVICE,
     DEFAULT_STT_LANGUAGE,
     DEFAULT_STT_MODEL_SIZE,
-    DEFAULT_STT_OVERLAP_SECONDS,
+    DEFAULT_STT_TEMPERATURE,
+    DEFAULT_STT_BEAM_SIZE,
 )
 from modules.ocr import DEFAULT_OCR_LANGUAGE  # noqa: E402
 from scripts.run_llm_summary import (  # noqa: E402
@@ -43,6 +45,37 @@ from scripts.run_llm_summary import (  # noqa: E402
     DEFAULT_LLM_SUMMARY_RELATIVE_PATH,
     run_llm_summary_step,
 )
+from scripts.run_vlm_summary import (  # noqa: E402
+    DEFAULT_VLM_SUMMARY_JSON_RELATIVE_PATH,
+    DEFAULT_VLM_SUMMARY_RELATIVE_PATH,
+    run_vlm_summary_step,
+)
+
+
+def _format_elapsed(seconds: float) -> str:
+    total_seconds = max(0, int(seconds))
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+
+@contextmanager
+def _stage_timeline(step: str, name: str):
+    started_at = time.monotonic()
+    print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] [{step}] {name} 시작")
+    state = {"status": "완료"}
+    try:
+        yield state
+    except Exception:
+        elapsed = _format_elapsed(time.monotonic() - started_at)
+        print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] [{step}] {name} 실패 (소요 {elapsed})")
+        raise
+    else:
+        elapsed = _format_elapsed(time.monotonic() - started_at)
+        print(
+            f"[{datetime.now():%Y-%m-%d %H:%M:%S}] [{step}] "
+            f"{name} {state['status']} (소요 {elapsed})"
+        )
 
 
 def _execute_stt(
@@ -63,32 +96,21 @@ def _execute_stt(
         저장된 STT 결과의 segment 개수입니다.
     """
     from modules.stt import (
-        format_chunked_stt_result,
         format_stt_result,
-        run_chunked_whisper_stt,
         run_whisper_stt,
         save_stt_json,
         save_stt_text,
     )
 
-    if stt_options["chunked"]:
-        raw_result = run_chunked_whisper_stt(
-            audio_path=audio_path,
-            model_size=stt_options["model_size"],
-            language=stt_options["language"],
-            chunk_seconds=stt_options["chunk_seconds"],
-            overlap_seconds=stt_options["overlap_seconds"],
-            device=stt_options["device"],
-        )
-        stt_result = format_chunked_stt_result(raw_result)
-    else:
-        raw_result = run_whisper_stt(
-            audio_path=audio_path,
-            model_size=stt_options["model_size"],
-            language=stt_options["language"],
-            device=stt_options["device"],
-        )
-        stt_result = format_stt_result(raw_result)
+    raw_result = run_whisper_stt(
+        audio_path=audio_path,
+        model_size=stt_options["model_size"],
+        language=stt_options["language"],
+        device=stt_options["device"],
+        temperature=stt_options["temperature"],
+        beam_size=stt_options["beam_size"],
+    )
+    stt_result = format_stt_result(raw_result)
 
     save_stt_json(stt_result, output_json)
     save_stt_text(stt_result, output_text, include_timestamps=stt_options["timestamps"])
@@ -144,6 +166,17 @@ def parse_args():
         action="store_true",
         help="OCR 분석 단계를 건너뜁니다.",
     )
+    parser.add_argument(
+        "--skip-vlm",
+        action="store_true",
+        help="VLM 프레임 요약 단계를 건너뜁니다.",
+    )
+    parser.add_argument(
+        "--vlm-max-new-tokens",
+        type=int,
+        default=384,
+        help="프레임당 VLM 최대 생성 토큰 수입니다. 허용 범위는 1~384입니다.",
+    )
     parser.add_argument("--skip-stt", action="store_true", help="STT 단계를 건너뜁니다.")
     parser.add_argument(
         "--stt-config",
@@ -159,10 +192,6 @@ def parse_args():
         help="STT 언어 코드입니다. 기본값은 설정 파일의 language입니다.",
     )
     parser.add_argument("--stt-device", help="STT 실행 장치입니다. 예: cpu, cuda")
-    parser.add_argument("--stt-chunked", action="store_true", help="오디오를 chunk 단위로 나눠 STT를 실행합니다.")
-    parser.add_argument("--stt-no-chunked", action="store_true", help="chunk 분할 없이 STT를 실행합니다.")
-    parser.add_argument("--stt-chunk-seconds", type=int, help="STT chunk 길이(초)입니다.")
-    parser.add_argument("--stt-overlap-seconds", type=int, help="STT chunk overlap 길이(초)입니다.")
     parser.add_argument(
         "--stt-timestamps",
         action="store_true",
@@ -237,25 +266,14 @@ def build_stt_options(args: argparse.Namespace) -> dict:
     """
     config = load_stt_config(Path(args.stt_config))
 
-    if args.stt_chunked and args.stt_no_chunked:
-        raise ValueError("--stt-chunked와 --stt-no-chunked는 동시에 사용할 수 없습니다.")
-
-    if args.stt_chunked:
-        chunked = True
-    elif args.stt_no_chunked:
-        chunked = False
-    else:
-        chunked = bool(config.get("chunked", DEFAULT_STT_CHUNKED))
+    beam_size = config.get("beam_size", DEFAULT_STT_BEAM_SIZE)
 
     return {
         "model_size": args.stt_model_size or config.get("model_size", DEFAULT_STT_MODEL_SIZE),
         "language": args.stt_language or config.get("language", DEFAULT_STT_LANGUAGE),
         "device": args.stt_device if args.stt_device is not None else config.get("device", DEFAULT_STT_DEVICE),
-        "chunked": chunked,
-        "chunk_seconds": args.stt_chunk_seconds or int(config.get("chunk_seconds", DEFAULT_STT_CHUNK_SECONDS)),
-        "overlap_seconds": args.stt_overlap_seconds or int(
-            config.get("overlap_seconds", DEFAULT_STT_OVERLAP_SECONDS)
-        ),
+        "temperature": float(config.get("temperature", DEFAULT_STT_TEMPERATURE)),
+        "beam_size": int(beam_size) if beam_size is not None else None,
         "timestamps": args.stt_timestamps,
     }
 
@@ -380,63 +398,75 @@ def main():
     stt_options = build_stt_options(args)
     video_path = ensure_mp4_video(video_path, run_dir / "data" / "input")
 
-    print("[1/5] 오디오 추출을 시작합니다.")
-    audio_path = run_audio_step(video_path=video_path, run_dir=run_dir)
+    with _stage_timeline("1/6", "오디오 추출"):
+        audio_path = run_audio_step(video_path=video_path, run_dir=run_dir)
 
-    if args.skip_stt:
-        print("[2/5] STT 단계를 건너뜁니다.")
-        stt_json_path = None
-        stt_text_path = None
-    else:
-        print("[2/5] STT를 시작합니다.")
-        stt_json_path, stt_text_path = run_stt_step(
-            audio_path=audio_path,
-            run_dir=run_dir,
-            stt_options=stt_options,
-        )
+    with _stage_timeline("2/6", "STT") as stage:
+        if args.skip_stt:
+            stage["status"] = "건너뜀"
+            stt_json_path = None
+            stt_text_path = None
+        else:
+            stt_json_path, stt_text_path = run_stt_step(
+                audio_path=audio_path,
+                run_dir=run_dir,
+                stt_options=stt_options,
+            )
 
-    print("[3/5] STT 요약을 시작합니다.")
-    if stt_json_path is None:
-        llm_summary_path = None
-        llm_summary_json_path = None
-        print("STT JSON 결과가 없어 STT 요약을 건너뜁니다.")
-    else:
-        llm_summary_path, llm_summary_json_path = run_llm_summary_step(
-            stt_json_path=stt_json_path,
-            output_path=run_path(run_dir, DEFAULT_LLM_SUMMARY_RELATIVE_PATH),
-            output_json_path=run_path(run_dir, DEFAULT_LLM_SUMMARY_JSON_RELATIVE_PATH),
-        )
-        print(f"STT 요약 저장(txt): {llm_summary_path}")
-        print(f"STT 요약 저장(json): {llm_summary_json_path}")
+    with _stage_timeline("3/6", "STT 요약") as stage:
+        if stt_json_path is None:
+            stage["status"] = "건너뜀"
+            llm_summary_path = None
+            llm_summary_json_path = None
+        else:
+            llm_summary_path, llm_summary_json_path = run_llm_summary_step(
+                stt_json_path=stt_json_path,
+                output_path=run_path(run_dir, DEFAULT_LLM_SUMMARY_RELATIVE_PATH),
+                output_json_path=run_path(run_dir, DEFAULT_LLM_SUMMARY_JSON_RELATIVE_PATH),
+            )
+            print(f"STT 요약 저장(txt): {llm_summary_path}")
+            print(f"STT 요약 저장(json): {llm_summary_json_path}")
 
-    if llm_summary_json_path is None:
-        print("[4/5] 중요 구간 프레임 추출을 건너뜁니다.")
-        metadata_path = None
-    else:
-        print("[4/5] 중요 구간 프레임 추출을 시작합니다.")
-        metadata_path = run_preprocess_step(
-            video_path=video_path,
-            run_dir=run_dir,
-            method=args.method,
-            interval_seconds=args.interval_seconds,
-            scene_threshold=args.scene_threshold,
-            scene_min_gap_seconds=args.scene_min_gap_seconds,
-            important_segments_path=llm_summary_json_path,
-        )
+    with _stage_timeline("4/6", "중요 구간 프레임 추출") as stage:
+        if llm_summary_json_path is None:
+            stage["status"] = "건너뜀"
+            metadata_path = None
+        else:
+            metadata_path = run_preprocess_step(
+                video_path=video_path,
+                run_dir=run_dir,
+                method=args.method,
+                interval_seconds=args.interval_seconds,
+                scene_threshold=args.scene_threshold,
+                scene_min_gap_seconds=args.scene_min_gap_seconds,
+                important_segments_path=llm_summary_json_path,
+            )
 
-    if metadata_path is None:
-        print("[5/5] OCR 분석을 건너뜁니다.")
-        ocr_path = None
-    elif args.skip_ocr:
-        print("[5/5] OCR 분석을 건너뜁니다.")
-        ocr_path = None
-    else:
-        print("[5/5] OCR 분석을 시작합니다.")
-        ocr_path = run_ocr_step(
-            metadata_path=metadata_path,
-            run_dir=run_dir,
-            ocr_lang=args.ocr_lang,
-        )
+    with _stage_timeline("5/6", "OCR 분석") as stage:
+        if metadata_path is None or args.skip_ocr:
+            stage["status"] = "건너뜀"
+            ocr_path = None
+        else:
+            ocr_path = run_ocr_step(
+                metadata_path=metadata_path,
+                run_dir=run_dir,
+                ocr_lang=args.ocr_lang,
+            )
+
+    with _stage_timeline("6/6", "VLM 프레임 요약") as stage:
+        if ocr_path is None or args.skip_vlm:
+            stage["status"] = "건너뜀"
+            vlm_summary_path = None
+            vlm_summary_json_path = None
+        else:
+            vlm_summary_path, vlm_summary_json_path = run_vlm_summary_step(
+                ocr_json_path=ocr_path,
+                output_path=run_path(run_dir, DEFAULT_VLM_SUMMARY_RELATIVE_PATH),
+                output_json_path=run_path(run_dir, DEFAULT_VLM_SUMMARY_JSON_RELATIVE_PATH),
+                max_new_tokens=args.vlm_max_new_tokens,
+            )
+            print(f"VLM 요약 저장(txt): {vlm_summary_path}")
+            print(f"VLM 요약 저장(json): {vlm_summary_json_path}")
 
     print("파이프라인 실행이 완료되었습니다.")
     print(f"오디오 파일: {audio_path}")
@@ -451,6 +481,10 @@ def main():
         print(f"프레임 메타데이터: {metadata_path}")
     if ocr_path is not None:
         print(f"OCR 결과: {ocr_path}")
+    if vlm_summary_path is not None:
+        print(f"VLM 요약 결과: {vlm_summary_path}")
+    if vlm_summary_json_path is not None:
+        print(f"VLM 요약 JSON 결과: {vlm_summary_json_path}")
     
 if __name__ == "__main__":
     main()

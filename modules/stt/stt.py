@@ -1,8 +1,6 @@
 from modules.stt import (
     clear_model_cache,
-    format_chunked_stt_result,
     format_stt_result,
-    run_chunked_whisper_stt,
     run_whisper_stt,
     save_stt_json,
     save_stt_text,
@@ -10,9 +8,7 @@ from modules.stt import (
 
 __all__ = [
     "clear_model_cache",
-    "format_chunked_stt_result",
     "format_stt_result",
-    "run_chunked_whisper_stt",
     "run_whisper_stt",
     "save_stt_json",
     "save_stt_text",

@@ -17,15 +17,12 @@ from modules.common import (  # noqa: E402
     run_path,
 )
 from modules.stt import (  # noqa: E402
-    DEFAULT_STT_CHUNK_SECONDS,
-    DEFAULT_STT_CHUNKED,
     DEFAULT_STT_DEVICE,
     DEFAULT_STT_LANGUAGE,
     DEFAULT_STT_MODEL_SIZE,
-    DEFAULT_STT_OVERLAP_SECONDS,
-    format_chunked_stt_result,
+    DEFAULT_STT_TEMPERATURE,
+    DEFAULT_STT_BEAM_SIZE,
     format_stt_result,
-    run_chunked_whisper_stt,
     run_whisper_stt,
     save_stt_json,
     save_stt_text,
@@ -73,9 +70,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model-size", help="Whisper 모델 크기입니다. 예: tiny, base, small, medium")
     parser.add_argument("--language", help="언어 코드입니다. 한국어 기본값은 ko입니다.")
     parser.add_argument("--device", help="실행 장치입니다. 예: cpu, cuda")
-    parser.add_argument("--chunked", action="store_true", help="오디오를 chunk로 나누어 STT를 수행합니다.")
-    parser.add_argument("--chunk-seconds", type=int, help="chunk 길이(초)입니다.")
-    parser.add_argument("--overlap-seconds", type=int, help="chunk 간 overlap 길이(초)입니다.")
     parser.add_argument(
         "--timestamps",
         action="store_true",
@@ -91,29 +85,20 @@ def main() -> None:
     model_size = args.model_size or config.get("model_size", DEFAULT_STT_MODEL_SIZE)
     language = args.language or config.get("language", DEFAULT_STT_LANGUAGE)
     device = args.device if args.device is not None else config.get("device", DEFAULT_STT_DEVICE)
-    chunked = args.chunked or bool(config.get("chunked", DEFAULT_STT_CHUNKED))
-    chunk_seconds = args.chunk_seconds or int(config.get("chunk_seconds", DEFAULT_STT_CHUNK_SECONDS))
-    overlap_seconds = args.overlap_seconds or int(config.get("overlap_seconds", DEFAULT_STT_OVERLAP_SECONDS))
+    temperature = float(config.get("temperature", DEFAULT_STT_TEMPERATURE))
+    configured_beam_size = config.get("beam_size", DEFAULT_STT_BEAM_SIZE)
+    beam_size = int(configured_beam_size) if configured_beam_size is not None else None
 
     audio_path = Path(args.audio)
-    if chunked:
-        raw_result = run_chunked_whisper_stt(
-            audio_path=audio_path,
-            model_size=model_size,
-            language=language,
-            chunk_seconds=chunk_seconds,
-            overlap_seconds=overlap_seconds,
-            device=device,
-        )
-        stt_result = format_chunked_stt_result(raw_result)
-    else:
-        raw_result = run_whisper_stt(
-            audio_path=audio_path,
-            model_size=model_size,
-            language=language,
-            device=device,
-        )
-        stt_result = format_stt_result(raw_result)
+    raw_result = run_whisper_stt(
+        audio_path=audio_path,
+        model_size=model_size,
+        language=language,
+        device=device,
+        temperature=temperature,
+        beam_size=beam_size,
+    )
+    stt_result = format_stt_result(raw_result)
 
     output_json = Path(args.output_json)
     output_text = Path(args.output_text)

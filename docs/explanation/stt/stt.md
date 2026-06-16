@@ -21,11 +21,8 @@
 ```text
 run_stt.py 또는 run_pipeline.py
   -> STT 설정 로드
-  -> chunked 여부 확인
-      -> run_chunked_whisper_stt()
-      또는
-      -> run_whisper_stt()
-  -> format_chunked_stt_result() 또는 format_stt_result()
+  -> run_whisper_stt()
+  -> format_stt_result()
   -> save_stt_json()
   -> save_stt_text()
 ```
@@ -44,9 +41,8 @@ configs/stt_config.yaml
 model_size: small
 language: ko
 device:
-chunked: true
-chunk_seconds: 30
-overlap_seconds: 2
+temperature: 0.0
+beam_size:
 ```
 
 코드의 fallback 기본값은 `modules/stt/whisper_stt.py`의 상수로 관리한다. 기본 설정 파일에 값이 있으면 설정 파일 값이 우선한다.
@@ -56,18 +52,16 @@ overlap_seconds: 2
 | `DEFAULT_STT_MODEL_SIZE` | `medium` |
 | `DEFAULT_STT_LANGUAGE` | `ko` |
 | `DEFAULT_STT_DEVICE` | `None` |
-| `DEFAULT_STT_CHUNKED` | `True` |
-| `DEFAULT_STT_CHUNK_SECONDS` | `30` |
-| `DEFAULT_STT_OVERLAP_SECONDS` | `2` |
+| `DEFAULT_STT_TEMPERATURE` | `0.0` |
+| `DEFAULT_STT_BEAM_SIZE` | `None` |
 
 | 설정 | 설명 |
 | --- | --- |
 | `model_size` | Whisper 모델 크기 |
 | `language` | 인식 언어 코드 |
 | `device` | 실행 장치. 비어 있으면 Whisper 기본값 사용 |
-| `chunked` | 긴 오디오를 chunk 단위로 나눌지 여부 |
-| `chunk_seconds` | chunk 하나의 길이 |
-| `overlap_seconds` | 인접 chunk 사이의 겹침 길이 |
+| `temperature` | 디코딩 temperature. `0.0`이면 fallback 재시도를 사용하지 않음 |
+| `beam_size` | beam search 크기. 비어 있으면 greedy decoding 사용 |
 
 ## `whisper_stt.py`
 
@@ -104,20 +98,6 @@ def _load_model(model_size, device):
 3. transcribe 옵션 정리
 4. `model.transcribe()` 호출
 5. Whisper 원본 결과 반환
-
-### `run_chunked_whisper_stt()`
-
-긴 오디오를 일정 길이 chunk로 나눠 transcribe한다.
-
-기본값:
-
-```text
-chunk_seconds = 30
-overlap_seconds = 2
-sample_rate = 16000
-```
-
-chunk 간 overlap을 두는 이유는 경계 부분의 발화가 잘리는 것을 줄이기 위해서다.
 
 ## `stt_formatter.py`
 
@@ -164,12 +144,11 @@ runs/stt/stt_result.txt
 | --- | --- |
 | 오디오 파일이 없음 | `FileNotFoundError` |
 | 오디오 경로가 파일이 아님 | `ValueError` |
-| chunk 설정이 잘못됨 | `ValueError` |
 | Whisper 미설치 | `ImportError` |
 
 ## 주의 사항
 
 1. Whisper는 내부적으로 PyTorch를 사용한다.
 2. GPU 사용 여부는 `device` 설정과 PyTorch CUDA 상태에 따라 달라진다.
-3. 긴 영상은 chunked 모드가 안정적이다.
+3. 긴 오디오는 Whisper의 내부 30초 처리 로직에 맡긴다.
 4. 첫 실행 시 Whisper 모델 파일 다운로드가 필요할 수 있다.

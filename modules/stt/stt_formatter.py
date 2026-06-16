@@ -89,55 +89,6 @@ def format_stt_result(raw_result: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def format_chunked_stt_result(chunked_result: dict[str, Any]) -> dict[str, Any]:
-    """chunk 단위 Whisper 결과를 전체 오디오 기준 STT JSON 구조로 변환합니다.
-
-    Args:
-        chunked_result: ``run_chunked_whisper_stt``가 반환한 chunk 단위 결과입니다.
-
-    Returns:
-        전체 오디오 기준 시간으로 보정된 STT 결과 딕셔너리입니다.
-    """
-    all_segments: list[dict[str, Any]] = []
-    seen_keys: set[tuple[int, int, str]] = set()
-
-    for chunk in chunked_result.get("chunks", []):
-        chunk_start = _to_float(chunk.get("chunk_start", 0.0))
-        raw_result = chunk.get("result", {})
-
-        for raw_segment in raw_result.get("segments", []):
-            global_start = chunk_start + _to_float(raw_segment.get("start", 0.0))
-            global_end = chunk_start + _to_float(raw_segment.get("end", 0.0), global_start)
-            text = _normalize_text(raw_segment.get("text", ""))
-            if not text:
-                continue
-
-            duplicate_key = (round(global_start * 10), round(global_end * 10), text)
-            if duplicate_key in seen_keys:
-                continue
-            seen_keys.add(duplicate_key)
-
-            segment = _format_segment(len(all_segments), global_start, global_end, text)
-            if segment is not None:
-                all_segments.append(segment)
-
-    all_segments.sort(key=lambda item: (item["start"], item["end"]))
-    for index, segment in enumerate(all_segments):
-        segment["segment_id"] = index
-
-    full_text = " ".join(segment["text"] for segment in all_segments)
-    return {
-        "audio_path": chunked_result.get("audio_path"),
-        "language": chunked_result.get("language", "unknown"),
-        "model_size": chunked_result.get("model_size"),
-        "duration_sec": chunked_result.get("duration_sec"),
-        "chunk_config": chunked_result.get("chunk_config"),
-        "segment_count": len(all_segments),
-        "segments": all_segments,
-        "full_text": full_text,
-    }
-
-
 def save_stt_json(stt_data: dict[str, Any], output_path: str | Path) -> None:
     """구조화된 STT 결과를 JSON 파일로 저장합니다.
 

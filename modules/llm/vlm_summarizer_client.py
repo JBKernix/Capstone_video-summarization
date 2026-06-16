@@ -17,7 +17,7 @@ DEFAULT_OCR_RESULT_PATH = run_path(
     PROJECT_ROOT / DEFAULT_RUN_DIR_RELATIVE_PATH,
     DEFAULT_OCR_RESULT_RELATIVE_PATH,
 )
-MAX_FRAME_COUNT = 32
+MAX_FRAME_COUNT = 8
 ALLOWED_FRAME_SUFFIXES = {".jpg", ".jpeg"}
 
 
@@ -42,7 +42,7 @@ class GPUVLMClient:
     def summarize_ocr_file(
         self,
         ocr_json_path: str | Path | None = None,
-        max_new_tokens: int = 512,
+        max_new_tokens: int = 384,
     ) -> list[dict]:
         path = Path(ocr_json_path or self.config.ocr_json_path)
         entries = self._load_ocr_entries(path)
@@ -67,8 +67,8 @@ class GPUVLMClient:
         frame_paths: list[Path],
         max_new_tokens: int,
     ) -> list[dict]:
-        if not 1 <= max_new_tokens <= 2048:
-            raise ValueError("max_new_tokens must be between 1 and 2048")
+        if not 1 <= max_new_tokens <= 384:
+            raise ValueError("max_new_tokens must be between 1 and 384")
 
         url = f"{self.config.server_url}/vlm/summarize"
         with ExitStack() as stack:
@@ -94,7 +94,11 @@ class GPUVLMClient:
 
     def _extract_vlm_result(self, data: dict) -> list[dict]:
         if isinstance(data.get("result"), list):
-            return self._validate_result(data["result"])
+            return self._validate_frame_results(data["result"])
+        if isinstance(data.get("result"), dict):
+            return self._extract_frame_results(data["result"])
+        if isinstance(data.get("vlm_summary_result"), list):
+            return self._validate_frame_results(data["vlm_summary_result"])
 
         job_id = data.get("job_id")
         status_url = data.get("status_url")
@@ -102,10 +106,20 @@ class GPUVLMClient:
             raise ValueError(f"Unexpected VLM response: {data}")
 
         job = self._wait_for_job(status_url)
-        return self._validate_result(job.get("result"))
+        result = job.get("result")
+        if isinstance(result, dict):
+            return self._extract_frame_results(result)
+        return self._validate_frame_results(result)
 
     @staticmethod
-    def _validate_result(result: object) -> list[dict]:
+    def _extract_frame_results(result: dict) -> list[dict]:
+        frame_results = result.get("vlm_summary_result")
+        if frame_results is None:
+            frame_results = result.get("results")
+        return GPUVLMClient._validate_frame_results(frame_results)
+
+    @staticmethod
+    def _validate_frame_results(result: object) -> list[dict]:
         if not isinstance(result, list):
             raise ValueError(f"Completed VLM job has no frame result list: {result}")
         if any(not isinstance(entry, dict) for entry in result):

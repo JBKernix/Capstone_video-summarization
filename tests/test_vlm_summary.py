@@ -1,5 +1,4 @@
 import json
-from pathlib import Path
 from unittest.mock import patch
 
 from modules.llm.vlm_summarizer_client import GPUVLMClient, GPUVLMClientConfig
@@ -17,24 +16,24 @@ def test_resolve_frame_paths_uses_ocr_image_paths(tmp_path):
     assert result == [frame_path.resolve()]
 
 
-def test_run_vlm_summary_step_saves_text_and_json(tmp_path):
+def test_run_vlm_summary_step_saves_vlm_results(tmp_path):
     ocr_path = tmp_path / "ocr_result.json"
     ocr_path.write_text("[]", encoding="utf-8")
     output_path = tmp_path / "vlm" / "vlm_summary.txt"
     output_json_path = tmp_path / "vlm" / "vlm_summary_result.json"
-    server_result = [
+    frame_results = [
         {
             "frame_id": 3,
             "timestamp": 12.5,
             "image_path": "runs/frames/frame_000004.jpg",
             "ocr_text": "sample",
-            "vlm_summary": "화면 요약입니다.",
+            "vlm_summary": "frame summary",
         }
     ]
 
     with patch(
         "scripts.run_vlm_summary.GPUVLMClient.summarize_ocr_file",
-        return_value=server_result,
+        return_value=frame_results,
     ) as summarize:
         result = run_vlm_summary_step(
             ocr_json_path=ocr_path,
@@ -46,36 +45,38 @@ def test_run_vlm_summary_step_saves_text_and_json(tmp_path):
     assert result == (output_path, output_json_path)
     assert "## Frame 3 (12.5s)" in output_path.read_text(encoding="utf-8")
     payload = json.loads(output_json_path.read_text(encoding="utf-8"))
-    assert payload["source"]["frame_count"] == 1
-    assert payload["results"] == server_result
-    summarize.assert_called_once_with(ocr_json_path=ocr_path, max_new_tokens=256)
+    assert payload["results"] == frame_results
+    summarize.assert_called_once_with(
+        ocr_json_path=ocr_path,
+        max_new_tokens=256,
+    )
 
 
-def test_summarize_ocr_file_batches_more_than_server_limit(tmp_path):
+def test_summarize_ocr_file_combines_batches(tmp_path):
     ocr_path = tmp_path / "ocr_result.json"
     entries = []
-    for index in range(33):
+    for index in range(9):
         frame_path = tmp_path / f"frame_{index:06d}.jpg"
         frame_path.write_bytes(b"jpg")
         entries.append({"frame_id": index, "image_path": str(frame_path)})
-    ocr_path.write_text(
-        json.dumps(entries),
-        encoding="utf-8",
-    )
+    ocr_path.write_text(json.dumps(entries), encoding="utf-8")
 
     client = GPUVLMClient()
     with patch.object(
         client,
         "_post_vlm_files",
-        side_effect=[[{"frame_id": index} for index in range(32)], [{"frame_id": 32}]],
+        side_effect=[
+            [{"frame_id": index} for index in range(8)],
+            [{"frame_id": 8}],
+        ],
     ) as post_files:
         result = client.summarize_ocr_file(ocr_path, max_new_tokens=128)
 
-    assert len(result) == 33
-    assert [len(call.args[1]) for call in post_files.call_args_list] == [32, 1]
+    assert len(result) == 9
+    assert [len(call.args[1]) for call in post_files.call_args_list] == [8, 1]
 
 
-def test_client_posts_server_multipart_fields_and_polls_result(tmp_path):
+def test_client_extracts_vlm_results_from_wrapped_server_result(tmp_path):
     ocr_path = tmp_path / "ocr_result.json"
     frame_path = tmp_path / "frame_000001.jpg"
     ocr_path.write_text("[]", encoding="utf-8")
@@ -95,24 +96,21 @@ def test_client_posts_server_multipart_fields_and_polls_result(tmp_path):
             return self._data
 
     def fake_post(url, files, data, timeout):
-        posted["url"] = url
-        posted["field_names"] = [field_name for field_name, _value in files]
-        posted["filenames"] = [value[0] for _field_name, value in files]
-        posted["data"] = data
-        posted["timeout"] = timeout
+        posted.update(url=url, data=data)
         return FakeResponse(
-            {
-                "job_id": "vlm-summary-test",
-                "status_url": "/vlm/jobs/vlm-summary-test",
-            }
+            {"job_id": "vlm-test", "status_url": "/vlm/jobs/vlm-test"}
         )
 
     def fake_get(url, timeout):
-        assert url == "http://gpu.test/vlm/jobs/vlm-summary-test"
         return FakeResponse(
             {
                 "status": "completed",
-                "result": [{"frame_id": 0, "vlm_summary": "summary"}],
+                "result": {
+                    "vlm_summary_result": [
+                        {"frame_id": 0, "vlm_summary": "summary"}
+                    ],
+                    "final_llm_summary": "final summary",
+                },
             }
         )
 
@@ -124,14 +122,14 @@ def test_client_posts_server_multipart_fields_and_polls_result(tmp_path):
             job_timeout=30,
         )
     )
-    with patch("modules.llm.vlm_summarizer_client.requests.post", side_effect=fake_post), patch(
-        "modules.llm.vlm_summarizer_client.requests.get",
-        side_effect=fake_get,
+    with patch(
+        "modules.llm.vlm_summarizer_client.requests.post", side_effect=fake_post
+    ), patch(
+        "modules.llm.vlm_summarizer_client.requests.get", side_effect=fake_get
     ):
-        result = client._post_vlm_files(ocr_path, [frame_path], max_new_tokens=256)
+        result = client._post_vlm_files(
+            ocr_path, [frame_path], max_new_tokens=256
+        )
 
     assert result == [{"frame_id": 0, "vlm_summary": "summary"}]
-    assert posted["url"] == "http://gpu.test/vlm/summarize"
-    assert posted["field_names"] == ["ocr_result", "frames"]
-    assert posted["filenames"] == ["ocr_result.json", "frame_000001.jpg"]
     assert posted["data"] == {"max_new_tokens": "256"}

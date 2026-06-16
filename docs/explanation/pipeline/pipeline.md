@@ -89,8 +89,6 @@ runs/ocr/ocr_result.json
 | `--stt-model-size` | Whisper 모델 크기 |
 | `--stt-language` | STT 언어 코드 |
 | `--stt-device` | STT 실행 장치: `cpu`, `cuda` |
-| `--stt-chunked` | 오디오를 chunk 단위로 STT 처리 |
-| `--stt-no-chunked` | chunk 분할 없이 STT 처리 |
 | `--stt-timestamps` | TXT 결과에 timestamp 포함 |
 
 ## 출력 구조

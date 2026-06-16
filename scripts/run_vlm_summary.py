@@ -37,12 +37,11 @@ def run_vlm_summary_step(
     ocr_json_path: str | Path,
     output_path: str | Path,
     output_json_path: str | Path | None = None,
-    max_new_tokens: int = 512,
+    max_new_tokens: int = 384,
 ) -> tuple[Path, Path]:
     ocr_json_path = Path(ocr_json_path)
     output_path = Path(output_path)
     output_json_path = Path(output_json_path or output_path.with_name("vlm_summary_result.json"))
-
     client = GPUVLMClient()
     results = client.summarize_ocr_file(
         ocr_json_path=ocr_json_path,
@@ -89,8 +88,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--max-new-tokens",
         type=int,
-        default=512,
-        help="Maximum generated tokens per frame (1-2048).",
+        default=384,
+        help="Maximum generated tokens per frame (1-384).",
     )
     return parser.parse_args()
 

@@ -1,6 +1,5 @@
 model_size: small
 language: ko
 device:
-chunked: true
-chunk_seconds: 30
-overlap_seconds: 2
+temperature: 0.0
+beam_size:
