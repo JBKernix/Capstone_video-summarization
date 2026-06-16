@@ -1,86 +1,149 @@
-# LLM Summary
+# LLM/VLM 요약 클라이언트
 
-## 개요
-
-`modules/llm`은 STT 결과와 vision 결과를 결합해 최종 영상 요약을 생성하기 위한 영역이다.
-
-현재 이 단계는 아직 구현되지 않았다. 파일과 설정 위치만 준비되어 있으며, `scripts/run_pipeline.py`의 전체 실행 흐름에도 연결되어 있지 않다.
+`modules/llm`은 로컬 모델을 직접 실행하지 않고 외부 GPU 서버 API를 호출해 STT 요약, 프레임 VLM 요약, 최종 통합 요약을 생성합니다.
 
 ## 관련 파일
 
-| 파일 | 상태 | 역할 |
-| --- | --- | --- |
-| `modules/llm/prompt_builder.py` | 비어 있음 | STT/vision 결과를 LLM 프롬프트로 변환 예정 |
-| `modules/llm/summarizer.py` | 비어 있음 | LLM 호출 및 요약 결과 생성 예정 |
-| `modules/llm/__init__.py` | 비어 있음 | LLM 모듈 export 예정 |
-| `scripts/run_summary.py` | 비어 있음 | 요약 단계 단독 실행 스크립트 예정 |
-| `configs/llm_config.yaml` | 비어 있음 | LLM 모델과 요약 옵션 설정 예정 |
+| 파일 | 역할 |
+| --- | --- |
+| `modules/llm/__init__.py` | `GPU_SERVER_URL` 기본값 |
+| `modules/llm/stt_summarizer_client.py` | STT 결과 요약 및 주요 구간 추출 |
+| `modules/llm/vlm_summarizer_client.py` | OCR 결과와 프레임 이미지를 VLM 서버로 전송 |
+| `modules/llm/final_summarizer_client.py` | STT/VLM 요약 파일을 결합해 최종 요약 요청 |
+| `scripts/run_llm_summary.py` | STT 요약 단독 실행 |
+| `scripts/run_vlm_summary.py` | VLM 요약 단독 실행 |
+| `scripts/run_final_summary.py` | 최종 요약 단독 실행 |
+| `modules/llm/receive.py` | 비어 있음 |
 
-## 목표 실행 흐름
+## 서버 설정
 
-구현이 완료되면 예상 흐름은 다음과 같다.
+기본 서버 주소:
 
-```text
-run_summary.py 또는 run_pipeline.py
-  -> stt_result.json 로드
-  -> ocr_result.json 로드
-  -> prompt_builder에서 통합 프롬프트 생성
-  -> summarizer에서 LLM 호출
-  -> summary_result.json 또는 summary_result.md 저장
+```python
+GPU_SERVER_URL = "http://10.30.2.224:8000"
 ```
 
-## 예상 입력
+세 클라이언트는 기본 timeout, poll interval, job timeout 값을 사용합니다.
 
-STT 결과:
+| 설정 | 기본값 |
+| --- | --- |
+| `timeout` | `600`초 |
+| `poll_interval` | `10`초 |
+| `job_timeout` | `3600`초 |
+
+## STT 요약
+
+클라이언트: `GPULLMClient`
+
+엔드포인트:
+
+```text
+POST /llm/summarize
+```
+
+입력:
 
 ```text
 runs/stt/stt_result.json
 ```
 
-vision 결과:
+출력:
+
+```text
+runs/llm/stt_summary.txt
+runs/llm/stt_summary_result.json
+```
+
+`stt_result.json`의 `segments`를 읽어 `full_text`를 만들고 서버에 전달합니다. 서버 응답에는 `summary`가 반드시 있어야 하며, `important_segments`는 문자열 JSON이어도 파싱을 시도합니다.
+
+## VLM 프레임 요약
+
+클라이언트: `GPUVLMClient`
+
+엔드포인트:
+
+```text
+POST /vlm/summarize
+```
+
+입력:
 
 ```text
 runs/ocr/ocr_result.json
+runs/frames/*.jpg
 ```
 
-## 예상 출력
-
-향후 요약 결과는 다음 위치 중 하나로 저장하는 것이 자연스럽다.
+출력:
 
 ```text
-runs/summary/summary_result.json
-runs/summary/summary_result.md
+runs/vlm/vlm_summary.txt
+runs/vlm/vlm_summary_result.json
 ```
 
-## `prompt_builder.py` 설계 방향
+특징:
 
-`prompt_builder.py`는 STT와 vision 결과를 LLM이 읽기 쉬운 구조로 바꾸는 역할을 맡는 것이 적절하다.
+- OCR JSON에서 `image_path`를 읽어 실제 프레임 파일을 찾습니다.
+- 프레임은 JPG/JPEG만 허용합니다.
+- 한 번에 최대 8개 프레임씩 서버에 전송합니다.
+- `max_new_tokens`는 1에서 384 사이여야 합니다.
 
-포함할 정보:
+## 최종 요약
 
-| 정보 | 설명 |
+클라이언트: `GPUFinalSummaryClient`
+
+엔드포인트:
+
+```text
+POST /llm/final-summary
+```
+
+입력:
+
+```text
+runs/llm/stt_summary.txt
+runs/llm/stt_summary_result.json
+runs/vlm/vlm_summary.txt
+runs/vlm/vlm_summary_result.json
+```
+
+출력:
+
+```text
+runs/final/final_summary.txt
+runs/final/final_summary_result.json
+```
+
+최종 요약 클라이언트는 입력 텍스트 파일이 비어 있지 않은지, JSON 파일이 객체인지 먼저 검증합니다.
+
+## 비동기 job 응답
+
+서버가 바로 결과를 주지 않고 다음 형태를 반환할 수 있습니다.
+
+```json
+{
+  "job_id": "abc",
+  "status_url": "/jobs/abc"
+}
+```
+
+이 경우 클라이언트는 `status_url`을 주기적으로 조회합니다.
+
+| 상태 | 동작 |
 | --- | --- |
-| 전체 STT 텍스트 | 영상의 음성 내용 |
-| STT segments | 시간대별 발화 내용 |
-| 중요 프레임 | `importance_score`가 높은 프레임 |
-| OCR 텍스트 | 화면에 등장한 주요 텍스트 |
-| timestamp | 음성과 화면 정보를 연결하기 위한 시간 정보 |
+| `completed` | `result`를 읽고 반환 |
+| `failed` | `RuntimeError` |
+| timeout 초과 | `TimeoutError` |
 
-## `summarizer.py` 설계 방향
+## CLI
 
-`summarizer.py`는 실제 LLM 호출을 담당한다.
+```bash
+python scripts/run_llm_summary.py --stt-json runs/stt/stt_result.json
+python scripts/run_vlm_summary.py --ocr-json runs/ocr/ocr_result.json --max-new-tokens 384
+python scripts/run_final_summary.py
+```
 
-예상 책임:
+## 주의 사항
 
-1. LLM 설정 로드
-2. prompt 생성 함수 호출
-3. 모델 API 호출
-4. 요약 결과 정규화
-5. 결과 파일 저장
-
-## 현재 제한
-
-1. 요약 코드는 아직 없다.
-2. API key, 모델명, 프롬프트 템플릿 설정도 없다.
-3. 전체 파이프라인은 STT 결과 생성까지만 자동 수행한다.
-4. README의 “LLM 요약” 설명은 목표 구조에 가깝고 현재 구현 상태와 차이가 있다.
+- 전체 파이프라인은 VLM 요약까지만 자동 실행합니다. 최종 요약은 `run_final_summary.py`를 별도로 실행합니다.
+- GPU 서버 응답 형식이 예상과 다르면 `ValueError`가 발생합니다.
+- VLM 단계는 OCR JSON의 프레임 파일 경로가 실제로 존재해야 합니다.

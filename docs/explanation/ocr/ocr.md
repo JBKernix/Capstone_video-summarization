@@ -1,82 +1,19 @@
-# OCR
+# OCR 모듈
 
-## 개요
-
-OCR 단계는 추출된 프레임 이미지에서 화면 텍스트를 읽어 `ocr_result.json`에 들어갈 `ocr_text`, `detected_language`, `bbox`, `confidence` 정보를 만든다.
-
-현재 OCR 엔진은 EasyOCR이다. 기존 PaddleOCR/PaddlePaddle 기반 구현은 제거되었고, Whisper STT와 같은 PyTorch 계열 런타임을 사용한다.
+`modules/ocr/ocr_extractor.py`는 EasyOCR를 사용해 프레임 이미지에서 텍스트를 추출합니다.
 
 ## 관련 파일
 
 | 파일 | 역할 |
 | --- | --- |
 | `modules/ocr/ocr_extractor.py` | EasyOCR Reader 로딩, OCR 실행, 결과 파싱 |
-| `modules/ocr/ocr_formatter.py` | 프레임 metadata를 읽고 OCR 결과를 구조화 |
-| `modules/ocr/image_caption.py` | OCR 텍스트를 기반으로 화면 유형과 캡션 생성 |
-| `docs/explanation/ocr/ocr_pipeline.md` | OCR 단계 전체 흐름 설명 |
-
-## 실행 흐름
-
-```text
-analyze_frames_metadata()
-  -> OCRExtractor(lang) 생성
-  -> OCRExtractor.load_model()
-      -> easyocr import
-      -> torch.cuda.is_available() 확인
-      -> easyocr.Reader(languages, gpu=gpu, verbose=False)
-  -> 각 프레임 반복
-      -> _resolve_image_path()
-      -> OCRExtractor.extract_text_with_language()
-          -> _run_ocr()
-              -> readtext(image_path, detail=1, paragraph=False)
-          -> _parse_ocr_result()
-          -> detect_text_language()
-```
-
-## 입력
-
-OCR이 직접 처리하는 입력은 프레임 이미지 파일이다.
-
-```text
-runs/frames/interval_000001.jpg
-```
-
-프레임 경로는 `frame_metadata.json`에서 읽는다.
-
-```json
-{
-  "frame_id": 0,
-  "timestamp": 0.0,
-  "image_path": "runs/frames/interval_000001.jpg",
-  "sampling_method": "interval"
-}
-```
-
-## 출력
-
-OCR 결과는 프레임별 vision 결과에 포함된다.
-
-```json
-{
-  "ocr_text": "인식된 텍스트",
-  "detected_language": "ko"
-}
-```
-
-상세 OCR 결과 형식은 `extract_text_with_details()`에서 사용한다.
-
-```json
-{
-  "text": "인식된 텍스트",
-  "confidence": 0.95,
-  "bbox": [[0, 0], [100, 0], [100, 30], [0, 30]],
-  "detected_language": "ko"
-}
-```
+| `modules/ocr/ocr_formatter.py` | 프레임 메타데이터 기반 OCR 결과 생성 |
+| `modules/ocr/image_caption.py` | OCR 텍스트 기반 화면 유형과 간단 캡션 생성 |
+| `scripts/run_ocr.py` | OCR 단독 실행 |
 
 ## 언어 설정
 
-`OCRExtractor`는 프로젝트 언어 설정을 EasyOCR 언어 코드로 변환한다.
+기본값은 `korean`입니다.
 
 | 입력 | EasyOCR 언어 목록 |
 | --- | --- |
@@ -85,27 +22,19 @@ OCR 결과는 프레임별 vision 결과에 포함된다.
 | 빈 값 | `["ko", "en"]` |
 | 기타 값 | 해당 값을 그대로 사용 |
 
-한국어 화면에도 영어, 숫자, 약어가 섞이는 경우가 많기 때문에 `korean`은 `ko`와 `en`을 함께 사용한다.
+한국어 화면에도 영어, 숫자, 약어가 섞이는 경우가 많아 한국어 기본 설정은 `ko`, `en`을 함께 사용합니다.
 
 ## 모델 로딩
 
-EasyOCR Reader는 프레임마다 새로 만들지 않고 한 번만 로드해 재사용한다.
+`OCRExtractor.load_model()`은 EasyOCR Reader를 한 번만 생성하고 재사용합니다.
 
 ```python
-self.ocr = easyocr.Reader(languages, gpu=gpu, verbose=False)
+self.ocr = easyocr.Reader(languages, gpu=torch.cuda.is_available(), verbose=False)
 ```
 
-| 설정 | 설명 |
-| --- | --- |
-| `languages` | EasyOCR 언어 코드 목록 |
-| `gpu` | `torch.cuda.is_available()` 결과 |
-| `verbose=False` | Windows 콘솔의 진행률 문자 인코딩 오류 방지 |
-
-첫 실행 시 EasyOCR 모델 파일을 다운로드할 수 있다.
+`verbose=False`는 Windows 콘솔에서 EasyOCR 진행 출력이 인코딩 문제를 일으키는 경우를 줄이기 위한 설정입니다.
 
 ## OCR 실행
-
-EasyOCR 호출은 다음 형태다.
 
 ```python
 self.ocr.readtext(str(image_path), detail=1, paragraph=False)
@@ -116,9 +45,7 @@ self.ocr.readtext(str(image_path), detail=1, paragraph=False)
 | `detail=1` | bbox, text, confidence를 함께 반환 |
 | `paragraph=False` | 문단 병합 없이 라인 단위 결과 유지 |
 
-## 결과 파싱
-
-EasyOCR 원본 결과는 보통 다음 형식이다.
+EasyOCR 원본 결과:
 
 ```python
 [
@@ -126,19 +53,20 @@ EasyOCR 원본 결과는 보통 다음 형식이다.
 ]
 ```
 
-`_parse_ocr_result()`는 이 값을 프로젝트 공통 OCR 형식으로 바꾼다.
+프로젝트 공통 결과:
 
-처리 내용:
+```json
+{
+  "text": "인식된 텍스트",
+  "confidence": 0.95,
+  "bbox": [[0, 0], [100, 0], [100, 30], [0, 30]],
+  "detected_language": "ko"
+}
+```
 
-1. 잘못된 항목은 건너뛴다.
-2. 빈 문자열은 결과에서 제외한다.
-3. confidence를 float로 저장한다.
-4. bbox 안의 numpy 값을 JSON 저장 가능한 Python 기본 타입으로 변환한다.
-5. 텍스트별 언어를 `detect_text_language()`로 판별한다.
+## 언어 감지
 
-## 언어 판별
-
-`detect_text_language()`는 OCR 텍스트 안의 한글과 영문 포함 여부로 언어 유형을 판별한다.
+`detect_text_language()`은 OCR 텍스트 안의 한글과 영문 포함 여부를 기준으로 분류합니다.
 
 | 결과 | 조건 |
 | --- | --- |
@@ -147,17 +75,24 @@ EasyOCR 원본 결과는 보통 다음 형식이다.
 | `mixed` | 한글과 영문이 함께 있음 |
 | `unknown` | 한글과 영문이 모두 없음 |
 
+## 공개 메서드
+
+| 메서드 | 반환 |
+| --- | --- |
+| `extract_text(image_path)` | OCR 텍스트를 공백으로 합친 문자열 |
+| `extract_text_with_language(image_path)` | `ocr_text`, `detected_language` 딕셔너리 |
+| `extract_text_with_details(image_path)` | bbox/confidence를 포함한 상세 리스트 |
+
 ## 예외
 
 | 상황 | 예외 |
 | --- | --- |
-| 이미지 파일이 없음 | `FileNotFoundError` |
-| easyocr 또는 torch 미설치 | `ImportError` |
+| 이미지 파일 없음 | `FileNotFoundError` |
+| `easyocr` 또는 `torch` 미설치 | `ImportError` |
 | EasyOCR Reader 초기화 실패 | `RuntimeError` |
 
 ## 주의 사항
 
-1. 프레임 수가 많으면 OCR 단계가 오래 걸린다.
-2. 한국어 OCR은 글꼴, 자막 크기, 해상도, 배경 대비에 따라 오인식이 생길 수 있다.
-3. bbox에는 numpy scalar가 섞일 수 있으므로 JSON 저장 전에 변환이 필요하다.
-4. 작업 디렉터리가 달라도 이미지 경로를 찾을 수 있도록 `ocr_formatter.py`에서 프로젝트 루트를 탐색한다.
+- 첫 실행 시 EasyOCR 모델 파일 다운로드가 필요할 수 있습니다.
+- 프레임 수가 많으면 OCR 시간이 길어집니다.
+- bbox에는 numpy scalar가 섞일 수 있어 저장 전 JSON 가능 타입으로 변환합니다.
