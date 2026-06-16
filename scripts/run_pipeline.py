@@ -50,6 +50,11 @@ from scripts.run_vlm_summary import (  # noqa: E402
     DEFAULT_VLM_SUMMARY_RELATIVE_PATH,
     run_vlm_summary_step,
 )
+from scripts.run_final_summary import (  # noqa: E402
+    DEFAULT_FINAL_SUMMARY_JSON_RELATIVE_PATH,
+    DEFAULT_FINAL_SUMMARY_RELATIVE_PATH,
+    run_final_summary_step,
+)
 
 
 def _format_elapsed(seconds: float) -> str:
@@ -398,10 +403,10 @@ def main():
     stt_options = build_stt_options(args)
     video_path = ensure_mp4_video(video_path, run_dir / "data" / "input")
 
-    with _stage_timeline("1/6", "오디오 추출"):
+    with _stage_timeline("1/7", "오디오 추출"):
         audio_path = run_audio_step(video_path=video_path, run_dir=run_dir)
 
-    with _stage_timeline("2/6", "STT") as stage:
+    with _stage_timeline("2/7", "STT") as stage:
         if args.skip_stt:
             stage["status"] = "건너뜀"
             stt_json_path = None
@@ -413,7 +418,7 @@ def main():
                 stt_options=stt_options,
             )
 
-    with _stage_timeline("3/6", "STT 요약") as stage:
+    with _stage_timeline("3/7", "STT 요약") as stage:
         if stt_json_path is None:
             stage["status"] = "건너뜀"
             llm_summary_path = None
@@ -427,7 +432,7 @@ def main():
             print(f"STT 요약 저장(txt): {llm_summary_path}")
             print(f"STT 요약 저장(json): {llm_summary_json_path}")
 
-    with _stage_timeline("4/6", "중요 구간 프레임 추출") as stage:
+    with _stage_timeline("4/7", "중요 구간 프레임 추출") as stage:
         if llm_summary_json_path is None:
             stage["status"] = "건너뜀"
             metadata_path = None
@@ -442,7 +447,7 @@ def main():
                 important_segments_path=llm_summary_json_path,
             )
 
-    with _stage_timeline("5/6", "OCR 분석") as stage:
+    with _stage_timeline("5/7", "OCR 분석") as stage:
         if metadata_path is None or args.skip_ocr:
             stage["status"] = "건너뜀"
             ocr_path = None
@@ -453,7 +458,7 @@ def main():
                 ocr_lang=args.ocr_lang,
             )
 
-    with _stage_timeline("6/6", "VLM 프레임 요약") as stage:
+    with _stage_timeline("6/7", "VLM 프레임 요약") as stage:
         if ocr_path is None or args.skip_vlm:
             stage["status"] = "건너뜀"
             vlm_summary_path = None
@@ -467,6 +472,28 @@ def main():
             )
             print(f"VLM 요약 저장(txt): {vlm_summary_path}")
             print(f"VLM 요약 저장(json): {vlm_summary_json_path}")
+
+    with _stage_timeline("7/7", "최종 통합 요약") as stage:
+        if (
+            llm_summary_path is None
+            or llm_summary_json_path is None
+            or vlm_summary_path is None
+            or vlm_summary_json_path is None
+        ):
+            stage["status"] = "건너뜀"
+            final_summary_path = None
+            final_summary_json_path = None
+        else:
+            final_summary_path, final_summary_json_path = run_final_summary_step(
+                stt_summary_path=llm_summary_path,
+                stt_summary_json_path=llm_summary_json_path,
+                vlm_summary_path=vlm_summary_path,
+                vlm_summary_json_path=vlm_summary_json_path,
+                output_path=run_path(run_dir, DEFAULT_FINAL_SUMMARY_RELATIVE_PATH),
+                output_json_path=run_path(run_dir, DEFAULT_FINAL_SUMMARY_JSON_RELATIVE_PATH),
+            )
+            print(f"최종 요약 저장(txt): {final_summary_path}")
+            print(f"최종 요약 저장(json): {final_summary_json_path}")
 
     print("파이프라인 실행이 완료되었습니다.")
     print(f"오디오 파일: {audio_path}")
@@ -485,6 +512,10 @@ def main():
         print(f"VLM 요약 결과: {vlm_summary_path}")
     if vlm_summary_json_path is not None:
         print(f"VLM 요약 JSON 결과: {vlm_summary_json_path}")
+    if final_summary_path is not None:
+        print(f"최종 요약 결과: {final_summary_path}")
+    if final_summary_json_path is not None:
+        print(f"최종 요약 JSON 결과: {final_summary_json_path}")
     
 if __name__ == "__main__":
     main()

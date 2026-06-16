@@ -1,6 +1,6 @@
 # 전체 파이프라인
 
-`scripts/run_pipeline.py`는 영상 하나를 입력받아 오디오, STT, STT 요약, 프레임 샘플링, OCR, VLM 요약까지 순차 실행하는 CLI 진입점입니다.
+`scripts/run_pipeline.py`는 영상 하나를 입력받아 오디오, STT, STT 요약, 프레임 샘플링, OCR, VLM 요약, 최종 통합 요약까지 순차 실행하는 CLI 진입점입니다.
 
 ## 실행 흐름
 
@@ -14,13 +14,10 @@ main()
   -> run_preprocess_step()
   -> run_ocr_step()
   -> run_vlm_summary_step()
+  -> run_final_summary_step()
 ```
 
-현재 전체 파이프라인 안에서는 `run_final_summary.py`의 최종 통합 요약 단계가 자동 호출되지 않습니다. 최종 요약은 별도 명령으로 실행합니다.
-
-```bash
-python scripts/run_final_summary.py
-```
+최종 통합 요약만 다시 생성해야 할 때는 `python scripts/run_final_summary.py`를 별도로 실행할 수 있습니다.
 
 ## 단계별 산출물
 
@@ -33,6 +30,7 @@ python scripts/run_final_summary.py
 | 프레임 샘플링 | `run_preprocess_step()` | `runs/frames/`, `runs/metadata/frame_metadata.json` |
 | OCR | `run_ocr_step()` | `runs/ocr/ocr_result.json` |
 | VLM 요약 | `run_vlm_summary_step()` | `runs/vlm/vlm_summary.txt`, `runs/vlm/vlm_summary_result.json` |
+| 최종 통합 요약 | `run_final_summary_step()` | `runs/final/final_summary.txt`, `runs/final/final_summary_result.json` |
 
 ## 주요 옵션
 
@@ -67,7 +65,7 @@ python scripts/run_final_summary.py
 | --- | --- |
 | 입력 영상 없음 | `FileNotFoundError` |
 | `data/input/*.mp4`에 일치 파일 없음 | `FileNotFoundError` |
-| FFmpeg/FFprobe 없음 | `RuntimeError` 또는 `CalledProcessError` |
+| FFmpeg/FFprobe 없음 또는 실행 실패 | `RuntimeError` |
 | GPU 서버 접근 실패 | `requests` 예외 |
 | STT/OCR/VLM 결과 형식 오류 | 각 단계에서 예외 발생 |
 

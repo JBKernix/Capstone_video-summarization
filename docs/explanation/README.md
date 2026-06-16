@@ -6,7 +6,7 @@
 
 | 영역 | 문서 | 관련 코드 | 설명 |
 | --- | --- | --- | --- |
-| App | `app/app.md` | `app/` | Streamlit UI 예정 파일과 현재 미구현 상태 |
+| App | `app/app.md` | `app/` | Streamlit UI 구조와 실행 흐름 |
 | Configs | `configs/configs.md` | `configs/` | STT 설정과 비어 있는 설정 파일 상태 |
 | Scripts | `scripts/scripts.md` | `scripts/` | CLI 실행 스크립트별 역할 |
 | 전체 파이프라인 | `pipeline/pipeline.md` | `scripts/run_pipeline.py` | 오디오 추출, STT, LLM 요약, 프레임 추출, OCR, VLM 요약 순서 |
@@ -45,7 +45,7 @@
 | STT 요약 | 구현됨 | 외부 GPU LLM 서버 필요 |
 | VLM 프레임 요약 | 구현됨 | 외부 GPU VLM 서버 필요, JPG 프레임만 전송 |
 | 최종 요약 | 구현됨 | STT/VLM 요약 파일 필요 |
-| Streamlit UI | 미구현 | `app/` 파일은 현재 비어 있음 |
+| Streamlit UI | 구현됨 | 업로드, 분석 실행, 최종 요약 결과 확인 |
 
 ## 기본 경로
 

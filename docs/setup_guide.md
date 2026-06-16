@@ -11,6 +11,7 @@
 | 패키지 관리자 | conda 또는 venv + pip |
 | 외부 도구 | FFmpeg, FFprobe |
 | GPU | 선택 사항, Whisper/EasyOCR 속도 개선용 |
+| UI | Streamlit |
 
 ## Python 환경 생성
 
@@ -21,6 +22,7 @@ pip install -r requirements.txt
 ```
 
 `requirements.txt`에는 EasyOCR, OpenCV, PyTorch, Whisper, requests, PyYAML 등이 포함되어 있습니다.
+현재 UI 실행을 위해 `streamlit`도 포함되어 있습니다.
 
 ## FFmpeg 확인
 
@@ -78,6 +80,20 @@ GPU_SERVER_URL = "http://10.30.2.224:8000"
 
 ## 전체 실행
 
+Streamlit 앱:
+
+```bat
+run_app.bat
+```
+
+또는:
+
+```bash
+streamlit run app/main.py
+```
+
+CLI:
+
 ```bash
 python scripts/run_pipeline.py --video data/input/sample.mp4 --run-dir runs
 ```
@@ -101,6 +117,8 @@ python scripts/run_vlm_summary.py --ocr-json runs/ocr/ocr_result.json
 python scripts/run_final_summary.py
 ```
 
+현재 `run_pipeline.py`는 최종 통합 요약까지 실행합니다. `run_final_summary.py`는 기존 STT/VLM 요약 파일을 바탕으로 최종 요약만 다시 생성할 때 사용합니다.
+
 ## 문제 해결
 
 | 증상 | 확인할 것 |
@@ -110,3 +128,4 @@ python scripts/run_final_summary.py
 | EasyOCR 초기화 실패 | `easyocr`, `torch` 설치 상태와 CUDA 호환성 |
 | LLM/VLM 단계 연결 실패 | `GPU_SERVER_URL` 서버 접근 가능 여부 |
 | 프레임 이미지 파일을 찾지 못함 | `runs/metadata/frame_metadata.json`의 `image_path`와 실제 `runs/frames/` 확인 |
+| 앱에서 진행 상황이 보이지 않음 | `runs/app_pipeline.log` 생성 여부와 파이프라인 프로세스 상태 |

@@ -1,12 +1,12 @@
 # 실행 스크립트
 
-`scripts/` 폴더는 현재 프로젝트의 실제 실행 진입점입니다. Streamlit UI가 아직 비어 있으므로 CLI 스크립트를 기준으로 실행합니다.
+`scripts/` 폴더는 CLI 실행 진입점입니다. Streamlit 앱도 내부적으로 `scripts/run_pipeline.py`를 백그라운드 프로세스로 실행합니다.
 
 ## 스크립트 목록
 
 | 스크립트 | 역할 |
 | --- | --- |
-| `run_pipeline.py` | 오디오 추출부터 VLM 요약까지 순차 실행 |
+| `run_pipeline.py` | 오디오 추출부터 최종 통합 요약까지 순차 실행 |
 | `run_preprocess.py` | 영상 정보 확인과 프레임 샘플링 |
 | `run_stt.py` | Whisper STT 실행 |
 | `run_ocr.py` | 프레임 메타데이터 기반 OCR 실행 |
@@ -16,12 +16,19 @@
 
 ## 기본 실행 순서
 
-```bash
-python scripts/run_pipeline.py --video data/input/sample.mp4 --run-dir runs
-python scripts/run_final_summary.py
+Streamlit 앱:
+
+```bat
+run_app.bat
 ```
 
-`run_pipeline.py`는 최종 통합 요약까지 자동 실행하지 않으므로, 최종 결과가 필요하면 `run_final_summary.py`를 이어서 실행합니다.
+CLI:
+
+```bash
+python scripts/run_pipeline.py --video data/input/sample.mp4 --run-dir runs
+```
+
+`run_final_summary.py`는 최종 통합 요약만 다시 생성해야 할 때 별도로 실행합니다.
 
 ## 단계별 실행 예
 

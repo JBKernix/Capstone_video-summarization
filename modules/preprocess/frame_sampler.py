@@ -146,6 +146,8 @@ def _sample_interval_frames_in_ranges(
                 "1",
                 "-q:v",
                 "2",
+                "-update",
+                "1",
                 str(output_path),
             ]
         )

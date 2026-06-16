@@ -51,7 +51,7 @@ runs/audio/audio.wav
 | 상황 | 예외 |
 | --- | --- |
 | 입력 영상 없음 | `FileNotFoundError` |
-| FFmpeg 실행 실패 | `subprocess.CalledProcessError` |
+| FFmpeg 실행 실패 | stdout/stderr를 포함한 `RuntimeError` |
 | FFmpeg 실행 파일 없음 | `RuntimeError` |
 
 ## 주의 사항

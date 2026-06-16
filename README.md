@@ -2,7 +2,7 @@
 
 영상에서 음성, 주요 프레임, OCR 텍스트를 추출하고 외부 GPU 서버의 LLM/VLM API를 사용해 최종 요약을 만드는 캡스톤 프로젝트입니다.
 
-현재 저장소의 핵심 실행 흐름은 Streamlit UI가 아니라 `scripts/`의 CLI 스크립트입니다. `app/` 아래 UI 파일은 아직 비어 있으므로, 실행과 검증은 아래 CLI 명령을 기준으로 진행합니다.
+현재 저장소는 `scripts/` CLI 파이프라인과 Streamlit 기반 `app/` UI를 함께 제공합니다. UI는 영상 업로드, 파이프라인 실행, 원본 영상과 최종 요약 결과 확인을 담당합니다.
 
 ## 주요 기능
 
@@ -31,7 +31,7 @@
 
 ```text
 Capstone_video-summarization/
-├── app/                  # Streamlit UI 예정 영역, 현재 파일은 비어 있음
+├── app/                  # Streamlit UI
 ├── configs/              # STT 등 설정 파일
 ├── data/input/           # 기본 입력 영상 위치
 ├── docs/                 # 설계 및 모듈 설명 문서
@@ -85,6 +85,22 @@ GPU_SERVER_URL = "http://10.30.2.224:8000"
 ```
 
 서버가 접근 가능하지 않으면 `run_llm_summary.py`, `run_vlm_summary.py`, `run_final_summary.py` 및 전체 파이프라인의 관련 단계가 실패합니다.
+
+## Streamlit 앱 실행
+
+Windows에서는 배치 파일로 실행할 수 있습니다.
+
+```bat
+run_app.bat
+```
+
+직접 실행할 수도 있습니다.
+
+```bash
+streamlit run app/main.py
+```
+
+앱은 업로드 영상을 `data/input/input.mp4`로 저장하고 `scripts/run_pipeline.py`를 백그라운드로 실행합니다. 실행 로그는 `runs/app_pipeline.log`에 저장됩니다.
 
 ## 전체 파이프라인 실행
 
@@ -150,7 +166,7 @@ python scripts/run_vlm_summary.py --ocr-json runs/ocr/ocr_result.json
 python scripts/run_final_summary.py
 ```
 
-참고로 `scripts/run_pipeline.py`는 VLM 프레임 요약까지 실행합니다. 최종 통합 요약 파일인 `runs/final/final_summary.txt`가 필요하면 `scripts/run_final_summary.py`를 이어서 실행하세요.
+참고로 `scripts/run_pipeline.py`는 최종 통합 요약까지 실행합니다. 개별 단계만 다시 실행해야 할 때는 `scripts/run_final_summary.py`를 별도로 사용할 수 있습니다.
 
 ## 주요 출력 파일
 
@@ -177,7 +193,7 @@ python scripts/run_final_summary.py
 - `docs/system_overvies.md`: 시스템 개요 문서
 - `docs/explanation/README.md`: 모듈별 상세 설명 문서 색인
 - `docs/explanation/scripts/scripts.md`: CLI 스크립트 설명
-- `docs/explanation/app/app.md`: UI 예정 파일과 현재 상태
+- `docs/explanation/app/app.md`: Streamlit UI 구조와 실행 흐름
 - `docs/explanation/configs/configs.md`: 설정 파일 설명
 - `docs/explanation/tests/tests.md`: 테스트 구성 설명
 
@@ -193,7 +209,7 @@ python scripts/run_final_summary.py
 | STT 요약 LLM 클라이언트 | 구현됨, GPU 서버 필요 |
 | VLM 요약 클라이언트 | 구현됨, GPU 서버 필요 |
 | 최종 요약 클라이언트 | 구현됨, GPU 서버 필요 |
-| Streamlit UI | 파일만 존재, 미구현 |
+| Streamlit UI | 구현됨 |
 
 ## 팀 역할
 
@@ -201,5 +217,5 @@ python scripts/run_final_summary.py
 | --- | --- |
 | 함도연 | STT 데이터, AI 모델 조사, VLM/LLM 환경 설정 |
 | 김승민 | 영상 전처리, 프레임/오디오 분할, 입출력 UI |
-| 정병두 | OCR 데이터, VLM/LLM 모듈 설계 |
+| 정병두 | OCR 데이터, AI 모델 조사, VLM/LLM 모듈 설계 |
 | 조윤호 | 입출력 UI |

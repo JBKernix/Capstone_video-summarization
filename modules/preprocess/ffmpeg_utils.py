@@ -47,15 +47,28 @@ def run_command(args: Sequence[str]) -> subprocess.CompletedProcess[str]:
     if not args:
         raise ValueError("실행할 명령어가 비어 있습니다.")
 
-    return subprocess.run(
-        list(args),
-        check=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
+    try:
+        return subprocess.run(
+            list(args),
+            check=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+    except subprocess.CalledProcessError as exc:
+        command = " ".join(str(arg) for arg in exc.cmd)
+        stdout = exc.stdout.strip() if exc.stdout else ""
+        stderr = exc.stderr.strip() if exc.stderr else ""
+        details = [
+            f"Command failed with exit code {exc.returncode}: {command}",
+        ]
+        if stdout:
+            details.append(f"stdout:\n{stdout}")
+        if stderr:
+            details.append(f"stderr:\n{stderr}")
+        raise RuntimeError("\n".join(details)) from exc
 
 
 def run_ffmpeg(args: Sequence[str]) -> subprocess.CompletedProcess[str]:
@@ -67,7 +80,10 @@ def run_ffmpeg(args: Sequence[str]) -> subprocess.CompletedProcess[str]:
     Returns:
         ``subprocess.CompletedProcess`` 객체입니다.
     """
-    return run_command([ensure_command("ffmpeg"), *args])
+    ffmpeg_args = list(args)
+    if "-nostdin" not in ffmpeg_args:
+        ffmpeg_args.insert(0, "-nostdin")
+    return run_command([ensure_command("ffmpeg"), *ffmpeg_args])
 
 
 def ensure_mp4_video(video_path: str | Path, output_dir: str | Path) -> Path:

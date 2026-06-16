@@ -144,6 +144,6 @@ python scripts/run_final_summary.py
 
 ## 주의 사항
 
-- 전체 파이프라인은 VLM 요약까지만 자동 실행합니다. 최종 요약은 `run_final_summary.py`를 별도로 실행합니다.
+- 전체 파이프라인은 최종 통합 요약까지 자동 실행합니다. 최종 요약만 다시 생성할 때는 `run_final_summary.py`를 별도로 실행합니다.
 - GPU 서버 응답 형식이 예상과 다르면 `ValueError`가 발생합니다.
 - VLM 단계는 OCR JSON의 프레임 파일 경로가 실제로 존재해야 합니다.

@@ -28,12 +28,13 @@
 | OCR | `modules/ocr/` | EasyOCR 실행, 화면 유형 추정, OCR 결과 저장 |
 | LLM/VLM | `modules/llm/` | 외부 GPU 서버 API 클라이언트 |
 | 공통 유틸리티 | `modules/common/` | 기본 경로와 JSON 유틸리티 |
-| UI | `app/` | Streamlit UI 예정 영역, 현재 미구현 |
+| UI | `app/` | Streamlit 기반 업로드, 분석 실행, 결과 확인 화면 |
 
 ## 기본 실행 진입점
 
 | 목적 | 명령 |
 | --- | --- |
+| Streamlit 앱 | `streamlit run app/main.py` 또는 `run_app.bat` |
 | 전체 파이프라인 | `python scripts/run_pipeline.py` |
 | 전처리만 실행 | `python scripts/run_preprocess.py` |
 | STT만 실행 | `python scripts/run_stt.py` |
@@ -76,7 +77,7 @@ runs/
 | CLI 파이프라인 | 구현됨 |
 | 전처리/STT/OCR | 구현됨 |
 | LLM/VLM 서버 클라이언트 | 구현됨 |
-| Streamlit UI | 파일만 존재, 미구현 |
+| Streamlit UI | 구현됨 |
 | 설정 파일 | `stt_config.yaml`만 값이 있음, 나머지는 비어 있음 |
 
 ## 참고 문서

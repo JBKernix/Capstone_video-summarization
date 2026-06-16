@@ -6,6 +6,7 @@ opencv-contrib-python==4.10.0.84
 Pillow==12.2.0
 PyYAML==6.0.2
 requests==2.34.2
+streamlit==1.41.1
 openai-whisper
 torch==2.11.0
 torchvision==0.26.0

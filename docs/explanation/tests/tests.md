@@ -1,6 +1,6 @@
 # 테스트
 
-`tests/` 폴더는 주요 모듈 동작을 확인하는 pytest 테스트를 담고 있습니다.
+`tests/` 폴더는 주요 모듈과 앱 보조 로직을 검증하는 테스트를 담고 있습니다.
 
 ## 테스트 파일
 
@@ -11,6 +11,7 @@
 | `tests/test_pipeline.py` | 파이프라인 보조 흐름 |
 | `tests/test_stt.py` | STT 포맷팅/실행 관련 동작 |
 | `tests/test_vlm_summary.py` | VLM 요약 클라이언트 |
+| `tests/test_summary_result.py` | 앱 최종 요약 로더와 영상 경로 해석 |
 
 ## 실행
 
@@ -21,8 +22,19 @@ pytest
 특정 파일만 실행:
 
 ```bash
-pytest tests/test_frame_sampler.py
+pytest tests/test_summary_result.py
 ```
+
+## 앱 결과 로더 테스트
+
+`test_summary_result.py`는 다음 동작을 확인합니다.
+
+- `final_summary_result.json`이 있으면 TXT보다 우선 사용
+- JSON이 없으면 `final_summary.txt`로 fallback
+- 결과 파일이 없으면 `FileNotFoundError`
+- `summary`, `final_summary` 키에서 Markdown 요약 추출
+- 구조화 요약 필드 감지
+- 명시된 영상 경로가 존재하면 그 경로를 사용
 
 ## 주의 사항
 
@@ -38,4 +50,5 @@ pytest tests/test_frame_sampler.py
 - 출력 JSON 구조
 - 기본 경로와 옵션 처리
 - 외부 서버 응답 형식 처리
+- 앱 결과 표시용 fallback 처리
 - 일부 실패가 전체 결과에 미치는 영향
