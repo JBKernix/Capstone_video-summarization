@@ -26,6 +26,10 @@ from scripts.vlm_upload import (
     select_ocr_entries_for_frames,
     validate_frame_filename,
 )
+from services.final_service import (
+    DEFAULT_FINAL_MAX_NEW_TOKENS,
+    MAX_FINAL_NEW_TOKENS_LIMIT,
+)
 from services.summary_service import SummaryService
 
 
@@ -216,9 +220,9 @@ async def summarize_final(
     vlm_summary: UploadFile = File(...),
     vlm_summary_result: UploadFile = File(...),
     max_new_tokens: int = Form(
-        default=LLM_INFERENCE_CONFIG.default_max_new_tokens,
+        default=DEFAULT_FINAL_MAX_NEW_TOKENS,
         ge=1,
-        le=LLM_INFERENCE_CONFIG.max_new_tokens_limit,
+        le=MAX_FINAL_NEW_TOKENS_LIMIT,
     ),
 ):
     try:

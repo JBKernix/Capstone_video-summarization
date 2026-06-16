@@ -6,7 +6,6 @@ from pathlib import Path
 from threading import Lock
 from typing import Any
 
-from configs.inference_config import LLM_INFERENCE_CONFIG
 from services.llm_service import LLMService
 
 
@@ -18,6 +17,8 @@ MAX_VLM_TEXT_CHARS = 5000
 MAX_IMPORTANT_SEGMENTS = 8
 MAX_VLM_ITEMS = 12
 MAX_ITEM_TEXT_CHARS = 350
+DEFAULT_FINAL_MAX_NEW_TOKENS = 2048
+MAX_FINAL_NEW_TOKENS_LIMIT = 4096
 
 
 class FinalService:
@@ -33,9 +34,9 @@ class FinalService:
         stt_json: JSONInput | None = None,
         vlm_text: TextInput | None = None,
         vlm_json: JSONInput | None = None,
-        max_new_tokens: int = LLM_INFERENCE_CONFIG.default_max_new_tokens,
+        max_new_tokens: int = DEFAULT_FINAL_MAX_NEW_TOKENS,
     ) -> str:
-        """STT 요약과 VLM 요약 산출물을 종합해 최종 요약을 생성합니다."""
+        """STT 요약과 VLM 요약 결과를 종합해 최종 요약을 생성합니다."""
         stt_section = self.build_stt_section(stt_text=stt_text, stt_json=stt_json)
         vlm_section = self.build_vlm_section(vlm_text=vlm_text, vlm_json=vlm_json)
         if not stt_section.strip():
@@ -45,7 +46,25 @@ class FinalService:
 
         prompt = f"""
 당신은 영상의 최종 요약을 작성하는 한국어 요약 전문가입니다.
-제공된 STT 요약과 VLM 요약에 있는 정보만 사용하고, 없는 사실을 추측하거나 추가하지 마세요.
+
+제공된 STT 요약과 VLM 요약에 있는 정보만 사용하세요.
+입력 자료에 없는 사실, 수치, 항목, 원인, 결론을 추측하거나 추가하지 마세요.
+STT 요약과 VLM 요약에서 중복되는 내용은 하나로 통합하세요.
+두 자료의 내용이 충돌하면 단정하지 말고 "확인 필요"로 표시하세요.
+
+최종 요약은 영상의 흐름을 따라 주제별로 구성하세요.
+각 주제에는 해당 내용이 등장하는 영상 구간을 타임라인으로 표시하세요.
+타임라인은 반드시 입력 자료에 포함된 시간 정보만 사용하세요.
+정확한 시작/종료 시간을 알 수 없는 경우에는 "타임라인: 확인 필요"라고 표시하세요.
+
+VLM 요약 자료에서 표, 차트, 그래프, 도식, 수치 비교, 비율, 추세, 항목별 비교가 확인되는 경우에는
+"표/차트 기반 주요 정보" 섹션을 추가하세요.
+확인되지 않으면 "표/차트 기반 주요 정보" 섹션은 작성하지 마세요.
+표나 차트의 수치, 항목명, 추세, 비교 내용은 입력 자료에 있는 내용만 사용하세요.
+없는 수치나 항목을 임의로 생성하지 마세요.
+
+주제는 영상의 흐름에 따라 3~7개 정도로 구성하세요.
+너무 짧거나 반복되는 내용은 인접한 주제와 통합하세요.
 
 [STT 요약 자료]
 {stt_section}
@@ -55,24 +74,39 @@ class FinalService:
 
 아래 형식을 지켜 한국어로 작성하세요.
 
-## 최종 요약
+# {{영상 내용을 대표하는 제목}}
 
-### 핵심 주제
-- 
+## 핵심 주제
+- 영상 전체의 핵심 주제를 1~3개의 bullet point로 요약하세요.
 
-### 전체 흐름
-- 
+## 주요 내용
 
-### 음성 기반 주요 내용
-- 
+### 1. {{주제 제목}} (타임라인: HH:MM:SS ~ HH:MM:SS)
+- 해당 구간의 핵심 내용을 요약하세요.
+- STT 요약에서 확인되는 주요 발언이나 설명을 반영하세요.
+- VLM 요약에서 확인되는 화면, 슬라이드, 장면, 시각 자료 정보를 함께 반영하세요.
 
-### 화면/시각 자료 기반 주요 내용
-- 
+### 2. {{주제 제목}} (타임라인: HH:MM:SS ~ HH:MM:SS)
+- 해당 구간의 핵심 내용을 요약하세요.
+- STT와 VLM 정보를 종합하세요.
 
-### 종합 결론
--
+필요한 만큼 주제를 추가하세요.
 
-각 항목은 간결한 bullet point로 작성하세요.
+## 표/차트 기반 주요 정보
+
+### 1. {{표/차트/도식 제목 또는 핵심 내용}} (타임라인: HH:MM:SS 또는 확인 필요)
+- 자료 유형: 표 / 차트 / 그래프 / 도식 / 기타 시각 자료
+- 확인된 내용:
+  - 입력 자료에서 확인되는 항목, 수치, 비교, 추세를 정리하세요.
+- 요약 해석:
+  - 해당 시각 자료가 영상 내용에서 어떤 의미를 가지는지 정리하세요.
+  - 단, 입력 자료에 없는 해석은 추가하지 마세요.
+
+※ VLM 요약 자료에서 표, 차트, 그래프, 도식, 수치 비교가 확인되지 않으면 이 섹션은 생략하세요.
+
+## 종합 결론
+- 영상 전체의 결론을 2~4개의 bullet point로 정리하세요.
+- 제공된 정보만 바탕으로 작성하세요.
 """
 
         with self._generation_lock:
@@ -245,9 +279,9 @@ class FinalService:
 
     @staticmethod
     def _validate_max_new_tokens(max_new_tokens: int) -> int:
-        if not 1 <= max_new_tokens <= LLM_INFERENCE_CONFIG.max_new_tokens_limit:
+        if not 1 <= max_new_tokens <= MAX_FINAL_NEW_TOKENS_LIMIT:
             raise ValueError(
                 "max_new_tokens는 1 이상 "
-                f"{LLM_INFERENCE_CONFIG.max_new_tokens_limit} 이하이어야 합니다."
+                f"{MAX_FINAL_NEW_TOKENS_LIMIT} 이하이어야 합니다."
             )
         return max_new_tokens

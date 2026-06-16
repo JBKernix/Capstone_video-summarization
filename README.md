@@ -141,10 +141,23 @@ curl.exe -X POST "http://localhost:8000/vlm/summarize" `
 
 프레임은 최대 32장, 파일당 최대 20MB까지 받을 수 있습니다. OCR JSON은 최대 10MB입니다.
 
+### 최종 요약 요청
+
+`POST /llm/final-summary`는 STT 요약과 VLM 요약 파일을 합쳐 최종 요약을 생성합니다.
+
+| 필드 | 형식 | 설명 |
+| --- | --- | --- |
+| `stt_summary` | TXT 파일 1개 | STT 전체 요약 텍스트 |
+| `stt_summary_result` | JSON 파일 1개 | STT 중요 구간 추출 결과 |
+| `vlm_summary` | TXT 파일 1개 | VLM 전체 요약 텍스트 |
+| `vlm_summary_result` | JSON 파일 1개 | VLM 프레임별 요약 결과 |
+| `max_new_tokens` | 정수 | 기본값 `2048`, 최대 `4096` |
+
 ### 작업 상태 조회
 
 - LLM: `GET /llm/jobs/{job_id}`
 - VLM: `GET /vlm/jobs/{job_id}`
+- 최종 요약: `GET /llm/final-summary/jobs/{job_id}`
 
 작업 상태는 `queued`, `running`, `completed`, `failed` 중 하나입니다.
 
@@ -190,6 +203,7 @@ curl.exe -X POST "http://localhost:8000/vlm/summarize" `
 |   `-- vlm_upload.py
 |-- services/
 |   |-- __init__.py
+|   |-- final_service.py
 |   |-- llm_service.py
 |   |-- summary_service.py
 |   `-- vlm_service.py
