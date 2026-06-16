@@ -4,6 +4,7 @@ from typing import Any
 
 from services.llm_service import LLMService
 from services.vlm_service import VLMService
+from services.final_service import FinalService
 
 
 class SummaryService:
@@ -12,6 +13,7 @@ class SummaryService:
         generation_lock = Lock()
         self.llm_service = LLMService(generation_lock=generation_lock)
         self.vlm_service = VLMService(generation_lock=generation_lock)
+        self.final_service = FinalService(llm_service=self.llm_service)
 
     def summarize_stt(self, stt_text: str, **kwargs) -> str:
         return self.llm_service.summarize_stt(stt_text, **kwargs)
@@ -70,3 +72,6 @@ class SummaryService:
             frames=frames,
             **kwargs,
         )
+
+    def summarize_final(self, **kwargs) -> str:
+        return self.final_service.summarize_final(**kwargs)

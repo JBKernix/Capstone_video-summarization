@@ -4,7 +4,7 @@ from contextlib import contextmanager
 from threading import Event, Thread
 from typing import Any
 
-from app.api_models import SummaryRequest, SummaryResponse
+from app.api_models import FinalSummaryResponse, SummaryRequest, SummaryResponse
 from app.job_store import JobStore
 from services.summary_service import SummaryService
 
@@ -222,3 +222,56 @@ class InferenceJobRunner:
             if not self.keep_vlm_loaded:
                 self.summary_service.unload_vlm()
                 self.logger.info("job_id=%s | VLM GPU 메모리 해제 완료", job_id)
+
+    def run_final(
+        self,
+        job_id: str,
+        stt_text: bytes | None,
+        stt_json: bytes | None,
+        vlm_text: bytes | None,
+        vlm_json: bytes | None,
+        max_new_tokens: int,
+    ) -> None:
+        try:
+            self.job_store.update(
+                job_id,
+                status="running",
+                message="최종 요약을 생성하고 있습니다.",
+                current_step=0,
+                total_steps=1,
+            )
+            with self.log_stage(job_id, "final summary"):
+                final_summary = self.summary_service.summarize_final(
+                    stt_text=stt_text,
+                    stt_json=stt_json,
+                    vlm_text=vlm_text,
+                    vlm_json=vlm_json,
+                    max_new_tokens=max_new_tokens,
+                )
+
+            result = FinalSummaryResponse(final_summary=final_summary)
+            self.job_store.update(
+                job_id,
+                status="completed",
+                message="최종 요약 생성이 완료되었습니다.",
+                result=result.model_dump(),
+                current_step=1,
+                total_steps=1,
+            )
+            self.logger.info(
+                "job_id=%s | final summary completed | total_elapsed=%.1fs",
+                job_id,
+                self.job_store.elapsed(job_id),
+            )
+        except Exception as error:
+            self.logger.exception("Final summary job failed: job_id=%s", job_id)
+            self.job_store.update(
+                job_id,
+                status="failed",
+                message="최종 요약 작업 중 오류가 발생했습니다.",
+                error=str(error),
+            )
+        finally:
+            if not self.keep_llm_loaded:
+                self.summary_service.unload_llm()
+                self.logger.info("job_id=%s | LLM GPU memory released", job_id)

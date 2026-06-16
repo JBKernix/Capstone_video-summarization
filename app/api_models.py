@@ -36,6 +36,10 @@ class SummaryResponse(BaseModel):
     important_segments: list[ImportantSegment]
 
 
+class FinalSummaryResponse(BaseModel):
+    final_summary: str
+
+
 class JobSubmissionResponse(BaseModel):
     job_id: str
     status: Literal["queued"]
@@ -49,7 +53,7 @@ class JobStatusResponse(BaseModel):
     message: str
     current_step: int = 0
     total_steps: int = 0
-    result: SummaryResponse | list[dict[str, Any]] | None = None
+    result: SummaryResponse | FinalSummaryResponse | list[dict[str, Any]] | None = None
     error: str | None = None
     created_at: str
     updated_at: str

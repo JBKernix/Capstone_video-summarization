@@ -10,7 +10,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, status
 
-from configs.inference_config import VLM_INFERENCE_CONFIG
+from configs.inference_config import LLM_INFERENCE_CONFIG, VLM_INFERENCE_CONFIG
 from app.api_models import (
     JobStatusResponse,
     JobSubmissionResponse,
@@ -29,8 +29,28 @@ from scripts.vlm_upload import (
 from services.summary_service import SummaryService
 
 
+MAX_SUMMARY_FILE_BYTES = 10 * 1024 * 1024
+
+
 def env_flag(name: str) -> bool:
     return os.getenv(name, "0").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def validate_summary_filename(filename: str, allowed_suffix: str) -> str:
+    safe_name = Path(filename).name
+    if not safe_name or Path(safe_name).suffix.lower() != allowed_suffix:
+        raise ValueError(f"{allowed_suffix} 파일만 업로드할 수 있습니다: {filename}")
+    return safe_name
+
+
+async def read_optional_summary_upload(
+    upload: UploadFile | None,
+    allowed_suffix: str,
+) -> bytes | None:
+    if upload is None:
+        return None
+    validate_summary_filename(upload.filename or "", allowed_suffix)
+    return await read_upload_limited(upload, MAX_SUMMARY_FILE_BYTES)
 
 
 logger = configure_logging(PROJECT_ROOT)
@@ -185,6 +205,65 @@ async def summarize_frames(
     )
 
 
+@app.post(
+    "/llm/final-summary",
+    response_model=JobSubmissionResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def summarize_final(
+    stt_summary: UploadFile = File(...),
+    stt_summary_result: UploadFile = File(...),
+    vlm_summary: UploadFile = File(...),
+    vlm_summary_result: UploadFile = File(...),
+    max_new_tokens: int = Form(
+        default=LLM_INFERENCE_CONFIG.default_max_new_tokens,
+        ge=1,
+        le=LLM_INFERENCE_CONFIG.max_new_tokens_limit,
+    ),
+):
+    try:
+        stt_summary_data = await read_optional_summary_upload(stt_summary, ".txt")
+        stt_summary_result_data = await read_optional_summary_upload(
+            stt_summary_result,
+            ".json",
+        )
+        vlm_summary_data = await read_optional_summary_upload(vlm_summary, ".txt")
+        vlm_summary_result_data = await read_optional_summary_upload(
+            vlm_summary_result,
+            ".json",
+        )
+    except UnicodeDecodeError as error:
+        raise HTTPException(
+            status_code=422,
+            detail="요약 파일은 UTF-8 텍스트여야 합니다.",
+        ) from error
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+    job_id = job_store.create_id("final-summary")
+    job_store.create(job_id, "최종 요약 대기열에 등록되었습니다.")
+    logger.info(
+        "job_id=%s | final summary job submitted | max_new_tokens=%d",
+        job_id,
+        max_new_tokens,
+    )
+    job_executor.submit(
+        job_runner.run_final,
+        job_id,
+        stt_summary_data,
+        stt_summary_result_data,
+        vlm_summary_data,
+        vlm_summary_result_data,
+        max_new_tokens,
+    )
+    return JobSubmissionResponse(
+        job_id=job_id,
+        status="queued",
+        message="요청이 접수되었습니다. status_url로 진행 상태를 확인하세요.",
+        status_url=f"/llm/final-summary/jobs/{job_id}",
+    )
+
+
 def get_job(job_id: str) -> JobStatusResponse:
     response_data = job_store.response_data(job_id)
     if response_data is None:
@@ -199,6 +278,16 @@ def get_summary_job(job_id: str):
 
 @app.get("/vlm/jobs/{job_id}", response_model=JobStatusResponse)
 def get_vlm_job(job_id: str):
+    return get_job(job_id)
+
+
+@app.get("/final/jobs/{job_id}", response_model=JobStatusResponse)
+def get_final_job(job_id: str):
+    return get_job(job_id)
+
+
+@app.get("/llm/final-summary/jobs/{job_id}", response_model=JobStatusResponse)
+def get_llm_final_summary_job(job_id: str):
     return get_job(job_id)
 
 
