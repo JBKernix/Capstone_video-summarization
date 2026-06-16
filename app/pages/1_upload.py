@@ -168,24 +168,35 @@ with st.container(border=True):
     )
 
     st.caption("지원 형식: MP4, MOV, AVI")
-    if analysis_running:
-        st.info("분석이 진행 중일 때는 새 영상을 업로드할 수 없습니다.")
+    if uploaded_file is not None and not analysis_running:
+        uploaded_key = f"{uploaded_file.name}_{uploaded_file.size}"
 
-    if uploaded_file is not None:
-        save_path = INPUT_DIR / "input.mp4"
+        if st.session_state.get("uploaded_file_key") != uploaded_key:
+            save_path = INPUT_DIR / "input.mp4"
 
-        with open(save_path, "wb") as f:
-            shutil.copyfileobj(uploaded_file, f)
+            uploaded_file.seek(0)
+            with open(save_path, "wb") as f:
+                f.write(uploaded_file.getbuffer())
 
-        st.session_state["video_path"] = str(save_path)
-        st.session_state["uploaded_filename"] = uploaded_file.name
-        st.session_state["analysis_done"] = False
-        st.session_state.pop("last_analysis_log", None)
+            if save_path.stat().st_size != uploaded_file.size:
+                st.error(
+                    f"파일 저장 크기 불일치: 업로드={uploaded_file.size}, 저장={save_path.stat().st_size}"
+                )
+                st.stop()
+
+            st.session_state["video_path"] = str(save_path)
+            st.session_state["uploaded_filename"] = uploaded_file.name
+            st.session_state["uploaded_file_key"] = uploaded_key
+            st.session_state["analysis_done"] = False
+            st.session_state.pop("last_analysis_log", None)
 
         st.success("영상 업로드가 완료되었습니다.")
         st.info(f"업로드 파일명: {uploaded_file.name}")
     else:
-        st.info("분석할 영상을 먼저 업로드하세요.")
+        if analysis_running:
+            st.info("분석이 진행 중일 때는 새 영상을 업로드할 수 없습니다.")
+        else:
+            st.info("분석할 영상을 먼저 업로드하세요.")
 
 st.write("")
 
