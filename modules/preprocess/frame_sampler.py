@@ -7,9 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Literal, Optional, Sequence, Tuple
 
-from modules.common import DEFAULT_FRAME_METADATA_RELATIVE_PATH, run_path
+from modules.common import DEFAULT_FRAME_METADATA_RELATIVE_PATH, load_json, run_path, save_json
 from modules.preprocess.ffmpeg_utils import parse_showinfo_timestamps, remove_files, run_ffmpeg
-from modules.preprocess.video_info import get_video_info
 
 SamplingMethod = Literal["interval", "scene_change"]
 TimeRange = Tuple[float, float]
@@ -49,11 +48,7 @@ def _project_relative(path: Path, project_root: Path) -> str:
 
 def _write_metadata(metadata: List[FrameMetadata], metadata_path: str | Path) -> None:
     """프레임 메타데이터 목록을 JSON 파일로 저장합니다."""
-    metadata_path = Path(metadata_path)
-    metadata_path.parent.mkdir(parents=True, exist_ok=True)
-    with metadata_path.open("w", encoding="utf-8") as file:
-        json.dump([item.to_dict() for item in metadata], file, ensure_ascii=False, indent=2)
-
+    save_json([item.to_dict() for item in metadata], metadata_path)
     print(f"프레임 메타데이터 저장 완료: {metadata_path}")
 
 
@@ -80,9 +75,7 @@ def _normalize_time_ranges(time_ranges: Sequence[TimeRange]) -> List[TimeRange]:
 
 def load_important_time_ranges(summary_result_path: str | Path) -> List[TimeRange]:
     """LLM STT 요약 결과에서 중요 구간의 시작/종료 시점을 읽습니다."""
-    summary_result_path = Path(summary_result_path)
-    with summary_result_path.open("r", encoding="utf-8-sig") as file:
-        summary_result = json.load(file)
+    summary_result = load_json(summary_result_path)
 
     important_segments = summary_result.get("important_segments", [])
     if isinstance(important_segments, str):
@@ -324,7 +317,7 @@ def sample_frames(
 ) -> List[FrameMetadata]:
     """선택한 방식으로 run 디렉터리에 프레임과 메타데이터를 생성합니다."""
     run_dir = Path(run_dir)
-    project_root = Path(project_root) if project_root else run_dir.parent.parent
+    project_root = Path(project_root) if project_root else run_dir.parent
     if important_segments_path is not None:
         time_ranges = load_important_time_ranges(important_segments_path)
 
@@ -351,10 +344,4 @@ def sample_frames(
 
 def load_frame_metadata(metadata_path: str | Path) -> List[Dict[str, object]]:
     """프레임 메타데이터 JSON 파일을 읽습니다."""
-    with Path(metadata_path).open("r", encoding="utf-8-sig") as file:
-        return json.load(file)
-
-
-def get_sampling_summary(video_path: str | Path) -> Dict[str, object]:
-    """프레임 샘플링 전에 참고할 영상 정보를 반환합니다."""
-    return get_video_info(video_path).to_dict()
+    return load_json(metadata_path)

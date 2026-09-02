@@ -77,7 +77,7 @@ def main():
 
     video_path = resolve_path_pattern(args.video)
     run_dir = Path(args.run_dir)
-    video_path = ensure_mp4_video(video_path, run_dir / "input")
+    video_path = ensure_mp4_video(video_path, run_dir / "data" / "input")
 
     if not video_path.exists():
         raise FileNotFoundError(f"영상 파일이 존재하지 않습니다: {video_path}")

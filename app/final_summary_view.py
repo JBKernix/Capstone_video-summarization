@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import sys
+from typing import Sequence
 
 import streamlit as st
 
@@ -10,7 +11,12 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.styles import apply_global_styles
-from app.summary_result import get_summary_markdown, has_structured_summary, load_final_summary
+from app.summary_result import (
+    FinalSummary,
+    get_summary_markdown,
+    has_structured_summary,
+    load_final_summary,
+)
 
 DEFAULT_VIDEO_PATH = PROJECT_ROOT / "data" / "input" / "input.mp4"
 
@@ -41,6 +47,9 @@ def render_summary_data(summary_data: dict) -> None:
         if topics:
             st.markdown("### 주제별 요약")
             for index, topic in enumerate(topics, start=1):
+                if not isinstance(topic, dict):
+                    topic = {"content": topic}
+
                 topic_title = topic.get("title", f"주제 {index}")
                 timeline = topic.get("timeline", "")
                 content = topic.get("content", "")
@@ -76,6 +85,41 @@ def resolve_video_path(video_path: str | Path | None = None) -> Path | None:
     return None
 
 
+def render_video_and_summary(
+    selected_video_path: Path | None,
+    final_summary: FinalSummary,
+    column_ratio: Sequence[float] = (1, 1),
+    column_gap: str = "large",
+    show_captions: bool = True,
+    summary_container_height: int | None = None,
+) -> None:
+    """원본 영상과 최종 요약 결과를 나란히 표시합니다."""
+    video_column, summary_column = st.columns(list(column_ratio), gap=column_gap)
+
+    with video_column:
+        with st.container(border=True):
+            st.subheader("원본 영상")
+
+            if selected_video_path:
+                if show_captions:
+                    st.caption(f"파일 경로: {selected_video_path}")
+                st.video(str(selected_video_path))
+            else:
+                st.warning("표시할 영상을 찾을 수 없습니다.")
+                st.caption(f"기본 경로: {DEFAULT_VIDEO_PATH}")
+
+    with summary_column:
+        with st.container(border=True, height=summary_container_height):
+            st.subheader("요약 결과")
+            if show_captions:
+                st.caption(f"파일 경로: {final_summary.source_path}")
+
+            if final_summary.mode == "json":
+                render_summary_data(final_summary.content)
+            else:
+                st.markdown(final_summary.content)
+
+
 def render_final_summary_page(
     final_dir: Path | None = None,
     video_path: str | Path | None = None,
@@ -106,28 +150,7 @@ def render_final_summary_page(
         st.caption(str(error))
         return
 
-    video_column, summary_column = st.columns([1, 1], gap="large")
-
-    with video_column:
-        with st.container(border=True):
-            st.subheader("원본 영상")
-
-            if selected_video_path:
-                st.caption(f"파일 경로: {selected_video_path}")
-                st.video(str(selected_video_path))
-            else:
-                st.warning("표시할 영상을 찾을 수 없습니다.")
-                st.caption(f"기본 경로: {DEFAULT_VIDEO_PATH}")
-
-    with summary_column:
-        with st.container(border=True):
-            st.subheader("요약 결과")
-            st.caption(f"파일 경로: {final_summary.source_path}")
-
-            if final_summary.mode == "json":
-                render_summary_data(final_summary.content)
-            else:
-                st.markdown(final_summary.content)
+    render_video_and_summary(selected_video_path, final_summary)
 
 
 if __name__ == "__main__":

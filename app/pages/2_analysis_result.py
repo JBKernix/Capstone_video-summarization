@@ -9,15 +9,13 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from app.final_summary_view import (
-    DEFAULT_VIDEO_PATH,
-    render_summary_data,
-    resolve_video_path,
-)
+from app.final_summary_view import render_video_and_summary, resolve_video_path
+from app.result_export import save_analysis_result
 from app.styles import apply_global_styles
 from app.summary_result import load_final_summary
 
 FINAL_DIR = PROJECT_ROOT / "runs" / "final"
+SAVE_ROOT = PROJECT_ROOT / "data" / "saved"
 
 st.set_page_config(
     page_title="요약 결과",
@@ -48,25 +46,26 @@ except (FileNotFoundError, OSError, ValueError) as error:
         st.switch_page("pages/1_upload.py")
     st.stop()
 
-video_column, summary_column = st.columns([0.85, 1.15], gap="medium")
+render_video_and_summary(
+    selected_video_path,
+    final_summary,
+    column_ratio=(0.85, 1.15),
+    column_gap="medium",
+    show_captions=False,
+    summary_container_height=600,
+)
 
-with video_column:
-    with st.container(border=True):
-        st.subheader("원본 영상")
+st.write("")
 
-        if selected_video_path:
-            #st.caption(f"파일 경로: {selected_video_path}")
-            st.video(str(selected_video_path))
-        else:
-            st.warning("표시할 영상을 찾을 수 없습니다.")
-            st.caption(f"기본 경로: {DEFAULT_VIDEO_PATH}")
-
-with summary_column:
-    with st.container(border=True, height=600):
-        st.subheader("요약 결과")
-        #st.caption(f"파일 경로: {final_summary.source_path}")
-
-        if final_summary.mode == "json":
-            render_summary_data(final_summary.content)
-        else:
-            st.markdown(final_summary.content)
+if st.button("💾 영상과 요약 결과 저장", use_container_width=False):
+    try:
+        saved_dir = save_analysis_result(
+            selected_video_path,
+            FINAL_DIR,
+            SAVE_ROOT,
+            title=st.session_state.get("video_title"),
+        )
+    except FileNotFoundError as error:
+        st.error(str(error))
+    else:
+        st.success(f"저장 완료: {saved_dir}")

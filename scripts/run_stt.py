@@ -13,6 +13,7 @@ from modules.common import (  # noqa: E402
     DEFAULT_STT_CONFIG_RELATIVE_PATH,
     DEFAULT_STT_JSON_RELATIVE_PATH,
     DEFAULT_STT_TEXT_RELATIVE_PATH,
+    load_yaml_config,
     project_path,
     run_path,
 )
@@ -27,21 +28,6 @@ from modules.stt import (  # noqa: E402
     save_stt_json,
     save_stt_text,
 )
-
-
-def load_config(config_path: Path) -> dict:
-    if not config_path.exists():
-        return {}
-    try:
-        import yaml
-    except ImportError as exc:
-        raise ImportError(
-            "YAML 설정 파일을 사용하려면 PyYAML 패키지가 필요합니다. "
-            "예: pip install PyYAML"
-        ) from exc
-
-    with config_path.open("r", encoding="utf-8-sig") as f:
-        return yaml.safe_load(f) or {}
 
 
 def parse_args() -> argparse.Namespace:
@@ -80,7 +66,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    config = load_config(Path(args.config))
+    config = load_yaml_config(Path(args.config))
 
     model_size = args.model_size or config.get("model_size", DEFAULT_STT_MODEL_SIZE)
     language = args.language or config.get("language", DEFAULT_STT_LANGUAGE)

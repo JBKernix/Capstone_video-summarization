@@ -1,7 +1,7 @@
-import json
 from pathlib import Path
 from typing import Any, Dict, List
 
+from modules.common import find_existing_path, load_json, save_json
 from modules.ocr.ocr_extractor import DEFAULT_OCR_LANGUAGE, OCRExtractor
 from modules.ocr.image_caption import generate_text_based_caption, classify_scene_type
 
@@ -77,25 +77,15 @@ def _resolve_image_path(image_path: str, metadata_path: Path) -> str:
     if path.is_absolute():
         return str(path)
 
-    metadata_path = metadata_path.resolve()
-    project_root = metadata_path.parent
-    for parent in metadata_path.parents:
+    resolved_metadata_path = metadata_path.resolve()
+    project_root = resolved_metadata_path.parent
+    for parent in resolved_metadata_path.parents:
         if (parent / "modules").is_dir() and (parent / "scripts").is_dir():
             project_root = parent
             break
 
-    candidates = [
-        Path.cwd() / path,
-        project_root / path,
-        metadata_path.parent / path,
-        metadata_path.parent.parent / path,
-    ]
-
-    for candidate in candidates:
-        if candidate.is_file():
-            return str(candidate)
-
-    return str(candidates[0])
+    resolved = find_existing_path(path, metadata_path, project_root)
+    return str(resolved) if resolved else str(Path.cwd() / path)
 
 
 def analyze_frames_metadata(
@@ -123,9 +113,7 @@ def analyze_frames_metadata(
     if not metadata_path.exists():
         raise FileNotFoundError(f"프레임 메타데이터 파일이 존재하지 않습니다: {metadata_path}")
 
-    # Windows에서 BOM이 붙은 UTF-8 JSON도 읽을 수 있도록 utf-8-sig를 사용합니다.
-    with open(metadata_path, "r", encoding="utf-8-sig") as f:
-        frames_metadata = json.load(f)
+    frames_metadata = load_json(metadata_path)
 
     # OCR 모델은 프레임마다 새로 만들지 않고 하나의 인스턴스를 재사용합니다.
     ocr_extractor = OCRExtractor(lang=lang)
@@ -160,10 +148,7 @@ def analyze_frames_metadata(
     if failed_count > 0:
         print(f"일부 프레임 분석 실패: {failed_count}개")
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(results, f, ensure_ascii=False, indent=2)
+    save_json(results, output_path)
 
     print(f"프레임 분석 완료. 성공: {len(results)}, 실패: {failed_count}")
     return results

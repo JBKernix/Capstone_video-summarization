@@ -12,6 +12,7 @@ env/
 
 runs/
 data/input/*.mp4
+data/saved/
 
 
 .DS_Store

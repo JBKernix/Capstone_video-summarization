@@ -11,6 +11,8 @@ from modules.common.defaults import (
     resolve_path_pattern,
     run_path,
 )
+from modules.common.config import load_yaml_config
+from modules.common.file_utils import find_existing_path
 from modules.common.json_utils import load_json, save_json
 
 __all__ = [
@@ -22,7 +24,9 @@ __all__ = [
     "DEFAULT_STT_JSON_RELATIVE_PATH",
     "DEFAULT_STT_TEXT_RELATIVE_PATH",
     "DEFAULT_OCR_RESULT_RELATIVE_PATH",
+    "find_existing_path",
     "load_json",
+    "load_yaml_config",
     "project_path",
     "resolve_path_pattern",
     "run_path",

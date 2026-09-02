@@ -17,6 +17,7 @@ from modules.common import (  # noqa: E402
     DEFAULT_STT_JSON_RELATIVE_PATH,
     DEFAULT_STT_TEXT_RELATIVE_PATH,
     DEFAULT_OCR_RESULT_RELATIVE_PATH,
+    load_yaml_config,
     project_path,
     resolve_path_pattern,
     run_path,
@@ -182,7 +183,9 @@ def parse_args():
         default=384,
         help="프레임당 VLM 최대 생성 토큰 수입니다. 허용 범위는 1~384입니다.",
     )
-    parser.add_argument("--skip-stt", action="store_true", help="STT 단계를 건너뜁니다.")
+    # NOTE: --skip-stt를 사용하면 STT뿐 아니라 이후 모든 단계(요약/프레임/OCR/VLM/최종요약)가
+    # 연쇄적으로 건너뛰어져 옵션 설명과 실제 동작이 달라 혼란을 줄 수 있어 우선 비활성화합니다.
+    # parser.add_argument("--skip-stt", action="store_true", help="STT 단계를 건너뜁니다.")
     parser.add_argument(
         "--stt-config",
         default=str(project_path(PROJECT_ROOT, DEFAULT_STT_CONFIG_RELATIVE_PATH)),
@@ -205,58 +208,6 @@ def parse_args():
     return parser.parse_args()
 
 
-def load_stt_config(config_path: Path) -> dict:
-    """STT 설정 파일을 읽어 딕셔너리로 반환합니다.
-
-    Args:
-        config_path: STT 설정 YAML 파일 경로입니다.
-
-    Returns:
-        설정 파일에서 읽은 STT 옵션 딕셔너리입니다. 파일이 없으면 빈 딕셔너리를 반환합니다.
-    """
-    if not config_path.exists():
-        return {}
-    text = config_path.read_text(encoding="utf-8-sig")
-    try:
-        import yaml
-    except ImportError:
-        return _parse_simple_stt_config(text)
-
-    return yaml.safe_load(text) or {}
-
-
-def _parse_simple_stt_config(text: str) -> dict:
-    """단순 key-value 형태의 STT 설정 텍스트를 파싱합니다.
-
-    Args:
-        text: YAML 형식의 설정 파일 내용입니다.
-
-    Returns:
-        문자열, 정수, bool, ``None`` 값으로 구성된 설정 딕셔너리입니다.
-    """
-    config = {}
-    for raw_line in text.splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or ":" not in line:
-            continue
-
-        key, value = line.split(":", 1)
-        key = key.strip()
-        value = value.strip()
-
-        if value == "":
-            config[key] = None
-        elif value.lower() in {"true", "false"}:
-            config[key] = value.lower() == "true"
-        else:
-            try:
-                config[key] = int(value)
-            except ValueError:
-                config[key] = value
-
-    return config
-
-
 def build_stt_options(args: argparse.Namespace) -> dict:
     """명령줄 인자와 설정 파일을 합쳐 STT 실행 옵션을 구성합니다.
 
@@ -269,7 +220,7 @@ def build_stt_options(args: argparse.Namespace) -> dict:
     Raises:
         ValueError: 서로 충돌하는 chunk 옵션을 동시에 전달했을 때 발생합니다.
     """
-    config = load_stt_config(Path(args.stt_config))
+    config = load_yaml_config(Path(args.stt_config))
 
     beam_size = config.get("beam_size", DEFAULT_STT_BEAM_SIZE)
 
@@ -407,16 +358,17 @@ def main():
         audio_path = run_audio_step(video_path=video_path, run_dir=run_dir)
 
     with _stage_timeline("2/7", "STT") as stage:
-        if args.skip_stt:
-            stage["status"] = "건너뜀"
-            stt_json_path = None
-            stt_text_path = None
-        else:
-            stt_json_path, stt_text_path = run_stt_step(
-                audio_path=audio_path,
-                run_dir=run_dir,
-                stt_options=stt_options,
-            )
+        # NOTE: --skip-stt 옵션 비활성화에 따라 STT는 항상 실행합니다.
+        # if args.skip_stt:
+        #     stage["status"] = "건너뜀"
+        #     stt_json_path = None
+        #     stt_text_path = None
+        # else:
+        stt_json_path, stt_text_path = run_stt_step(
+            audio_path=audio_path,
+            run_dir=run_dir,
+            stt_options=stt_options,
+        )
 
     with _stage_timeline("3/7", "STT 요약") as stage:
         if stt_json_path is None:

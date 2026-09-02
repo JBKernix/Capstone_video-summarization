@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
-import json
+
+from modules.common import save_json
 
 
 def _to_float(value: Any, default: float = 0.0) -> float:
@@ -81,8 +82,10 @@ def format_stt_result(raw_result: dict[str, Any]) -> dict[str, Any]:
             segments.append(segment)
 
     full_text = " ".join(segment["text"] for segment in segments)
+    duration_sec = round(max((segment["end"] for segment in segments), default=0.0), 2)
     return {
         "language": raw_result.get("language", "unknown"),
+        "duration_sec": duration_sec,
         "segment_count": len(segments),
         "segments": segments,
         "full_text": full_text,
@@ -96,10 +99,7 @@ def save_stt_json(stt_data: dict[str, Any], output_path: str | Path) -> None:
         stt_data: 저장할 STT 결과 딕셔너리입니다.
         output_path: JSON 파일을 저장할 경로입니다.
     """
-    output_path = Path(output_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with output_path.open("w", encoding="utf-8") as f:
-        json.dump(stt_data, f, ensure_ascii=False, indent=2)
+    save_json(stt_data, output_path)
 
 
 def save_stt_text(stt_data: dict[str, Any], output_path: str | Path, include_timestamps: bool = False) -> None:

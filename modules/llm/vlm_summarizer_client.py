@@ -1,15 +1,20 @@
 from __future__ import annotations
 
-import json
 from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
-import time
 from typing import Optional
 
 import requests
 
-from modules.common import DEFAULT_OCR_RESULT_RELATIVE_PATH, DEFAULT_RUN_DIR_RELATIVE_PATH, run_path
+from modules.common import (
+    DEFAULT_OCR_RESULT_RELATIVE_PATH,
+    DEFAULT_RUN_DIR_RELATIVE_PATH,
+    find_existing_path,
+    load_json,
+    run_path,
+)
+from modules.llm.gpu_job_client import GPUJobClientMixin
 from . import GPU_SERVER_URL
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -30,7 +35,9 @@ class GPUVLMClientConfig:
     ocr_json_path: Path = DEFAULT_OCR_RESULT_PATH
 
 
-class GPUVLMClient:
+class GPUVLMClient(GPUJobClientMixin):
+    job_label = "VLM"
+
     def __init__(self, config: Optional[GPUVLMClientConfig] = None):
         self.config = config or GPUVLMClientConfig()
 
@@ -102,7 +109,7 @@ class GPUVLMClient:
 
         job_id = data.get("job_id")
         status_url = data.get("status_url")
-        if not job_id or not status_url:
+        if job_id is None or not status_url:
             raise ValueError(f"Unexpected VLM response: {data}")
 
         job = self._wait_for_job(status_url)
@@ -126,44 +133,12 @@ class GPUVLMClient:
             raise ValueError("VLM result entries must be objects")
         return result
 
-    def _wait_for_job(self, status_url: str) -> dict:
-        url = (
-            status_url
-            if status_url.startswith(("http://", "https://"))
-            else f"{self.config.server_url}{status_url}"
-        )
-        deadline = time.monotonic() + self.config.job_timeout
-        last_message = None
-
-        while time.monotonic() < deadline:
-            response = requests.get(url, timeout=self.config.timeout)
-            self._raise_for_status(response)
-            data = response.json()
-
-            message = data.get("message")
-            if message and message != last_message:
-                print(f"VLM job status: {data.get('status')} - {message}")
-                last_message = message
-
-            status = data.get("status")
-            if status == "completed":
-                return data
-            if status == "failed":
-                raise RuntimeError(f"VLM job failed: {data.get('error') or message}")
-
-            time.sleep(self.config.poll_interval)
-
-        raise TimeoutError(
-            f"VLM job did not finish within {self.config.job_timeout} seconds: {url}"
-        )
-
     @staticmethod
     def _load_ocr_entries(ocr_json_path: Path) -> list[dict]:
         if not ocr_json_path.is_file():
             raise FileNotFoundError(f"OCR JSON file does not exist: {ocr_json_path}")
 
-        with ocr_json_path.open("r", encoding="utf-8-sig") as file:
-            data = json.load(file)
+        data = load_json(ocr_json_path)
 
         if isinstance(data, dict):
             for key in ("frames", "results", "ocr_results"):
@@ -189,14 +164,7 @@ class GPUVLMClient:
             if not image_path:
                 raise ValueError(f"OCR entry {index} has no image_path")
 
-            path = Path(image_path)
-            candidates = [path] if path.is_absolute() else [
-                Path.cwd() / path,
-                PROJECT_ROOT / path,
-                ocr_json_path.parent / path,
-                ocr_json_path.parent.parent / path,
-            ]
-            resolved = next((candidate.resolve() for candidate in candidates if candidate.is_file()), None)
+            resolved = find_existing_path(image_path, ocr_json_path, PROJECT_ROOT)
             if resolved is None:
                 raise FileNotFoundError(f"Frame image does not exist: {image_path}")
             if resolved.suffix.lower() not in ALLOWED_FRAME_SUFFIXES:
@@ -209,13 +177,3 @@ class GPUVLMClient:
             frame_paths.append(resolved)
 
         return frame_paths
-
-    @staticmethod
-    def _raise_for_status(response: requests.Response) -> None:
-        try:
-            response.raise_for_status()
-        except requests.HTTPError as exc:
-            raise requests.HTTPError(
-                f"{exc}. Response body: {response.text}",
-                response=response,
-            ) from exc

@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-import json
 from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
-import time
 from typing import Optional
 
 import requests
 
+from modules.common import load_json
+from modules.llm.gpu_job_client import GPUJobClientMixin
 from . import GPU_SERVER_URL
 
 
@@ -20,7 +20,9 @@ class GPUFinalSummaryClientConfig:
     job_timeout: int = 3600
 
 
-class GPUFinalSummaryClient:
+class GPUFinalSummaryClient(GPUJobClientMixin):
+    job_label = "Final summary"
+
     def __init__(self, config: Optional[GPUFinalSummaryClientConfig] = None):
         self.config = config or GPUFinalSummaryClientConfig()
 
@@ -113,8 +115,7 @@ class GPUFinalSummaryClient:
     def _read_json_file(path: Path) -> dict:
         if not path.is_file():
             raise FileNotFoundError(f"JSON file does not exist: {path}")
-        with path.open("r", encoding="utf-8-sig") as file:
-            data = json.load(file)
+        data = load_json(path)
         if not isinstance(data, dict):
             raise ValueError(f"JSON file must contain an object: {path}")
         return data
@@ -129,7 +130,7 @@ class GPUFinalSummaryClient:
 
         job_id = data.get("job_id")
         status_url = data.get("status_url")
-        if not job_id or not status_url:
+        if job_id is None or not status_url:
             raise ValueError(f"Unexpected final summary response: {data}")
 
         job = self._wait_for_job(status_url)
@@ -147,46 +148,3 @@ class GPUFinalSummaryClient:
         normalized = dict(result)
         normalized["summary"] = summary
         return normalized
-
-    def _wait_for_job(self, status_url: str) -> dict:
-        url = (
-            status_url
-            if status_url.startswith(("http://", "https://"))
-            else f"{self.config.server_url}{status_url}"
-        )
-        deadline = time.monotonic() + self.config.job_timeout
-        last_message = None
-
-        while time.monotonic() < deadline:
-            response = requests.get(url, timeout=self.config.timeout)
-            self._raise_for_status(response)
-            data = response.json()
-
-            message = data.get("message")
-            if message and message != last_message:
-                print(f"Final summary job status: {data.get('status')} - {message}")
-                last_message = message
-
-            status = data.get("status")
-            if status == "completed":
-                return data
-            if status == "failed":
-                raise RuntimeError(
-                    f"Final summary job failed: {data.get('error') or message}"
-                )
-
-            time.sleep(self.config.poll_interval)
-
-        raise TimeoutError(
-            f"Final summary job did not finish within {self.config.job_timeout} seconds: {url}"
-        )
-
-    @staticmethod
-    def _raise_for_status(response: requests.Response) -> None:
-        try:
-            response.raise_for_status()
-        except requests.HTTPError as exc:
-            raise requests.HTTPError(
-                f"{exc}. Response body: {response.text}",
-                response=response,
-            ) from exc

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
@@ -13,6 +12,7 @@ from modules.common import (  # noqa: E402
     DEFAULT_RUN_DIR_RELATIVE_PATH,
     project_path,
     run_path,
+    save_json,
 )
 from modules.llm.vlm_summarizer_client import GPUVLMClient  # noqa: E402
 
@@ -58,11 +58,7 @@ def run_vlm_summary_step(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(_format_vlm_summary_text(results), encoding="utf-8")
 
-    output_json_path.parent.mkdir(parents=True, exist_ok=True)
-    output_json_path.write_text(
-        json.dumps(result_payload, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    save_json(result_payload, output_json_path)
     return output_path, output_json_path
 
 

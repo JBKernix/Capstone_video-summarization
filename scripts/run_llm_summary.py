@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
@@ -11,8 +10,10 @@ sys.path.append(str(PROJECT_ROOT))
 from modules.common import (  # noqa: E402
     DEFAULT_RUN_DIR_RELATIVE_PATH,
     DEFAULT_STT_JSON_RELATIVE_PATH,
+    load_json,
     project_path,
     run_path,
+    save_json,
 )
 from modules.llm.stt_summarizer_client import GPULLMClient  # noqa: E402
 
@@ -31,7 +32,7 @@ def run_llm_summary_step(
 
     client = GPULLMClient()
     result = client.summarize_stt_file_result(stt_json_path=stt_json_path)
-    stt_result = json.loads(stt_json_path.read_text(encoding="utf-8-sig"))
+    stt_result = load_json(stt_json_path)
     result = {
         "source": {
             "language": stt_result.get("language"),
@@ -44,11 +45,7 @@ def run_llm_summary_step(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(result["summary"], encoding="utf-8")
 
-    output_json_path.parent.mkdir(parents=True, exist_ok=True)
-    output_json_path.write_text(
-        json.dumps(result, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    save_json(result, output_json_path)
     return output_path, output_json_path
 
 

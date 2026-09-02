@@ -1,1 +1,1 @@
-GPU_SERVER_URL = "http://10.30.2.224:8000"
+GPU_SERVER_URL = "http://10.10.4.27:8000"

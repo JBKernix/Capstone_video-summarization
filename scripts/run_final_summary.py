@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(PROJECT_ROOT))
 
-from modules.common import DEFAULT_RUN_DIR_RELATIVE_PATH, project_path, run_path  # noqa: E402
+from modules.common import (  # noqa: E402
+    DEFAULT_RUN_DIR_RELATIVE_PATH,
+    project_path,
+    run_path,
+    save_json,
+)
 from modules.llm.final_summarizer_client import GPUFinalSummaryClient  # noqa: E402
 from scripts.run_llm_summary import (  # noqa: E402
     DEFAULT_LLM_SUMMARY_JSON_RELATIVE_PATH,
@@ -55,11 +59,7 @@ def run_final_summary_step(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(result["summary"], encoding="utf-8")
 
-    output_json_path.parent.mkdir(parents=True, exist_ok=True)
-    output_json_path.write_text(
-        json.dumps(result, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    save_json(result, output_json_path)
     return output_path, output_json_path
 
 

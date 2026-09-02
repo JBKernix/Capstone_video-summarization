@@ -7,9 +7,13 @@ import subprocess
 import sys
 import time
 
-from styles import apply_global_styles
-
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from styles import apply_global_styles
+from modules.preprocess import download_youtube_video, is_youtube_url
+
 INPUT_DIR = PROJECT_ROOT / "data" / "input"
 RUN_LOG_PATH = PROJECT_ROOT / "runs" / "app_pipeline.log"
 INPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -77,6 +81,15 @@ def get_latest_progress_message(logs: list[str]) -> str:
     return "파이프라인을 시작하는 중입니다."
 
 
+def set_current_video(save_path: Path, display_name: str, source_key: str, title: str = "") -> None:
+    st.session_state["video_path"] = str(save_path)
+    st.session_state["uploaded_filename"] = display_name
+    st.session_state["uploaded_file_key"] = source_key
+    st.session_state["video_title"] = title
+    st.session_state["analysis_done"] = False
+    st.session_state.pop("last_analysis_log", None)
+
+
 def close_analysis_log_handle() -> None:
     log_handle = st.session_state.pop("analysis_log_handle", None)
     if log_handle:
@@ -130,9 +143,10 @@ def stop_analysis_process() -> None:
     st.session_state["analysis_cancelled"] = True
 
 
-def get_analysis_process():
-    process = st.session_state.get("analysis_process")
-    return process if process and process.poll() is None else process
+# NOTE: 두 분기 모두 동일한 값을 반환해 poll() 체크가 의미가 없던 죽은 로직이라 비활성화합니다.
+# def get_analysis_process():
+#     process = st.session_state.get("analysis_process")
+#     return process if process and process.poll() is None else process
 
 
 st.set_page_config(
@@ -161,42 +175,83 @@ st.markdown(
 with st.container(border=True):
     st.subheader("🎥 영상 업로드")
 
-    uploaded_file = st.file_uploader(
-        "분석할 영상을 업로드하세요.",
-        type=["mp4", "mov", "avi"],
+    upload_mode = st.radio(
+        "업로드 방식",
+        options=["파일 업로드", "유튜브 링크"],
+        horizontal=True,
         disabled=analysis_running,
+        label_visibility="collapsed",
     )
 
-    st.caption("지원 형식: MP4, MOV, AVI")
-    if uploaded_file is not None and not analysis_running:
-        uploaded_key = f"{uploaded_file.name}_{uploaded_file.size}"
+    if upload_mode == "파일 업로드":
+        uploaded_file = st.file_uploader(
+            "분석할 영상을 업로드하세요.",
+            type=["mp4", "mov", "avi"],
+            disabled=analysis_running,
+        )
 
-        if st.session_state.get("uploaded_file_key") != uploaded_key:
-            save_path = INPUT_DIR / "input.mp4"
+        st.caption("지원 형식: MP4, MOV, AVI")
+        if uploaded_file is not None and not analysis_running:
+            uploaded_key = f"{uploaded_file.name}_{uploaded_file.size}"
 
-            uploaded_file.seek(0)
-            with open(save_path, "wb") as f:
-                f.write(uploaded_file.getbuffer())
+            if st.session_state.get("uploaded_file_key") != uploaded_key:
+                upload_suffix = Path(uploaded_file.name).suffix.lower() or ".mp4"
+                save_path = INPUT_DIR / f"input{upload_suffix}"
 
-            if save_path.stat().st_size != uploaded_file.size:
-                st.error(
-                    f"파일 저장 크기 불일치: 업로드={uploaded_file.size}, 저장={save_path.stat().st_size}"
+                uploaded_file.seek(0)
+                with open(save_path, "wb") as f:
+                    f.write(uploaded_file.getbuffer())
+
+                if save_path.stat().st_size != uploaded_file.size:
+                    st.error(
+                        f"파일 저장 크기 불일치: 업로드={uploaded_file.size}, 저장={save_path.stat().st_size}"
+                    )
+                    st.stop()
+
+                set_current_video(
+                    save_path,
+                    uploaded_file.name,
+                    uploaded_key,
+                    title=Path(uploaded_file.name).stem,
                 )
-                st.stop()
 
-            st.session_state["video_path"] = str(save_path)
-            st.session_state["uploaded_filename"] = uploaded_file.name
-            st.session_state["uploaded_file_key"] = uploaded_key
-            st.session_state["analysis_done"] = False
-            st.session_state.pop("last_analysis_log", None)
-
-        st.success("영상 업로드가 완료되었습니다.")
-        st.info(f"업로드 파일명: {uploaded_file.name}")
-    else:
-        if analysis_running:
-            st.info("분석이 진행 중일 때는 새 영상을 업로드할 수 없습니다.")
-        else:
+            st.success("영상 업로드가 완료되었습니다.")
+            st.info(f"업로드 파일명: {uploaded_file.name}")
+        elif not analysis_running:
             st.info("분석할 영상을 먼저 업로드하세요.")
+
+    else:
+        youtube_url = st.text_input(
+            "유튜브 영상 링크를 입력하세요.",
+            placeholder="https://www.youtube.com/watch?v=...",
+            disabled=analysis_running,
+        )
+        download_clicked = st.button(
+            "다운로드",
+            disabled=analysis_running or not youtube_url.strip(),
+        )
+
+        if download_clicked:
+            if not is_youtube_url(youtube_url):
+                st.error("유효한 유튜브 링크가 아닙니다.")
+            else:
+                download_key = f"youtube_{youtube_url.strip()}"
+                with st.spinner("유튜브 영상을 다운로드하는 중입니다..."):
+                    try:
+                        save_path, video_title = download_youtube_video(youtube_url, INPUT_DIR / "input")
+                    except Exception as error:
+                        st.error(f"유튜브 영상 다운로드에 실패했습니다: {error}")
+                    else:
+                        set_current_video(save_path, save_path.name, download_key, title=video_title)
+
+        if str(st.session_state.get("uploaded_file_key", "")).startswith("youtube_"):
+            st.success("유튜브 영상 다운로드가 완료되었습니다.")
+            st.info(f"저장 파일명: {st.session_state['uploaded_filename']}")
+        elif not analysis_running:
+            st.info("유튜브 링크를 입력하고 다운로드하세요.")
+
+    if analysis_running:
+        st.info("분석이 진행 중일 때는 새 영상을 업로드할 수 없습니다.")
 
 st.write("")
 
@@ -248,7 +303,7 @@ if start_button:
     start_analysis_process(st.session_state["video_path"])
     st.rerun()
 
-process = get_analysis_process()
+process = st.session_state.get("analysis_process")
 
 if process:
     returncode = process.poll()
