@@ -28,7 +28,7 @@ st.set_page_config(
 apply_global_styles()
 
 st.markdown(
-    '<div class="main-title">메타모어 기반 영상 요약 시스템</div>',
+    '<div class="main-title">멀티모달 기반 영상 요약 시스템</div>',
     unsafe_allow_html=True,
 )
 st.markdown(
@@ -48,23 +48,23 @@ except (FileNotFoundError, OSError, ValueError) as error:
         st.switch_page("pages/1_upload.py")
     st.stop()
 
-video_column, summary_column = st.columns([1, 1], gap="large")
+video_column, summary_column = st.columns([0.85, 1.15], gap="medium")
 
 with video_column:
     with st.container(border=True):
         st.subheader("원본 영상")
 
         if selected_video_path:
-            st.caption(f"파일 경로: {selected_video_path}")
+            #st.caption(f"파일 경로: {selected_video_path}")
             st.video(str(selected_video_path))
         else:
             st.warning("표시할 영상을 찾을 수 없습니다.")
             st.caption(f"기본 경로: {DEFAULT_VIDEO_PATH}")
 
 with summary_column:
-    with st.container(border=True):
+    with st.container(border=True, height=600):
         st.subheader("요약 결과")
-        st.caption(f"파일 경로: {final_summary.source_path}")
+        #st.caption(f"파일 경로: {final_summary.source_path}")
 
         if final_summary.mode == "json":
             render_summary_data(final_summary.content)
