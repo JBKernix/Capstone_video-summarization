@@ -13,6 +13,7 @@ from modules.common import (
     load_json,
     run_path,
 )
+from modules.common.progress import STEP_STT_SUMMARY, report_progress
 from modules.llm.gpu_job_client import GPUJobClientMixin
 from . import GPU_SERVER_URL
 
@@ -33,6 +34,7 @@ class GPULLMClientConfig:
 
 class GPULLMClient(GPUJobClientMixin):
     job_label = "LLM"
+    progress_step = STEP_STT_SUMMARY
 
     def __init__(self, config: Optional[GPULLMClientConfig] = None):
         self.config = config or GPULLMClientConfig()
@@ -61,14 +63,18 @@ class GPULLMClient(GPUJobClientMixin):
         path = Path(stt_json_path or self.config.stt_json_path)
         payload = self._load_stt_payload(path)
         if not payload.get("full_text", "").strip():
+            report_progress(self.progress_step, "음성이 감지되지 않아 STT 요약을 건너뜀", 100.0)
             return {
                 "summary": "음성이 감지되지 않았습니다.",
                 "important_segments": [],
                 "no_speech": True,
             }
-        return self._post_summary_payload(payload)
+        result = self._post_summary_payload(payload)
+        report_progress(self.progress_step, "STT 요약 완료", 100.0)
+        return result
 
     def _post_summary_payload(self, payload: dict) -> dict:
+        report_progress(self.progress_step, "STT 요약 서버에 요청 전송 중")
         url = f"{self.config.server_url}/llm/summarize"
         response = requests.post(
             url,

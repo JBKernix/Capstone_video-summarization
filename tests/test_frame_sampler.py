@@ -1,5 +1,6 @@
 import json
 from subprocess import CompletedProcess
+from types import SimpleNamespace
 
 from modules.preprocess import frame_sampler
 
@@ -109,13 +110,16 @@ def test_scene_change_sampling_uses_important_ranges_and_showinfo_timestamps(mon
     metadata_path = tmp_path / "metadata" / "frame_metadata.json"
     captured_args = []
 
-    def fake_run_ffmpeg(args):
+    def fake_run_ffmpeg_with_progress(args, total_duration_sec, on_progress):
         captured_args.extend(args)
         frames_dir.mkdir(parents=True, exist_ok=True)
         (frames_dir / "frame_000001.jpg").write_bytes(b"frame")
         return CompletedProcess(args, 0, stderr="[Parsed_showinfo] pts_time:12.5")
 
-    monkeypatch.setattr(frame_sampler, "run_ffmpeg", fake_run_ffmpeg)
+    monkeypatch.setattr(frame_sampler, "run_ffmpeg_with_progress", fake_run_ffmpeg_with_progress)
+    monkeypatch.setattr(
+        frame_sampler, "get_video_info", lambda video_path: SimpleNamespace(duration=40.0)
+    )
 
     result = frame_sampler.sample_scene_change_frames(
         video_path=video_path,

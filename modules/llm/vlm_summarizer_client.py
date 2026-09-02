@@ -14,6 +14,7 @@ from modules.common import (
     load_json,
     run_path,
 )
+from modules.common.progress import STEP_VLM_SUMMARY, report_progress
 from modules.llm.gpu_job_client import GPUJobClientMixin
 from . import GPU_SERVER_URL
 
@@ -37,6 +38,7 @@ class GPUVLMClientConfig:
 
 class GPUVLMClient(GPUJobClientMixin):
     job_label = "VLM"
+    progress_step = STEP_VLM_SUMMARY
 
     def __init__(self, config: Optional[GPUVLMClientConfig] = None):
         self.config = config or GPUVLMClientConfig()
@@ -65,7 +67,17 @@ class GPUVLMClient(GPUJobClientMixin):
                 f"VLM batch submitted: {batch_index}/{total_batches} "
                 f"({len(batch)} frames)"
             )
+            report_progress(
+                self.progress_step,
+                f"VLM 배치 처리 중 ({batch_index}/{total_batches})",
+                (batch_index - 1) / total_batches * 100,
+            )
             results.extend(self._post_vlm_files(path, batch, max_new_tokens))
+            report_progress(
+                self.progress_step,
+                f"VLM 배치 처리 완료 ({batch_index}/{total_batches})",
+                batch_index / total_batches * 100,
+            )
         return results
 
     def _post_vlm_files(

@@ -1,5 +1,6 @@
 import streamlit as st
 from pathlib import Path
+import json
 import os
 import re
 import shutil
@@ -12,6 +13,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from styles import apply_global_styles
+from modules.common.progress import PROGRESS_MARKER, STEP_LABELS, STEP_STT, TOTAL_STEPS
 from modules.preprocess import download_youtube_video, is_youtube_url
 
 INPUT_DIR = PROJECT_ROOT / "data" / "input"
@@ -20,7 +22,8 @@ INPUT_DIR.mkdir(parents=True, exist_ok=True)
 RUN_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 ANSI_ESCAPE_PATTERN = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
-PROGRESS_LINE_PATTERN = re.compile(r"^\s*\d{1,3}%\|")
+# Whisper STT의 tqdm 진행률 표시줄(예: "45%|████  | 12/27 ...")을 감지하고 퍼센트를 추출합니다.
+STT_TQDM_PATTERN = re.compile(r"^\s*(\d{1,3})%\|")
 PATH_FRAGMENT_PATTERN = re.compile(r"([A-Za-z]:[\\/]|(?:^|\s)(?:runs|data)[\\/])")
 PATH_OUTPUT_KEYWORDS = (
     "저장",
@@ -39,7 +42,7 @@ def clean_pipeline_log_line(line: str) -> str:
 
 
 def is_progress_log_line(line: str) -> bool:
-    return bool(PROGRESS_LINE_PATTERN.search(line)) or (
+    return bool(STT_TQDM_PATTERN.search(line)) or (
         "|" in line and ("it/s" in line or "s/it" in line)
     )
 
@@ -51,7 +54,7 @@ def is_path_output_log_line(line: str) -> bool:
     )
 
 
-def read_pipeline_logs(limit: int = 40) -> list[str]:
+def read_raw_log_lines() -> list[str]:
     if not RUN_LOG_PATH.exists():
         return []
 
@@ -61,24 +64,71 @@ def read_pipeline_logs(limit: int = 40) -> list[str]:
     except UnicodeDecodeError:
         text = raw_text.decode("cp949", errors="replace")
 
-    lines = []
+    return [clean_pipeline_log_line(raw_line) for raw_line in text.splitlines()]
 
-    for raw_line in text.splitlines():
-        clean_line = clean_pipeline_log_line(raw_line)
-        if (
-            clean_line
-            and not is_progress_log_line(clean_line)
-            and not is_path_output_log_line(clean_line)
-        ):
-            lines.append(clean_line)
 
+def read_pipeline_logs(raw_lines: list[str], limit: int = 40) -> list[str]:
+    """사람이 읽기 편하도록 진행률 마커/tqdm 진행바/산출물 경로 줄을 걸러낸 로그입니다."""
+    lines = [
+        line
+        for line in raw_lines
+        if line
+        and not line.startswith(PROGRESS_MARKER)
+        and not is_progress_log_line(line)
+        and not is_path_output_log_line(line)
+    ]
     return lines[-limit:]
 
 
-def get_latest_progress_message(logs: list[str]) -> str:
-    if logs:
-        return logs[-1]
-    return "파이프라인을 시작하는 중입니다."
+def parse_progress_state(raw_lines: list[str]) -> dict[int, dict]:
+    """로그 원본 줄에서 단계별 최신 진행 상황(퍼센트/메시지)을 추출합니다.
+
+    같은 단계에서 퍼센트 없는 메시지가 나중에 와도 이전 퍼센트는 유지합니다(sticky).
+    """
+    state: dict[int, dict] = {}
+
+    def _update(step: int, message: str | None, percent: float | None) -> None:
+        entry = state.setdefault(step, {"percent": None, "message": ""})
+        if message:
+            entry["message"] = message
+        if percent is not None:
+            entry["percent"] = percent
+
+    for line in raw_lines:
+        if line.startswith(PROGRESS_MARKER):
+            try:
+                payload = json.loads(line[len(PROGRESS_MARKER):].strip())
+            except json.JSONDecodeError:
+                continue
+            step = payload.get("step")
+            if isinstance(step, int):
+                _update(step, payload.get("message"), payload.get("percent"))
+            continue
+
+        match = STT_TQDM_PATTERN.match(line)
+        if match:
+            _update(STEP_STT, "음성 인식 처리 중", float(match.group(1)))
+
+    return state
+
+
+def describe_step_status(step: int, progress_state: dict[int, dict]) -> dict:
+    """단계 하나의 렌더링 상태(done/active-percent/active-indeterminate/pending)를 계산합니다."""
+    if not progress_state:
+        return {"state": "pending", "percent": None, "message": ""}
+
+    current_step = max(progress_state.keys())
+    if step < current_step:
+        return {"state": "done", "percent": 100.0, "message": ""}
+    if step > current_step:
+        return {"state": "pending", "percent": None, "message": ""}
+
+    entry = progress_state[step]
+    percent = entry.get("percent")
+    message = entry.get("message") or ""
+    if percent is not None:
+        return {"state": "active-percent", "percent": percent, "message": message}
+    return {"state": "active-indeterminate", "percent": None, "message": message}
 
 
 def set_current_video(save_path: Path, display_name: str, source_key: str, title: str = "") -> None:
@@ -157,8 +207,17 @@ st.set_page_config(
 
 apply_global_styles()
 
-current_process = st.session_state.get("analysis_process")
-analysis_running = bool(current_process and current_process.poll() is None)
+process = st.session_state.get("analysis_process")
+analysis_running = bool(process and process.poll() is None)
+
+# 분석이 이번 세션에서 시작된 경우에만 로그를 읽어 진행 상황을 계산합니다.
+# (그렇지 않으면 이전에 실행된 파이프라인의 로그가 남아 있어 착시를 일으킬 수 있습니다.)
+if process is not None:
+    raw_log_lines = read_raw_log_lines()
+    progress_state = parse_progress_state(raw_log_lines)
+else:
+    raw_log_lines = []
+    progress_state = {}
 
 st.markdown(
     '<div class="main-title">멀티모달 기반 영상 요약 시스템</div>',
@@ -261,30 +320,51 @@ st.write("")
 with st.container(border=True):
     st.subheader("🔎 분석 절차")
 
-    steps = [
-        ("1", "영상 업로드", "파일 업로드 및 검증"),
-        ("2", "오디오 추출", "영상에서 음성 분리"),
-        ("3", "STT 분석", "음성을 텍스트로 변환"),
-        ("4", "프레임 추출", "중요 구간 프레임 선택"),
-        ("5", "OCR 분석", "화면 텍스트 및 시각 정보 이해"),
-        ("6", "VLM 요약 생성", "프레임별 시각 요약 생성"),
-        ("7", "최종 요약 생성", "음성/시각 요약 통합"),
-    ]
+    step_items_html = []
+    for step_num in range(1, TOTAL_STEPS + 1):
+        title, desc = STEP_LABELS[step_num]
+        status = describe_step_status(step_num, progress_state)
 
-    cols = st.columns(7)
-
-    for col, (num, title, desc) in zip(cols, steps):
-        with col:
-            st.markdown(
-                f"""
-                <div class="step-item">
-                    <div class="step-circle">{num}</div>
-                    <div class="step-title">{title}</div>
-                    <div class="step-desc">{desc}</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
+        if status["state"] == "done":
+            circle_class = "step-circle step-done"
+            circle_style = ""
+            circle_label = "✓"
+            desc_class = "step-desc"
+            desc_text = desc
+        elif status["state"] == "active-percent":
+            percent = status["percent"]
+            circle_class = "step-circle step-active-percent"
+            circle_style = (
+                f' style="background: conic-gradient(#2563eb {percent:.0f}%, #eaf2ff {percent:.0f}%)"'
             )
+            circle_label = f"{percent:.0f}%"
+            desc_class = "step-desc step-live"
+            desc_text = status["message"] or desc
+        elif status["state"] == "active-indeterminate":
+            circle_class = "step-circle step-active-indeterminate"
+            circle_style = ""
+            circle_label = str(step_num)
+            desc_class = "step-desc step-live"
+            desc_text = status["message"] or desc
+        else:
+            circle_class = "step-circle"
+            circle_style = ""
+            circle_label = str(step_num)
+            desc_class = "step-desc"
+            desc_text = desc
+
+        step_items_html.append(
+            f'<div class="step-item">'
+            f'<div class="{circle_class}"{circle_style}>{circle_label}</div>'
+            f'<div class="step-title">{title}</div>'
+            f'<div class="{desc_class}">{desc_text}</div>'
+            f"</div>"
+        )
+
+    st.markdown(
+        '<div class="step-wrap">' + "".join(step_items_html) + "</div>",
+        unsafe_allow_html=True,
+    )
 
 # =========================
 # 분석 시작 버튼
@@ -303,20 +383,29 @@ if start_button:
     start_analysis_process(st.session_state["video_path"])
     st.rerun()
 
-process = st.session_state.get("analysis_process")
-
 if process:
     returncode = process.poll()
-    logs = read_pipeline_logs()
-    visible_logs = logs[-40:]
 
     if returncode is None:
+        visible_logs = read_pipeline_logs(raw_log_lines)
+        current_step_num = max(progress_state.keys()) if progress_state else None
+
         with st.status("영상 분석을 진행하고 있습니다.", expanded=True):
-            st.write("1. 영상 파일 확인 중...")
-            st.write("2. 분석 파이프라인 실행 중...")
+            if current_step_num:
+                step_title, _ = STEP_LABELS[current_step_num]
+                entry = progress_state[current_step_num]
+                percent = entry.get("percent")
+                message = entry.get("message") or step_title
+                step_line = f"현재 단계: {current_step_num}/{TOTAL_STEPS} {step_title} — {message}"
+                if percent is not None:
+                    st.write(f"{step_line} ({percent:.0f}%)")
+                    st.progress(min(1.0, percent / 100))
+                else:
+                    st.write(step_line)
+            else:
+                st.write("파이프라인을 시작하는 중입니다...")
 
             if visible_logs:
-                st.write(f"현재 단계: {get_latest_progress_message(logs)}")
                 st.code("\n".join(visible_logs), language="text")
             else:
                 st.info("분석 로그를 기다리는 중입니다.")
@@ -331,7 +420,7 @@ if process:
 
     else:
         close_analysis_log_handle()
-        logs = read_pipeline_logs()
+        logs = read_pipeline_logs(read_raw_log_lines())
         visible_logs = logs[-40:]
         st.session_state["last_analysis_log"] = "\n".join(visible_logs)
         st.session_state.pop("analysis_process", None)

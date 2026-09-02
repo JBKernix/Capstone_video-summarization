@@ -8,7 +8,14 @@ from pathlib import Path
 from typing import Dict, List, Literal, Optional, Sequence, Tuple
 
 from modules.common import DEFAULT_FRAME_METADATA_RELATIVE_PATH, load_json, run_path, save_json
-from modules.preprocess.ffmpeg_utils import parse_showinfo_timestamps, remove_files, run_ffmpeg
+from modules.common.progress import STEP_FRAME_EXTRACTION, report_progress
+from modules.preprocess.ffmpeg_utils import (
+    parse_showinfo_timestamps,
+    remove_files,
+    run_ffmpeg,
+    run_ffmpeg_with_progress,
+)
+from modules.preprocess.video_info import get_video_info
 
 SamplingMethod = Literal["interval", "scene_change"]
 TimeRange = Tuple[float, float]
@@ -125,6 +132,7 @@ def _sample_interval_frames_in_ranges(
     normalized_ranges = _normalize_time_ranges(time_ranges)
     timestamps = _build_interval_timestamps(normalized_ranges, interval_seconds)
     metadata: List[FrameMetadata] = []
+    total_timestamps = len(timestamps)
 
     for index, timestamp in enumerate(timestamps):
         output_path = frames_dir / f"{image_prefix}_{index + 1:06d}.jpg"
@@ -143,6 +151,11 @@ def _sample_interval_frames_in_ranges(
                 "1",
                 str(output_path),
             ]
+        )
+        report_progress(
+            STEP_FRAME_EXTRACTION,
+            f"프레임 추출 중 ({index + 1}/{total_timestamps})",
+            (index + 1) / total_timestamps * 100,
         )
         metadata.append(
             FrameMetadata(
@@ -192,8 +205,16 @@ def sample_interval_frames(
             time_ranges=time_ranges,
         )
 
+    try:
+        duration = get_video_info(video_path).duration
+    except (RuntimeError, ValueError):
+        duration = 0.0
+
+    def _on_progress(percent: float) -> None:
+        report_progress(STEP_FRAME_EXTRACTION, f"프레임 추출 중 ({percent:.0f}%)", percent)
+
     output_pattern = frames_dir / f"{image_prefix}_%06d.jpg"
-    run_ffmpeg(
+    run_ffmpeg_with_progress(
         [
             "-y",
             "-i",
@@ -203,8 +224,11 @@ def sample_interval_frames(
             "-q:v",
             "2",
             str(output_pattern),
-        ]
+        ],
+        duration,
+        _on_progress,
     )
+    report_progress(STEP_FRAME_EXTRACTION, "프레임 추출 완료", 100.0)
 
     image_paths = sorted(frames_dir.glob(f"{image_prefix}_*.jpg"))
     metadata = [
@@ -265,8 +289,16 @@ def sample_scene_change_frames(
     if range_filter:
         select_filter += f"*({range_filter})"
 
+    try:
+        duration = get_video_info(video_path).duration
+    except (RuntimeError, ValueError):
+        duration = 0.0
+
+    def _on_progress(percent: float) -> None:
+        report_progress(STEP_FRAME_EXTRACTION, f"화면 전환 프레임 탐색 중 ({percent:.0f}%)", percent)
+
     output_pattern = frames_dir / f"{image_prefix}_%06d.jpg"
-    result = run_ffmpeg(
+    result = run_ffmpeg_with_progress(
         [
             "-y",
             "-i",
@@ -278,8 +310,11 @@ def sample_scene_change_frames(
             "-q:v",
             "2",
             str(output_pattern),
-        ]
+        ],
+        duration,
+        _on_progress,
     )
+    report_progress(STEP_FRAME_EXTRACTION, "프레임 추출 완료", 100.0)
 
     timestamps = parse_showinfo_timestamps(result.stderr)
     image_paths = sorted(frames_dir.glob(f"{image_prefix}_*.jpg"))

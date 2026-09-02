@@ -1,6 +1,7 @@
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from modules.preprocess import audio_extractor
@@ -14,11 +15,15 @@ class AudioExtractorTest(unittest.TestCase):
             audio_path = temp_dir / "audio" / "output.wav"
             video_path.write_bytes(b"video")
 
-            with patch.object(audio_extractor, "run_ffmpeg") as run_ffmpeg:
+            with patch.object(
+                audio_extractor, "get_video_info", return_value=SimpleNamespace(duration=12.5)
+            ), patch.object(audio_extractor, "run_ffmpeg_with_progress") as run_ffmpeg_with_progress:
                 result = audio_extractor.extract_audio(video_path, audio_path)
 
             self.assertEqual(result, audio_path)
-            run_ffmpeg.assert_called_once_with(
+            args, kwargs = run_ffmpeg_with_progress.call_args
+            self.assertEqual(
+                args[0],
                 [
                     "-y",
                     "-i",
@@ -31,8 +36,9 @@ class AudioExtractorTest(unittest.TestCase):
                     "-ac",
                     "1",
                     str(audio_path),
-                ]
+                ],
             )
+            self.assertEqual(args[1], 12.5)
             self.assertTrue(audio_path.parent.exists())
 
     def test_extract_audio_raises_when_video_missing(self):

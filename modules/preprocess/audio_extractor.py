@@ -5,7 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from modules.preprocess.ffmpeg_utils import run_ffmpeg
+from modules.common.progress import STEP_AUDIO_EXTRACTION, report_progress
+from modules.preprocess.ffmpeg_utils import run_ffmpeg_with_progress
+from modules.preprocess.video_info import get_video_info
 
 
 def extract_audio(
@@ -51,7 +53,17 @@ def extract_audio(
         args.extend(["-ac", str(channels)])
 
     args.append(str(audio_path))
-    run_ffmpeg(args)
+
+    try:
+        duration = get_video_info(video_path).duration
+    except (RuntimeError, ValueError):
+        duration = 0.0
+
+    def _on_progress(percent: float) -> None:
+        report_progress(STEP_AUDIO_EXTRACTION, f"오디오 추출 중 ({percent:.0f}%)", percent)
+
+    run_ffmpeg_with_progress(args, duration, _on_progress)
+    report_progress(STEP_AUDIO_EXTRACTION, "오디오 추출 완료", 100.0)
 
     print(f"오디오 추출 완료: {audio_path}")
     return audio_path

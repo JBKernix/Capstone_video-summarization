@@ -7,10 +7,11 @@ import re
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Iterable, List, Sequence
+from typing import Callable, Iterable, List, Optional, Sequence
 
 
 SHOWINFO_TIME_PATTERN = re.compile(r"pts_time:(?P<time>[0-9]+(?:\.[0-9]+)?)")
+FFMPEG_TIME_PATTERN = re.compile(r"^(\d+):(\d{2}):(\d{2}(?:\.\d+)?)$")
 
 
 def ensure_command(command: str) -> str:
@@ -84,6 +85,78 @@ def run_ffmpeg(args: Sequence[str]) -> subprocess.CompletedProcess[str]:
     if "-nostdin" not in ffmpeg_args:
         ffmpeg_args.insert(0, "-nostdin")
     return run_command([ensure_command("ffmpeg"), *ffmpeg_args])
+
+
+def _parse_ffmpeg_time(time_text: str) -> Optional[float]:
+    """ffmpeg ``-progress`` 출력의 ``HH:MM:SS.ffffff`` 형식 시각을 초 단위로 변환합니다."""
+    match = FFMPEG_TIME_PATTERN.match(time_text.strip())
+    if not match:
+        return None
+    hours, minutes, seconds = match.groups()
+    return int(hours) * 3600 + int(minutes) * 60 + float(seconds)
+
+
+def run_ffmpeg_with_progress(
+    args: Sequence[str],
+    total_duration_sec: float,
+    on_progress: Callable[[float], None],
+) -> subprocess.CompletedProcess[str]:
+    """ffmpeg를 실행하며 ``-progress`` 출력을 파싱해 진행률(%)을 콜백으로 전달합니다.
+
+    Args:
+        args: ``ffmpeg`` 뒤에 붙일 인자 목록입니다.
+        total_duration_sec: 진행률 계산 기준이 되는 전체 길이(초)입니다. 0 이하이면 진행률을 계산하지 않습니다.
+        on_progress: 0~100 사이의 진행률(%)을 전달받는 콜백입니다.
+
+    Returns:
+        ``subprocess.CompletedProcess`` 객체입니다. ``stdout``은 비어 있고 ``stderr``에 ffmpeg 로그가 담깁니다.
+
+    Raises:
+        RuntimeError: ffmpeg 실행이 실패했을 때 발생합니다.
+    """
+    ffmpeg_args = [arg for arg in args if arg != "-nostdin"]
+    command = [
+        ensure_command("ffmpeg"),
+        "-nostdin",
+        "-progress",
+        "pipe:1",
+        "-nostats",
+        *ffmpeg_args,
+    ]
+
+    process = subprocess.Popen(
+        command,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+    assert process.stdout is not None
+    for line in process.stdout:
+        line = line.strip()
+        if not line or "=" not in line:
+            continue
+
+        key, _, value = line.partition("=")
+        if key == "out_time" and total_duration_sec > 0:
+            seconds = _parse_ffmpeg_time(value)
+            if seconds is not None:
+                on_progress(min(100.0, seconds / total_duration_sec * 100))
+        elif key == "progress" and value == "end":
+            on_progress(100.0)
+
+    stderr_text = process.stderr.read() if process.stderr else ""
+    returncode = process.wait()
+
+    if returncode != 0:
+        details = [f"Command failed with exit code {returncode}: {' '.join(command)}"]
+        if stderr_text.strip():
+            details.append(f"stderr:\n{stderr_text.strip()}")
+        raise RuntimeError("\n".join(details))
+
+    return subprocess.CompletedProcess(command, returncode, stdout="", stderr=stderr_text)
 
 
 def ensure_mp4_video(video_path: str | Path, output_dir: str | Path) -> Path:

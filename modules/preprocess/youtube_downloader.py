@@ -45,11 +45,17 @@ def download_youtube_video(url: str, output_path: str | Path) -> tuple[Path, str
     output_path = Path(output_path).with_suffix(".mp4")
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
+    # yt-dlp는 기본적으로 대상 파일이 이미 있으면 재다운로드를 건너뛰므로, 이전에 받은
+    # 영상이 새 영상으로 교체되지 않고 그대로 남는 것을 막기 위해 먼저 지웁니다.
+    if output_path.exists():
+        output_path.unlink()
+
     ydl_options = {
         "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
         "outtmpl": str(output_path.with_suffix("")) + ".%(ext)s",
         "merge_output_format": "mp4",
         "noplaylist": True,
+        "overwrites": True,
         "quiet": True,
         "no_warnings": True,
         "noprogress": True,

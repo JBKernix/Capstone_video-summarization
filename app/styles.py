@@ -56,8 +56,34 @@ def apply_global_styles(max_width: int | None = 1500) -> None:
     align-items: center;
     justify-content: center;
     font-weight: 800;
+    font-size: 0.8rem;
     margin: 0 auto 0.6rem auto;
     border: 1px solid #bfdbfe;
+    transition: background 0.4s ease;
+}}
+
+.step-circle.step-done {{
+    background: #2563eb;
+    color: #ffffff;
+    border-color: #2563eb;
+}}
+
+.step-circle.step-active-percent {{
+    color: #0f1f3d;
+    font-weight: 800;
+    border-color: #2563eb;
+}}
+
+.step-circle.step-active-indeterminate {{
+    background: #eaf2ff;
+    color: #2563eb;
+    border: 3px solid #dbeafe;
+    border-top-color: #2563eb;
+    animation: step-spin 1s linear infinite;
+}}
+
+@keyframes step-spin {{
+    to {{ transform: rotate(360deg); }}
 }}
 
 .step-title {{
@@ -72,6 +98,11 @@ def apply_global_styles(max_width: int | None = 1500) -> None:
     text-align: center;
     font-size: 0.85rem;
     color: #667085;
+}}
+
+.step-desc.step-live {{
+    color: #2563eb;
+    font-weight: 600;
 }}
 
 .summary-box {{

@@ -8,6 +8,7 @@ from typing import Optional
 import requests
 
 from modules.common import load_json
+from modules.common.progress import STEP_FINAL_SUMMARY, report_progress
 from modules.llm.gpu_job_client import GPUJobClientMixin
 from . import GPU_SERVER_URL
 
@@ -22,6 +23,7 @@ class GPUFinalSummaryClientConfig:
 
 class GPUFinalSummaryClient(GPUJobClientMixin):
     job_label = "Final summary"
+    progress_step = STEP_FINAL_SUMMARY
 
     def __init__(self, config: Optional[GPUFinalSummaryClientConfig] = None):
         self.config = config or GPUFinalSummaryClientConfig()
@@ -58,6 +60,7 @@ class GPUFinalSummaryClient(GPUJobClientMixin):
             vlm_summary_path=vlm_summary_path,
             vlm_summary_json_path=vlm_summary_json_path,
         )
+        report_progress(self.progress_step, "최종 요약 서버에 요청 전송 중")
 
         url = f"{self.config.server_url}/llm/final-summary"
         with ExitStack() as stack:
@@ -86,7 +89,9 @@ class GPUFinalSummaryClient(GPUJobClientMixin):
             )
 
         self._raise_for_status(response)
-        return self._extract_final_summary_result(response.json())
+        result = self._extract_final_summary_result(response.json())
+        report_progress(self.progress_step, "최종 요약 완료", 100.0)
+        return result
 
     @staticmethod
     def _validate_summary_files(
