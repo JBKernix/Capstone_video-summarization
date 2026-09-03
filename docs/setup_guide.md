@@ -21,8 +21,8 @@ conda activate capstone_test
 pip install -r requirements.txt
 ```
 
-`requirements.txt`에는 EasyOCR, OpenCV, PyTorch, Whisper, requests, PyYAML 등이 포함되어 있습니다.
-현재 UI 실행을 위해 `streamlit`도 포함되어 있습니다.
+`requirements.txt`에는 EasyOCR, OpenCV, PyTorch(cu130), Whisper(`openai-whisper`), requests, PyYAML 등이 포함되어 있습니다.
+현재 UI 실행을 위해 `streamlit==1.58.0`도 포함되어 있고, 유튜브 링크 다운로드를 위해 `yt-dlp`도 포함되어 있습니다.
 
 ## FFmpeg 확인
 
@@ -47,6 +47,8 @@ data/
 
 기본값으로 실행할 때는 `data/input/`에 MP4 파일을 하나만 두는 것이 안전합니다. 여러 파일이 있으면 `--video` 옵션으로 분석할 파일을 직접 지정하세요.
 
+Streamlit 앱에서는 파일 업로드 대신 유튜브 링크를 입력해 영상을 준비할 수도 있습니다. `modules/preprocess/youtube_downloader.py`의 `download_youtube_video()`가 `yt-dlp`로 다운로드해 `data/input/input.mp4`로 저장합니다. 업로드 용량 제한은 `.streamlit/config.toml`의 `maxUploadSize`(기본 500MB)로 설정되어 있습니다.
+
 ## STT 설정
 
 STT 기본 설정은 `configs/stt_config.yaml`에서 관리합니다.
@@ -66,8 +68,10 @@ beam_size:
 LLM, VLM, 최종 요약 단계는 외부 GPU 서버를 호출합니다. 기본 서버 주소는 `modules/llm/__init__.py`에 있습니다.
 
 ```python
-GPU_SERVER_URL = "http://10.30.2.224:8000"
+GPU_SERVER_URL = "http://10.10.4.27:8000"
 ```
+
+세 클라이언트(`stt_summarizer_client.py`, `vlm_summarizer_client.py`, `final_summarizer_client.py`)는 모두 `modules/llm/gpu_job_client.py`의 `GPUJobClientMixin`을 상속해 HTTP 에러 처리와 비동기 job 폴링(`status_url`을 주기적으로 조회) 로직을 공유합니다.
 
 서버는 다음 API를 제공해야 합니다.
 
@@ -101,10 +105,11 @@ python scripts/run_pipeline.py --video data/input/sample.mp4 --run-dir runs
 일부 단계를 건너뛸 수 있습니다.
 
 ```bash
-python scripts/run_pipeline.py --skip-stt
 python scripts/run_pipeline.py --skip-ocr
 python scripts/run_pipeline.py --skip-vlm
 ```
+
+`--skip-stt` 옵션은 `scripts/run_pipeline.py`에서 현재 주석 처리되어 비활성화되어 있습니다. STT는 항상 실행됩니다.
 
 ## 단계별 실행
 
@@ -128,4 +133,5 @@ python scripts/run_final_summary.py
 | EasyOCR 초기화 실패 | `easyocr`, `torch` 설치 상태와 CUDA 호환성 |
 | LLM/VLM 단계 연결 실패 | `GPU_SERVER_URL` 서버 접근 가능 여부 |
 | 프레임 이미지 파일을 찾지 못함 | `runs/metadata/frame_metadata.json`의 `image_path`와 실제 `runs/frames/` 확인 |
-| 앱에서 진행 상황이 보이지 않음 | `runs/app_pipeline.log` 생성 여부와 파이프라인 프로세스 상태 |
+| 앱에서 진행 상황이 보이지 않음 | `runs/app_pipeline.log` 생성 여부와 로그 안 `##PROGRESS##` 마커, 파이프라인 프로세스 상태 |
+| 유튜브 영상 다운로드 실패 | 링크 형식(`is_youtube_url`), `yt-dlp` 설치 여부, 네트워크/영상 비공개 여부 |

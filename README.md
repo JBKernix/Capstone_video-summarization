@@ -13,6 +13,10 @@
 - STT 결과를 LLM 서버로 보내 주요 구간과 요약 생성
 - OCR/프레임 결과를 VLM 서버로 보내 프레임별 요약 생성
 - STT 요약과 VLM 요약을 결합한 최종 요약 생성
+- 파일 업로드 또는 유튜브 링크로 분석할 영상 지정 (`yt-dlp` 기반 다운로드)
+- 분석 진행 중 7단계 진행 상황을 원형 아이콘/퍼센트로 실시간 표시
+- 분석 완료 후 영상과 요약 결과를 `data/saved/`에 함께 저장
+- 요약 결과의 타임라인을 분:초 뱃지로 표시하고 클릭 시 영상 재생 위치 이동
 
 ## 처리 흐름
 
@@ -34,6 +38,7 @@ Capstone_video-summarization/
 ├── app/                  # Streamlit UI
 ├── configs/              # STT 등 설정 파일
 ├── data/input/           # 기본 입력 영상 위치
+├── data/saved/           # 분석 결과 저장 위치 (영상 + 요약본)
 ├── docs/                 # 설계 및 모듈 설명 문서
 ├── modules/              # 전처리, STT, OCR, LLM/VLM 클라이언트
 ├── runs/                 # 기본 실행 결과 출력 위치
@@ -56,6 +61,8 @@ conda activate capstone_test
 
 pip install -r requirements.txt
 ```
+
+`requirements.txt`에는 EasyOCR, OpenCV, PyTorch(cu130), Whisper(`openai-whisper`), Streamlit(1.58.0), 유튜브 다운로드용 `yt-dlp`, requests, PyYAML 등이 포함되어 있습니다.
 
 FFmpeg와 FFprobe가 시스템 PATH에서 실행 가능해야 합니다.
 
@@ -81,7 +88,7 @@ beam_size:
 LLM/VLM/최종 요약 단계는 외부 GPU 서버를 호출합니다. 기본 서버 주소는 `modules/llm/__init__.py`의 `GPU_SERVER_URL` 값입니다.
 
 ```python
-GPU_SERVER_URL = "http://10.30.2.224:8000"
+GPU_SERVER_URL = "http://10.10.4.27:8000"
 ```
 
 서버가 접근 가능하지 않으면 `run_llm_summary.py`, `run_vlm_summary.py`, `run_final_summary.py` 및 전체 파이프라인의 관련 단계가 실패합니다.
@@ -100,7 +107,14 @@ run_app.bat
 streamlit run app/main.py
 ```
 
-앱은 업로드 영상을 `data/input/input.mp4`로 저장하고 `scripts/run_pipeline.py`를 백그라운드로 실행합니다. 실행 로그는 `runs/app_pipeline.log`에 저장됩니다.
+앱(`app/pages/1_upload.py`)은 두 가지 방식으로 분석할 영상을 지정할 수 있습니다.
+
+- 파일 업로드: `data/input/input.<확장자>` (mp4/mov/avi)로 저장
+- 유튜브 링크: `modules/preprocess/youtube_downloader.py`의 `download_youtube_video()`가 `yt-dlp`로 다운로드해 `data/input/input.mp4`로 저장
+
+영상이 준비되면 `scripts/run_pipeline.py`를 백그라운드 프로세스로 실행합니다. 실행 로그는 `runs/app_pipeline.log`에 저장되며, 파이프라인이 `modules/common/progress.py`의 `report_progress()`로 남기는 `##PROGRESS##` 마커를 앱이 폴링해 7단계 진행 상황을 원형 아이콘과 퍼센트로 보여줍니다.
+
+분석이 끝나면 `pages/2_analysis_result.py`에서 원본 영상과 최종 요약을 함께 확인할 수 있고, "영상과 요약 결과 저장" 버튼(`app/result_export.py`)으로 `data/saved/[영상 제목] - 년월일시분초/` 폴더에 영상과 요약 파일을 복사해 보관할 수 있습니다. 요약 화면의 타임라인은 `분:초` 형식의 클릭 가능한 뱃지로 표시되며, 클릭하면 영상이 해당 지점으로 이동합니다.
 
 ## 전체 파이프라인 실행
 
@@ -123,10 +137,11 @@ python scripts/run_pipeline.py \
 일부 단계를 건너뛸 수 있습니다.
 
 ```bash
-python scripts/run_pipeline.py --skip-stt
 python scripts/run_pipeline.py --skip-ocr
 python scripts/run_pipeline.py --skip-vlm
 ```
+
+`--skip-stt` 옵션은 현재 비활성화되어 있습니다(`scripts/run_pipeline.py`에서 주석 처리). STT를 건너뛰면 이후 요약/프레임/OCR/VLM/최종요약 단계가 모두 연쇄적으로 건너뛰어져 옵션 설명과 실제 동작이 달라 혼란을 줄 수 있기 때문입니다. STT는 항상 실행됩니다.
 
 ## 단계별 실행
 
@@ -184,7 +199,7 @@ python scripts/run_final_summary.py
 | `runs/vlm/vlm_summary.txt` | 프레임별 VLM 요약 |
 | `runs/vlm/vlm_summary_result.json` | VLM 요약 구조화 결과 |
 | `runs/final/final_summary.txt` | 최종 통합 요약 |
-| `runs/final/final_summary_result.json` | 최종 통합 요약 구조화 결과 |
+| `runs/final/final_summary_result.json` | 최종 통합 요약 결과 (`source`/`final_summary`/`summary` 3개 키만 있으며, 실제 요약 내용은 `summary` 안에 마크다운 텍스트로 들어있음) |
 
 ## 문서
 

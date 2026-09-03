@@ -6,7 +6,7 @@
 
 ```text
 analyze_frames_metadata()
-  -> frame_metadata.json 로드
+  -> frame_metadata.json 로드 (modules.common.load_json)
   -> OCRExtractor(lang) 생성
   -> EasyOCR Reader 로드
   -> 각 frame_info 반복
@@ -16,7 +16,8 @@ analyze_frames_metadata()
           -> classify_scene_type()
           -> generate_text_based_caption()
           -> calculate_importance_score()
-  -> ocr_result.json 저장
+      -> report_progress(STEP_OCR, ...)
+  -> ocr_result.json 저장 (modules.common.save_json)
 ```
 
 ## 입력
@@ -67,15 +68,14 @@ runs/ocr/ocr_result.json
 
 ## 이미지 경로 복원
 
-`_resolve_image_path()`는 metadata에 저장된 경로를 실제 이미지 파일 경로로 복원합니다.
+`_resolve_image_path()`는 metadata에 저장된 경로를 실제 이미지 파일 경로로 복원합니다. 후보 경로를 직접 순회하던 기존 로직은 `modules/common/file_utils.py`의 공용 함수 `find_existing_path(stored_path, anchor_path, project_root)`로 통합되어, VLM 클라이언트(`modules/llm/vlm_summarizer_client.py`)의 프레임 경로 탐색과 동일한 구현을 공유합니다. 자세한 동작은 `docs/explanation/common/common.md`를 참고하세요.
 
 확인 순서:
 
-1. 절대 경로이면 그대로 사용합니다.
-2. 현재 작업 디렉터리 기준 경로를 확인합니다.
-3. `modules/`와 `scripts/`가 함께 있는 프로젝트 루트 기준 경로를 확인합니다.
-4. metadata 파일 위치와 그 상위 디렉터리 기준 경로를 확인합니다.
-5. 실제 파일을 찾지 못하면 첫 번째 후보 경로를 반환합니다.
+1. 절대 경로이면 그대로 사용합니다(파일이 없으면 실패로 처리).
+2. `modules/`와 `scripts/`가 함께 있는 상위 디렉터리를 찾아 프로젝트 루트로 사용합니다(못 찾으면 metadata 파일이 있는 디렉터리를 사용).
+3. `find_existing_path()`가 현재 작업 디렉터리 기준, 프로젝트 루트 기준, metadata 파일 위치 기준, metadata 파일의 상위 디렉터리 기준 경로를 순서대로 확인합니다.
+4. 실제 파일을 찾지 못하면 `find_existing_path()`는 `None`을 반환하고, `_resolve_image_path()`는 현재 작업 디렉터리 기준 경로를 최종 fallback으로 반환합니다.
 
 ## 화면 유형
 
@@ -100,6 +100,29 @@ runs/ocr/ocr_result.json
 | `presentation_slide` 또는 `chart_or_table` | `+0.2` |
 
 최종 점수는 `1.0`을 넘지 않습니다.
+
+## 진행률 보고
+
+`analyze_frames_metadata()`는 프레임을 하나씩 처리할 때마다 `modules.common.progress.report_progress()`를 호출해 앱 UI에 실시간 진행률을 보고합니다.
+
+```python
+report_progress(
+    STEP_OCR,
+    f"OCR 분석 중 ({index + 1}/{total_frames})",
+    (index + 1) / total_frames * 100,
+)
+```
+
+개별 프레임 분석이 실패해도 해당 프레임까지 포함해 진행률은 계속 갱신됩니다.
+
+## JSON 입출력
+
+metadata 로드와 결과 저장 모두 `modules/common/json_utils.py`의 공용 함수를 사용합니다.
+
+| 동작 | 함수 |
+| --- | --- |
+| `frame_metadata.json` 로드 | `load_json(metadata_path)` |
+| `ocr_result.json` 저장 | `save_json(results, output_path)` |
 
 ## 실패 처리
 

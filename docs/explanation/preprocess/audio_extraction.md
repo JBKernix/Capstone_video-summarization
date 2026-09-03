@@ -7,7 +7,9 @@
 | 파일 | 역할 |
 | --- | --- |
 | `modules/preprocess/audio_extractor.py` | 오디오 추출 함수 |
-| `modules/preprocess/ffmpeg_utils.py` | FFmpeg 실행 |
+| `modules/preprocess/ffmpeg_utils.py` | `run_ffmpeg_with_progress()`로 FFmpeg 실행 |
+| `modules/preprocess/video_info.py` | 진행률 계산 기준이 되는 영상 길이 조회 |
+| `modules/common/progress.py` | `report_progress()`로 `STEP_AUDIO_EXTRACTION` 진행률 보고 |
 | `scripts/run_pipeline.py` | 전체 파이프라인에서 오디오 추출 호출 |
 
 ## 주요 함수
@@ -37,6 +39,20 @@ extract_audio(
 ```text
 ffmpeg -y -i input.mp4 -vn -acodec pcm_s16le -ar 16000 -ac 1 runs/audio/audio.wav
 ```
+
+실제로는 `run_ffmpeg_with_progress()`를 통해 실행되므로 `-nostdin -progress pipe:1 -nostats`가 추가로 붙습니다.
+
+## 진행률 보고
+
+`extract_audio()`는 오디오를 추출하기 전에 `get_video_info(video_path).duration`으로 영상 길이를 구합니다(조회 실패 시 `0.0`으로 처리해 진행률 계산을 생략). 이 길이를 기준으로 `run_ffmpeg_with_progress()`가 호출될 때마다 다음과 같이 `modules.common.progress.report_progress()`를 호출합니다.
+
+```python
+report_progress(STEP_AUDIO_EXTRACTION, f"오디오 추출 중 ({percent:.0f}%)", percent)
+# 완료 시
+report_progress(STEP_AUDIO_EXTRACTION, "오디오 추출 완료", 100.0)
+```
+
+파이프라인 UI/로그는 표준 출력의 `##PROGRESS##` 마커 줄을 폴링해 이 진행률을 표시합니다.
 
 ## 출력
 

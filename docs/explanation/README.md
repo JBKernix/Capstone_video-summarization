@@ -14,11 +14,12 @@
 | 전처리 | `preprocess/audio_extraction.md` | `modules/preprocess/audio_extractor.py` | 영상에서 WAV 오디오 추출 |
 | 전처리 | `preprocess/video_info.md` | `modules/preprocess/video_info.py` | FFprobe 기반 영상 길이, 해상도, FPS 조회 |
 | 전처리 | `preprocess/ffmpeg_utils.md` | `modules/preprocess/ffmpeg_utils.py` | FFmpeg/FFprobe 실행 유틸리티와 MP4 보장 로직 |
+| 전처리 | (문서 없음) | `modules/preprocess/youtube_downloader.py` | 유튜브 링크 판별(`is_youtube_url`)과 `yt-dlp` 기반 영상 다운로드(`download_youtube_video`) |
 | OCR | `ocr/ocr_pipeline.md` | `modules/ocr/ocr_extractor.py`, `modules/ocr/ocr_formatter.py` | 프레임 메타데이터 기반 OCR 실행 흐름 |
 | OCR | `ocr/ocr.md` | `modules/ocr/` | EasyOCR 처리 세부 구조 |
 | STT | `stt/stt.md` | `modules/stt/`, `scripts/run_stt.py` | Whisper 기반 음성 인식과 결과 저장 |
-| LLM/VLM | `llm/llm.md` | `modules/llm/`, `scripts/run_llm_summary.py`, `scripts/run_vlm_summary.py`, `scripts/run_final_summary.py` | GPU 서버 기반 요약 클라이언트 |
-| Common | `common/common.md` | `modules/common/` | 기본 경로, JSON 저장/로드 등 공통 유틸리티 |
+| LLM/VLM | `llm/llm.md` | `modules/llm/`, `scripts/run_llm_summary.py`, `scripts/run_vlm_summary.py`, `scripts/run_final_summary.py` | GPU 서버 기반 요약 클라이언트, 공통 HTTP/job 폴링 로직(`gpu_job_client.py`) |
+| Common | `common/common.md` | `modules/common/` | 기본 경로, JSON/YAML 로딩(`config.py`), 경로 탐색(`file_utils.py`), 진행률 보고(`progress.py`) 등 공통 유틸리티 |
 | Tests | `tests/tests.md` | `tests/` | pytest 테스트 파일 구성 |
 
 ## 현재 실행 스크립트
@@ -45,7 +46,7 @@
 | STT 요약 | 구현됨 | 외부 GPU LLM 서버 필요 |
 | VLM 프레임 요약 | 구현됨 | 외부 GPU VLM 서버 필요, JPG 프레임만 전송 |
 | 최종 요약 | 구현됨 | STT/VLM 요약 파일 필요 |
-| Streamlit UI | 구현됨 | 업로드, 분석 실행, 최종 요약 결과 확인 |
+| Streamlit UI | 구현됨 | 파일 업로드/유튜브 링크 업로드, 단계별 진행률 표시, 최종 요약 결과 확인, 결과 저장(`data/saved/`) |
 
 ## 기본 경로
 

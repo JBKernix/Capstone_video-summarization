@@ -7,7 +7,9 @@
 | 파일 | 역할 |
 | --- | --- |
 | `modules/preprocess/video_info.py` | `VideoInfo`와 `get_video_info()` |
-| `modules/preprocess/ffmpeg_utils.py` | FFprobe 실행 |
+| `modules/preprocess/ffmpeg_utils.py` | FFprobe 실행, `run_ffmpeg_with_progress()`의 진행률 계산 기준(duration) 제공 |
+| `modules/preprocess/audio_extractor.py` | 오디오 추출 진행률 계산에 `duration` 사용 |
+| `modules/preprocess/frame_sampler.py` | 프레임 추출 진행률 계산에 `duration` 사용 |
 | `scripts/run_pipeline.py` | 로그 출력과 전처리 검증 |
 | `scripts/run_preprocess.py` | 전처리 단독 실행 |
 
@@ -67,3 +69,4 @@ FPS는 `avg_frame_rate`가 `30000/1001` 같은 분수 문자열로 올 수 있�
 
 - 일부 영상은 `nb_frames`를 제공하지 않아 `frame_count`가 `None`일 수 있습니다.
 - duration은 format duration을 우선 사용하고, 없으면 stream duration을 사용합니다.
+- `audio_extractor.extract_audio()`와 `frame_sampler.sample_interval_frames()`/`sample_scene_change_frames()`는 `run_ffmpeg_with_progress()` 호출 전에 `get_video_info().duration`으로 진행률 계산 기준 길이를 구합니다. `RuntimeError`/`ValueError`가 발생하면 `duration=0.0`으로 처리해 진행률 계산만 생략하고 추출 자체는 계속 진행합니다.

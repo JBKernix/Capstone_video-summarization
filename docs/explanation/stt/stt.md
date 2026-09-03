@@ -75,6 +75,7 @@ runs/stt/stt_result.json
 ```json
 {
   "language": "ko",
+  "duration_sec": 3.5,
   "segment_count": 2,
   "segments": [
     {
@@ -88,6 +89,10 @@ runs/stt/stt_result.json
 }
 ```
 
+`duration_sec`은 모든 segment의 `end` 시각 중 최댓값입니다(segment가 없으면 `0.0`). `save_stt_json()`은 내부적으로 `modules.common.save_json()`을 사용해 파일을 저장합니다.
+
+> `duration_sec`은 예전에는 생성되지 않던 필드였습니다. 이로 인해 `scripts/run_llm_summary.py`가 참조하던 `stt_result.get("duration_sec")`가 항상 `None`이었는데, `format_stt_result()`에 이 필드가 추가되면서 해결되었습니다.
+
 TXT:
 
 ```text
@@ -95,6 +100,21 @@ runs/stt/stt_result.txt
 ```
 
 `--timestamps` 또는 전체 파이프라인의 `--stt-timestamps`를 사용하면 TXT 파일에 구간 시간이 포함됩니다.
+
+## 진행률 보고 방식
+
+다른 파이프라인 단계(OCR, VLM 요약 등)는 `modules.common.progress.report_progress()`를 직접 호출해 진행률을 앱에 알립니다. `run_whisper_stt()`는 이런 호출을 하지 않습니다. 대신 Whisper 라이브러리가 `model.transcribe()` 실행 중 자체적으로 출력하는 tqdm 진행률 표시줄(예: `45%|████      | 12/27 [00:05<00:06]`)을 `app/pages/1_upload.py`가 로그에서 파싱해 `STEP_STT` 진행률로 변환합니다.
+
+```python
+# app/pages/1_upload.py
+STT_TQDM_PATTERN = re.compile(r"^\s*(\d{1,3})%\|")
+...
+match = STT_TQDM_PATTERN.match(line)
+if match:
+    _update(STEP_STT, "음성 인식 처리 중", float(match.group(1)))
+```
+
+STT 단계만 이렇게 별도 방식을 쓰는 이유는 Whisper가 이미 자체 진행률을 표준 출력으로 내보내기 때문입니다. `modules/stt` 코드에 진행률 보고 호출이 없다고 해서 누락된 것이 아니라 의도된 설계입니다.
 
 ## CLI
 

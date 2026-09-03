@@ -23,12 +23,12 @@
 | 영역 | 위치 | 역할 |
 | --- | --- | --- |
 | 실행 스크립트 | `scripts/` | 단계별 CLI와 전체 파이프라인 진입점 |
-| 전처리 | `modules/preprocess/` | 영상 정보 조회, MP4 변환, 오디오 추출, 프레임 샘플링 |
+| 전처리 | `modules/preprocess/` | 영상 정보 조회, MP4 변환, 오디오 추출, 프레임 샘플링, 유튜브 다운로드(`youtube_downloader.py`) |
 | STT | `modules/stt/` | Whisper 실행 및 STT 결과 포맷팅 |
 | OCR | `modules/ocr/` | EasyOCR 실행, 화면 유형 추정, OCR 결과 저장 |
-| LLM/VLM | `modules/llm/` | 외부 GPU 서버 API 클라이언트 |
-| 공통 유틸리티 | `modules/common/` | 기본 경로와 JSON 유틸리티 |
-| UI | `app/` | Streamlit 기반 업로드, 분석 실행, 결과 확인 화면 |
+| LLM/VLM | `modules/llm/` | 외부 GPU 서버 API 클라이언트, 공통 HTTP/폴링 로직(`gpu_job_client.py`) |
+| 공통 유틸리티 | `modules/common/` | 기본 경로, JSON/YAML 유틸리티, 경로 탐색(`file_utils.py`), 진행률 보고(`progress.py`) |
+| UI | `app/` | Streamlit 기반 업로드(유튜브 링크 포함), 분석 진행률 표시, 결과 확인, 결과 저장(`result_export.py`) 화면 |
 
 ## 기본 실행 진입점
 
@@ -70,6 +70,8 @@ runs/
   final/
 ```
 
+Streamlit 앱에서 "영상과 요약 결과 저장" 버튼을 누르면 `data/saved/[영상 제목] - 년월일시분초/` 폴더에 원본 영상과 `runs/final/`의 요약 파일이 복사되어 남습니다. (`app/result_export.py`)
+
 ## 현재 상태
 
 | 항목 | 상태 |
@@ -77,8 +79,9 @@ runs/
 | CLI 파이프라인 | 구현됨 |
 | 전처리/STT/OCR | 구현됨 |
 | LLM/VLM 서버 클라이언트 | 구현됨 |
-| Streamlit UI | 구현됨 |
-| 설정 파일 | `stt_config.yaml`만 값이 있음, 나머지는 비어 있음 |
+| 유튜브 링크 다운로드 | 구현됨 (`yt-dlp`) |
+| Streamlit UI | 구현됨 (업로드, 진행률 표시, 결과 확인/저장) |
+| 설정 파일 | `stt_config.yaml`만 값이 있음, 나머지(`app_config.yaml`, `ffmpeg_config.yaml`, `llm_config.yaml`)는 비어 있음 |
 
 ## 참고 문서
 
