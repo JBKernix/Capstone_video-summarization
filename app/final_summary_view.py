@@ -17,8 +17,10 @@ from app.summary_result import (
     has_structured_summary,
     load_final_summary,
 )
+from app.summary_timeline import render_summary_with_timeline
 
 DEFAULT_VIDEO_PATH = PROJECT_ROOT / "data" / "input" / "input.mp4"
+OCR_RESULT_PATH = PROJECT_ROOT / "runs" / "ocr" / "ocr_result.json"
 
 
 def render_summary_data(summary_data: dict) -> None:
@@ -67,7 +69,7 @@ def render_summary_data(summary_data: dict) -> None:
 
     summary_markdown = get_summary_markdown(summary_data)
     if summary_markdown:
-        st.markdown(summary_markdown)
+        render_summary_with_timeline(summary_markdown, OCR_RESULT_PATH, PROJECT_ROOT)
     else:
         st.json(summary_data)
 
@@ -117,7 +119,7 @@ def render_video_and_summary(
             if final_summary.mode == "json":
                 render_summary_data(final_summary.content)
             else:
-                st.markdown(final_summary.content)
+                render_summary_with_timeline(final_summary.content, OCR_RESULT_PATH, PROJECT_ROOT)
 
 
 def render_final_summary_page(

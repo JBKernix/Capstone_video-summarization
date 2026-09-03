@@ -125,6 +125,26 @@ def apply_global_styles(max_width: int | None = 1500) -> None:
     font-weight: 600;
 }}
 
+.timeline-badge {{
+    display: inline-block;
+    background: #eaf2ff;
+    color: #2563eb;
+    border: 1px solid #bfdbfe;
+    border-radius: 999px;
+    padding: 0.1rem 0.65rem;
+    margin: 0 0.15rem;
+    font-size: 0.8rem;
+    font-weight: 700;
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+}}
+
+.timeline-badge:hover {{
+    background: #2563eb;
+    color: #ffffff;
+}}
+
 .start-area {{
     max-width: 520px;
     margin: 1.5rem auto 0 auto;
