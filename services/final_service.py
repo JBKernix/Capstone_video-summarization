@@ -121,16 +121,25 @@ VLM 요약 자료에서 표, 차트, 그래프, 도식, 수치 비교, 비율, �
         stt_json: JSONInput | None = None,
     ) -> str:
         parts = []
+        data = self._load_json(stt_json, "STT 요약 JSON") if stt_json is not None else None
+
         text = self._read_text(stt_text).strip() if stt_text is not None else ""
+        if not text and isinstance(data, Mapping):
+            # stt_summary(txt)가 없는 요청(JSON만 전송)에서는
+            # stt_json의 summary 필드를 STT 요약 텍스트로 사용합니다.
+            text = str(data.get("summary", "")).strip()
         if text:
             text = self._limit_text(text, MAX_STT_TEXT_CHARS)
             parts.append(f"[STT 요약 텍스트]\n{text}")
 
-        if stt_json is not None:
-            data = self._load_json(stt_json, "STT 요약 JSON")
-            normalized = self._format_stt_json(data)
-            if normalized:
-                parts.append(f"[STT 주요 구간]\n{normalized}")
+        if isinstance(data, Mapping):
+            important_segments = data.get("important_segments")
+            if isinstance(important_segments, Sequence) and not isinstance(
+                important_segments, (str, bytes, bytearray)
+            ):
+                normalized = self._format_important_segments(important_segments)
+                if normalized:
+                    parts.append(f"[STT 주요 구간]\n{normalized}")
 
         return "\n\n".join(parts)
 
@@ -178,21 +187,6 @@ VLM 요약 자료에서 표, 차트, 그래프, 도식, 수치 비교, 비율, �
             except json.JSONDecodeError as error:
                 raise ValueError(f"{label} 형식이 올바른 JSON이 아닙니다.") from error
         return value
-
-    @staticmethod
-    def _format_stt_json(data: Any) -> str:
-        if isinstance(data, Mapping):
-            important_segments = data.get("important_segments")
-            if isinstance(important_segments, Sequence) and not isinstance(
-                important_segments, (str, bytes, bytearray)
-            ):
-                formatted_segments = FinalService._format_important_segments(
-                    important_segments
-                )
-                if formatted_segments:
-                    return f"중요 구간:\n{formatted_segments}"
-
-        return ""
 
     @staticmethod
     def _format_important_segments(segments: Sequence[Any]) -> str:

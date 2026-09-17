@@ -215,10 +215,10 @@ async def summarize_frames(
     status_code=status.HTTP_202_ACCEPTED,
 )
 async def summarize_final(
-    stt_summary: UploadFile = File(...),
     stt_summary_result: UploadFile = File(...),
-    vlm_summary: UploadFile = File(...),
     vlm_summary_result: UploadFile = File(...),
+    stt_summary: UploadFile | None = File(default=None),
+    vlm_summary: UploadFile | None = File(default=None),
     max_new_tokens: int = Form(
         default=DEFAULT_FINAL_MAX_NEW_TOKENS,
         ge=1,
