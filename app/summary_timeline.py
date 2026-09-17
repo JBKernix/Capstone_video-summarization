@@ -9,10 +9,11 @@ import streamlit as st
 from modules.common import find_existing_path, load_json
 
 # LLM이 생성하는 최종 요약 텍스트에 박혀 있는 "(타임라인: 0.0 ~ 7.0)" 형태의 표기입니다.
-TIMELINE_PATTERN = re.compile(r"\(\s*타임라인\s*:\s*([\d.]+)\s*~\s*([\d.]+)\s*\)")
+# 구간이 아니라 "(타임라인: 573.12)"처럼 단일 시점만 나올 때도 있어 끝 시각은 선택 사항입니다.
+TIMELINE_PATTERN = re.compile(r"\(\s*타임라인\s*:\s*([\d.]+)\s*(?:~\s*([\d.]+)\s*)?\)")
 CHART_HEADING_KEYWORDS = ("표", "차트")
 NUMBERED_ITEM_PATTERN = re.compile(
-    r"###\s+(\d+)\.\s*(.*?)\s*\(\s*타임라인\s*:\s*([\d.]+)\s*~\s*([\d.]+)\s*\)"
+    r"###\s+(\d+)\.\s*(.*?)\s*\(\s*타임라인\s*:\s*([\d.]+)\s*(?:~\s*([\d.]+)\s*)?\)"
 )
 HAS_NUMBERED_ITEM_PATTERN = re.compile(r"(^|\n)###\s+\d+\.")
 
@@ -27,28 +28,47 @@ def format_timestamp(seconds: float) -> str:
     return f"{minutes}:{secs:02d}"
 
 
+def _format_timeline_label(start: float, end: float | None) -> str:
+    if end is None:
+        return format_timestamp(start)
+    return f"{format_timestamp(start)} ~ {format_timestamp(end)}"
+
+
 def _plain_timeline_text(text: str) -> str:
     """클릭 기능을 넣기 애매한 위치에서는 타임라인 표기를 읽기 쉬운 형식으로만 바꿉니다."""
 
     def _replace(match: re.Match[str]) -> str:
-        start, end = float(match.group(1)), float(match.group(2))
-        return f"({format_timestamp(start)} ~ {format_timestamp(end)})"
+        start = float(match.group(1))
+        end = float(match.group(2)) if match.group(2) else None
+        return f"({_format_timeline_label(start, end)})"
 
     return TIMELINE_PATTERN.sub(_replace, text)
 
 
-def _render_timeline_badge(start: float, end: float) -> None:
+def _render_timeline_badge(start: float, end: float | None = None) -> None:
     """클릭하면 페이지 새로고침 없이 영상을 해당 지점으로 이동시키는 뱃지를 렌더링합니다.
 
-    ``st.markdown(unsafe_allow_html=True)``는 내부적으로 HTML을 React 엘리먼트로 변환하기
-    때문에 ``onclick="..."`` 속성이 문자열로 취급되어 런타임 에러(React #231)가 발생합니다.
-    ``st.html(unsafe_allow_javascript=True)``는 iframe 없이 문서에 그대로 HTML을 삽입하고
-    안의 자바스크립트를 실제로 실행해주므로 이 문제가 없습니다.
+    ``onclick="..."`` 같은 인라인 이벤트 핸들러 속성은 ``st.markdown(unsafe_allow_html=True)``
+    뿐 아니라 ``st.html(unsafe_allow_javascript=True)``에서도 React #231 오류를 일으킵니다
+    (둘 다 내부적으로 HTML 속성을 React prop으로 변환하려 시도하는 것으로 보입니다). 그래서
+    HTML 속성으로는 이벤트를 걸지 않고, 별도 ``<script>`` 태그 안에서 ``addEventListener``로
+    이벤트를 붙입니다. ``document.currentScript.previousElementSibling``으로 바로 앞에 있는
+    이 뱃지 자신만 정확히 찾아서 연결하므로 다른 뱃지와 섞이지 않습니다.
     """
-    label = f"{format_timestamp(start)} ~ {format_timestamp(end)}"
-    seek_js = f"var v=document.querySelector('video'); if(v){{v.currentTime={start};v.play();}}"
+    label = _format_timeline_label(start, end)
     st.html(
-        f'<span class="timeline-badge" onclick="{seek_js}">▶ {label}</span>',
+        f'<span class="timeline-badge">▶ {label}</span>'
+        "<script>"
+        "(function(){"
+        "var badge = document.currentScript.previousElementSibling;"
+        "if (badge) {"
+        "badge.addEventListener('click', function(){"
+        "var v = document.querySelector('video');"
+        f"if (v) {{ v.currentTime = {start}; v.play(); }}"
+        "});"
+        "}"
+        "})();"
+        "</script>",
         unsafe_allow_javascript=True,
         width="content",
     )
@@ -67,11 +87,12 @@ def _load_ocr_entries(ocr_result_path: Path) -> list[dict[str, Any]]:
 def _find_matching_frame_image(
     ocr_entries: list[dict[str, Any]],
     start: float,
-    end: float,
+    end: float | None,
     ocr_result_path: Path,
     project_root: Path,
 ) -> Path | None:
     """타임라인 구간과 겹치는 프레임 중 표/차트로 분류된 화면을 우선으로 찾습니다."""
+    end = end if end is not None else start
     in_range = [
         entry
         for entry in ocr_entries
@@ -114,7 +135,8 @@ def _render_numbered_items_section(
             continue
 
         index, item_title, start_text, end_text = match.groups()
-        start, end = float(start_text), float(end_text)
+        start = float(start_text)
+        end = float(end_text) if end_text else None
         remaining = item[match.end():].strip()
 
         with st.container(border=True):
