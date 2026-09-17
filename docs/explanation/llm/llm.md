@@ -118,9 +118,7 @@ POST /llm/final-summary
 입력:
 
 ```text
-runs/llm/stt_summary.txt
 runs/llm/stt_summary_result.json
-runs/vlm/vlm_summary.txt
 runs/vlm/vlm_summary_result.json
 ```
 
@@ -131,7 +129,7 @@ runs/final/final_summary.txt
 runs/final/final_summary_result.json
 ```
 
-최종 요약 클라이언트는 입력 텍스트 파일이 비어 있지 않은지, JSON 파일(`modules.common.load_json()`로 읽음)이 객체인지 먼저 검증합니다.
+최종 요약 클라이언트는 STT/VLM 요약 JSON(`modules.common.load_json()`로 읽음) 안의 `summary`(STT)/`results`(VLM)가 비어 있지 않은지 먼저 검증합니다. 과거에는 `stt_summary.txt`/`vlm_summary.txt`도 함께 전송했지만, 두 텍스트 파일 내용이 각 JSON 안에 이미 들어있는 중복 데이터였기 때문에 JSON 2개만 보내도록 변경했습니다.
 
 ## 비동기 job 응답
 

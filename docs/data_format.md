@@ -152,9 +152,7 @@ runs/final/final_summary_result.json
 ```json
 {
   "source": {
-    "stt_summary_path": "runs/llm/stt_summary.txt",
     "stt_summary_json_path": "runs/llm/stt_summary_result.json",
-    "vlm_summary_path": "runs/vlm/vlm_summary.txt",
     "vlm_summary_json_path": "runs/vlm/vlm_summary_result.json"
   },
   "final_summary": "# 제목\n\n## 핵심 주제\n- ...\n\n## 주요 내용\n\n### 1. 소제목 (타임라인: 0.0 ~ 3.5)\n- ...\n\n## 표/차트 기반 주요 정보\n\n### 1. 소제목 (타임라인: 1051.9 ~ 1066.9)\n- ...\n\n## 종합 결론\n- ...",
@@ -164,7 +162,7 @@ runs/final/final_summary_result.json
 
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |
-| `source` | object | 최종 요약 생성에 사용된 STT/VLM 요약 파일 경로 4개 (`scripts/run_final_summary.py`가 추가) |
+| `source` | object | 최종 요약 생성에 사용된 STT/VLM 요약 JSON 파일 경로 2개 (`scripts/run_final_summary.py`가 추가) |
 | `final_summary` | string | GPU 서버가 반환한 마크다운 텍스트 (`summary`와 동일한 내용) |
 | `summary` | string | 위와 동일한 마크다운 텍스트. `runs/final/final_summary.txt`에 그대로 저장됨 |
 

@@ -16,11 +16,9 @@ from modules.common import (  # noqa: E402
 from modules.llm.final_summarizer_client import GPUFinalSummaryClient  # noqa: E402
 from scripts.run_llm_summary import (  # noqa: E402
     DEFAULT_LLM_SUMMARY_JSON_RELATIVE_PATH,
-    DEFAULT_LLM_SUMMARY_RELATIVE_PATH,
 )
 from scripts.run_vlm_summary import (  # noqa: E402
     DEFAULT_VLM_SUMMARY_JSON_RELATIVE_PATH,
-    DEFAULT_VLM_SUMMARY_RELATIVE_PATH,
 )
 
 DEFAULT_FINAL_SUMMARY_RELATIVE_PATH = Path("final") / "final_summary.txt"
@@ -28,9 +26,7 @@ DEFAULT_FINAL_SUMMARY_JSON_RELATIVE_PATH = Path("final") / "final_summary_result
 
 
 def run_final_summary_step(
-    stt_summary_path: str | Path,
     stt_summary_json_path: str | Path,
-    vlm_summary_path: str | Path,
     vlm_summary_json_path: str | Path,
     output_path: str | Path,
     output_json_path: str | Path | None = None,
@@ -40,17 +36,13 @@ def run_final_summary_step(
 
     client = GPUFinalSummaryClient()
     result = client.summarize_files_result(
-        stt_summary_path=stt_summary_path,
         stt_summary_json_path=stt_summary_json_path,
-        vlm_summary_path=vlm_summary_path,
         vlm_summary_json_path=vlm_summary_json_path,
     )
 
     result = {
         "source": {
-            "stt_summary_path": Path(stt_summary_path).as_posix(),
             "stt_summary_json_path": Path(stt_summary_json_path).as_posix(),
-            "vlm_summary_path": Path(vlm_summary_path).as_posix(),
             "vlm_summary_json_path": Path(vlm_summary_json_path).as_posix(),
         },
         **result,
@@ -70,19 +62,9 @@ def parse_args() -> argparse.Namespace:
         description="Request final summary from STT and VLM summary outputs."
     )
     parser.add_argument(
-        "--stt-summary",
-        default=str(run_path(run_dir, DEFAULT_LLM_SUMMARY_RELATIVE_PATH)),
-        help="Path to the STT summary text file.",
-    )
-    parser.add_argument(
         "--stt-summary-json",
         default=str(run_path(run_dir, DEFAULT_LLM_SUMMARY_JSON_RELATIVE_PATH)),
         help="Path to the STT summary result JSON file.",
-    )
-    parser.add_argument(
-        "--vlm-summary",
-        default=str(run_path(run_dir, DEFAULT_VLM_SUMMARY_RELATIVE_PATH)),
-        help="Path to the VLM summary text file.",
     )
     parser.add_argument(
         "--vlm-summary-json",
@@ -105,9 +87,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     output_path, output_json_path = run_final_summary_step(
-        stt_summary_path=args.stt_summary,
         stt_summary_json_path=args.stt_summary_json,
-        vlm_summary_path=args.vlm_summary,
         vlm_summary_json_path=args.vlm_summary_json,
         output_path=args.output,
         output_json_path=args.output_json,

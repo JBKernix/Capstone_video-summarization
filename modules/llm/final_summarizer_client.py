@@ -35,47 +35,35 @@ class GPUFinalSummaryClient(GPUJobClientMixin):
 
     def summarize_files_result(
         self,
-        stt_summary_path: str | Path,
         stt_summary_json_path: str | Path,
-        vlm_summary_path: str | Path,
         vlm_summary_json_path: str | Path,
     ) -> dict:
         return self._post_final_summary_files(
-            stt_summary_path=Path(stt_summary_path),
             stt_summary_json_path=Path(stt_summary_json_path),
-            vlm_summary_path=Path(vlm_summary_path),
             vlm_summary_json_path=Path(vlm_summary_json_path),
         )
 
     def _post_final_summary_files(
         self,
-        stt_summary_path: Path,
         stt_summary_json_path: Path,
-        vlm_summary_path: Path,
         vlm_summary_json_path: Path,
     ) -> dict:
         self._validate_summary_files(
-            stt_summary_path=stt_summary_path,
             stt_summary_json_path=stt_summary_json_path,
-            vlm_summary_path=vlm_summary_path,
             vlm_summary_json_path=vlm_summary_json_path,
         )
         report_progress(self.progress_step, "최종 요약 서버에 요청 전송 중")
 
         url = f"{self.config.server_url}/llm/final-summary"
         with ExitStack() as stack:
-            stt_summary_file = stack.enter_context(stt_summary_path.open("rb"))
             stt_summary_json_file = stack.enter_context(stt_summary_json_path.open("rb"))
-            vlm_summary_file = stack.enter_context(vlm_summary_path.open("rb"))
             vlm_summary_json_file = stack.enter_context(vlm_summary_json_path.open("rb"))
 
             files = [
-                ("stt_summary", (stt_summary_path.name, stt_summary_file, "text/plain")),
                 (
                     "stt_summary_result",
                     (stt_summary_json_path.name, stt_summary_json_file, "application/json"),
                 ),
-                ("vlm_summary", (vlm_summary_path.name, vlm_summary_file, "text/plain")),
                 (
                     "vlm_summary_result",
                     (vlm_summary_json_path.name, vlm_summary_json_file, "application/json"),
@@ -95,26 +83,16 @@ class GPUFinalSummaryClient(GPUJobClientMixin):
 
     @staticmethod
     def _validate_summary_files(
-        stt_summary_path: Path,
         stt_summary_json_path: Path,
-        vlm_summary_path: Path,
         vlm_summary_json_path: Path,
     ) -> None:
-        stt_summary = GPUFinalSummaryClient._read_text_file(stt_summary_path)
-        vlm_summary = GPUFinalSummaryClient._read_text_file(vlm_summary_path)
-        GPUFinalSummaryClient._read_json_file(stt_summary_json_path)
-        GPUFinalSummaryClient._read_json_file(vlm_summary_json_path)
+        stt_summary_data = GPUFinalSummaryClient._read_json_file(stt_summary_json_path)
+        vlm_summary_data = GPUFinalSummaryClient._read_json_file(vlm_summary_json_path)
 
-        if not stt_summary.strip():
-            raise ValueError(f"STT summary text is empty: {stt_summary_path}")
-        if not vlm_summary.strip():
-            raise ValueError(f"VLM summary text is empty: {vlm_summary_path}")
-
-    @staticmethod
-    def _read_text_file(path: Path) -> str:
-        if not path.is_file():
-            raise FileNotFoundError(f"Text file does not exist: {path}")
-        return path.read_text(encoding="utf-8-sig").strip()
+        if not str(stt_summary_data.get("summary", "")).strip():
+            raise ValueError(f"STT summary JSON has no summary text: {stt_summary_json_path}")
+        if not vlm_summary_data.get("results"):
+            raise ValueError(f"VLM summary JSON has no results: {vlm_summary_json_path}")
 
     @staticmethod
     def _read_json_file(path: Path) -> dict:

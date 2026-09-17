@@ -437,9 +437,7 @@ def main():
             final_summary_json_path = None
         else:
             final_summary_path, final_summary_json_path = run_final_summary_step(
-                stt_summary_path=llm_summary_path,
                 stt_summary_json_path=llm_summary_json_path,
-                vlm_summary_path=vlm_summary_path,
                 vlm_summary_json_path=vlm_summary_json_path,
                 output_path=run_path(run_dir, DEFAULT_FINAL_SUMMARY_RELATIVE_PATH),
                 output_json_path=run_path(run_dir, DEFAULT_FINAL_SUMMARY_JSON_RELATIVE_PATH),
