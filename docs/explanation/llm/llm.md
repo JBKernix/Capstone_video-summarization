@@ -44,7 +44,7 @@ GPU_SERVER_URL = "http://100.124.136.28:8000"
 
 > `SUMMARY_LEVELS`의 값은 GPU 서버(`gpu-server` 브랜치)의 `configs/inference_config.py::SUMMARY_LEVEL_PRESETS` 키와 반드시 동일해야 합니다. 실제 토큰 수/속도는 서버가 프리셋에 따라 결정하며, 클라이언트는 값만 전달합니다.
 >
-> `SUMMARY_LEVEL_CAPTIONS`(업로드 페이지 안내 문구)는 "세 레벨 모두 음성과 영상을 함께 분석하고 차이는 길이/속도뿐"이라고 설명하지만, 실제로는 `scripts/run_pipeline.py`가 `simple`일 때 프레임 추출/OCR/VLM 단계를 아예 건너뛰고 STT 요약만 사용합니다(아래 "최종 요약" 및 `pipeline.md` 참고). 안내 문구와 실제 동작이 다르다는 점에 주의하세요.
+> `simple`은 `standard`/`detailed`와 달리 영상(VLM) 분석 자체를 생략합니다. `scripts/run_pipeline.py`가 `simple`일 때 프레임 추출/OCR/VLM 단계를 아예 건너뛰고 STT 요약만 최종 요약으로 사용하기 때문입니다(아래 "최종 요약" 및 `pipeline.md` 참고). `SUMMARY_LEVEL_CAPTIONS`(업로드 페이지 안내 문구)도 이를 반영해 "영상 분석 생략"을 명시합니다.
 
 ## STT 요약
 
