@@ -60,7 +60,7 @@ Windows에서는 배치 파일을 실행할 수 있습니다.
 배치 파일은 기본적으로 다음 값을 사용합니다.
 
 - Conda 환경: `video_summarization`
-- 서버 주소: `10.30.2.224:8000`
+- 서버 주소: `0.0.0.0:8000`
 - Uvicorn worker: `1`
 
 환경 경로나 서버 주소가 다르면 `start_server.bat`의 `PYTHON_EXE`, `SERVER_HOST`, `SERVER_PORT`를 수정합니다.
@@ -117,7 +117,7 @@ GPU 모델과 작업 상태가 프로세스 메모리에 저장되므로 운영 
 }
 ```
 
-`full_text`가 비어 있으면 `segments[].text`를 연결하여 사용합니다. `summary_level`은 `simple`(간단요약) / `standard`(기본요약, 기본값) / `detailed`(상세요약) 중 하나이며, 실제 생성 토큰 수와 청크 크기는 `configs/inference_config.py`의 `SUMMARY_LEVEL_PRESETS`에서 정의합니다.
+`full_text`가 비어 있으면 `segments[].text`를 연결하여 사용합니다. `summary_level`은 `simple`(간단요약) / `standard`(기본요약, 기본값) / `detailed`(상세요약) 중 하나이며, 실제 생성 토큰 수와 청크 크기는 `configs/inference_config.py`의 `SUMMARY_LEVEL_PRESETS`에서 정의합니다. `simple`은 프레임/OCR/VLM 단계를 쓰지 않는 클라이언트를 위한 프리셋이라 중요 구간 추출 자체를 건너뛰고 STT 전체 요약만 생성합니다.
 
 ### VLM 프레임 분석 요청
 
@@ -139,7 +139,7 @@ curl.exe -X POST "http://localhost:8000/vlm/summarize" `
   -F "summary_level=standard"
 ```
 
-프레임은 최대 32장, 파일당 최대 20MB까지 받을 수 있습니다. OCR JSON은 최대 10MB입니다.
+프레임은 최대 8장, 파일당 최대 20MB까지 받을 수 있습니다. OCR JSON은 최대 10MB입니다.
 
 ### 최종 요약 요청
 
@@ -147,10 +147,10 @@ curl.exe -X POST "http://localhost:8000/vlm/summarize" `
 
 | 필드 | 형식 | 설명 |
 | --- | --- | --- |
-| `stt_summary` | TXT 파일 1개 | STT 전체 요약 텍스트 |
-| `stt_summary_result` | JSON 파일 1개 | STT 중요 구간 추출 결과 |
-| `vlm_summary` | TXT 파일 1개 | VLM 전체 요약 텍스트 |
-| `vlm_summary_result` | JSON 파일 1개 | VLM 프레임별 요약 결과 |
+| `stt_summary_result` | JSON 파일 1개 (필수) | STT 중요 구간 추출 결과 |
+| `vlm_summary_result` | JSON 파일 1개 (필수) | VLM 프레임별 요약 결과 |
+| `stt_summary` | TXT 파일 1개 (선택) | STT 전체 요약 텍스트. 생략하면 `stt_summary_result`의 `summary` 필드를 대신 사용 |
+| `vlm_summary` | TXT 파일 1개 (선택) | VLM 전체 요약 텍스트 |
 | `summary_level` | 문자열 | `simple` / `standard`(기본값) / `detailed` |
 
 ### 작업 상태 조회
@@ -293,3 +293,5 @@ Hugging Face 모델의 로딩, 추론과 GPU 메모리 해제를 담당합니다
 - `/health`는 서버 프로세스 상태만 확인하며 CUDA와 모델 로딩까지 검사하지 않습니다.
 - 작업 취소, 결과 영속화, 만료 작업 정리 기능은 현재 제공하지 않습니다.
 - `KEEP_LLM_LOADED=1` 또는 `KEEP_VLM_LOADED=1`은 재로딩 시간을 줄이지만 GPU 메모리를 계속 점유합니다.
+- LLM 입력 토큰이 `configs/inference_config.py`의 `LLM_INFERENCE_CONFIG.max_input_tokens`(기본 16000)를 초과하면 추론을 시작하지 않고 오류를 반환합니다.
+- LLM/VLM 추론 중 GPU 메모리가 부족(CUDA OOM)하면 캐시를 비우고 사용자에게 안내 메시지를 반환합니다. 이때 작업 상태의 `message`에는 일반 실패 메시지 대신 실제 오류 내용이 표시됩니다.

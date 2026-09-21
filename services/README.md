@@ -50,13 +50,25 @@ LLM과 VLM에 같은 `Lock`을 전달하여 두 모델이 동시에 GPU 추론�
 - 반복 제거와 명백한 STT 오류 보정
 - 원문에 없는 정보 생성 금지
 
-기본 `max_new_tokens`는 `1024`, 최대값은 `2048`입니다.
+`max_new_tokens`는 호출부에서 직접 정하지 않고 `configs/inference_config.py`의 `SUMMARY_LEVEL_PRESETS`(`summary_level`별 프리셋)에서 가져옵니다. `LLMService`는 `_validate_max_new_tokens()`로 이 값이 `1` 이상 `LLM_INFERENCE_CONFIG.max_new_tokens_limit`(`1024`) 이하인지만 검증합니다.
+
+### 요약 레벨(summary_level) 프리셋
+
+`app/inference_jobs.py`는 요청의 `summary_level`(`simple`/`standard`/`detailed`)로 `SUMMARY_LEVEL_PRESETS`에서 `SummaryLevelPreset`을 조회해 각 단계에 다음 값을 전달합니다.
+
+| 값 | STT 요약 토큰 | 중요 구간 추출 | 구간 청크 크기 | VLM 토큰 | 최종 요약 토큰 |
+| --- | --- | --- | --- | --- | --- |
+| `simple` | 256 | 생략 | 20000자 | 96 | 1024 |
+| `standard`(기본값) | 512 | 실행 | 12000자 | 160 | 2048 |
+| `detailed` | 1024 | 실행 | 8000자 | 384 | 4096 |
+
+`simple`은 프레임/OCR/VLM 단계를 쓰지 않는 클라이언트를 위한 프리셋이라 `extract_important_segments=False`로 두어 여러 번의 청크별 LLM 호출(중요 구간 추출)을 아예 생략합니다.
 
 ### 최종 요약
 
-`final_service.py`는 STT 요약 텍스트/JSON과 VLM 요약 텍스트/JSON을 하나의 프롬프트로 통합해 주제별 최종 요약을 생성합니다.
+`final_service.py`는 STT 요약 텍스트/JSON과 VLM 요약 텍스트/JSON을 하나의 프롬프트로 통합해 주제별 최종 요약을 생성합니다. `stt_text`/`vlm_text`(txt)는 선택 입력이며, STT 텍스트가 없으면 `stt_json`의 `summary` 필드를 대신 사용합니다.
 
-최종 요약은 일반 STT 요약보다 긴 출력이 필요하므로 기본 `max_new_tokens`는 `2048`, 최대값은 `4096`입니다.
+`max_new_tokens`는 위 표의 "최종 요약 토큰" 값을 사용하며, `FinalService._validate_max_new_tokens()`는 이 값이 `1` 이상 `MAX_FINAL_NEW_TOKENS_LIMIT`(`4096`) 이하인지 검증합니다.
 
 ### 중요 구간 추출
 

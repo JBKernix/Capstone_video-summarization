@@ -57,6 +57,10 @@ POST /vlm/summarize
   -> completed 또는 failed 상태 저장
 ```
 
+## 요약 레벨(summary_level)
+
+`server.py`의 세 라우트(`/llm/summarize`, `/vlm/summarize`, `/llm/final-summary`)는 더 이상 `max_new_tokens`를 직접 입력받지 않습니다. 대신 `summary_level`(`simple`/`standard`/`detailed`) 값을 `configs/inference_config.py`의 `get_summary_level_preset()`으로 조회해 단계별 `max_new_tokens`와 청크 크기를 한 번에 결정합니다. `simple` 프리셋은 `extract_important_segments=False`이므로 `run_summary`가 중요 구간 추출 단계 자체를 건너뜁니다.
+
 ## 작업 상태
 
 작업 상태는 다음 순서로 변경됩니다.
@@ -68,6 +72,8 @@ queued -> running -> completed
 
 `JobStore`는 프로세스 메모리에만 상태를 보관합니다. 서버가 재시작되면 기존 작업과 결과가 사라집니다. 여러 Uvicorn worker를 사용하면 worker마다 별도 저장소가 생기므로 운영 환경에서는 `--workers 1`을 사용해야 합니다.
 
+`failed` 상태의 `message`는 실패 원인이 `ValueError`(입력 검증 실패, GPU 메모리 부족 등 사용자가 조치 가능한 오류)이면 해당 오류 메시지를 그대로 노출하고, 그 외 예외는 일반 실패 메시지로 감춥니다. `error` 필드에는 항상 원본 예외 메시지가 들어갑니다.
+
 작업 ID 형식:
 
 ```text
@@ -77,13 +83,13 @@ vlm-summary-<12자리 식별자>
 
 ## VLM 업로드 제한
 
-`scripts/vlm_upload.py`의 기본 제한은 다음과 같습니다.
+파일 크기와 확장자는 `scripts/vlm_upload.py`, 프레임 개수는 `configs/inference_config.py`의 `VLM_INFERENCE_CONFIG.max_frame_count`가 제한합니다.
 
 | 항목 | 제한 |
 | --- | --- |
 | OCR JSON | 10MB |
 | 프레임 한 장 | 20MB |
-| 요청당 프레임 | 32장 |
+| 요청당 프레임 | 8장 |
 | 이미지 확장자 | `.jpg`, `.jpeg` |
 
 OCR 결과에 `image_path`가 있으면 경로의 파일명과 업로드된 파일명을 대소문자 구분 없이 매칭합니다. `image_path`가 없으면 OCR 항목 수와 프레임 수가 같을 때만 입력 순서를 사용합니다.

@@ -62,6 +62,8 @@ VLMConfig(
 
 Qwen3의 긴 내부 추론 출력을 줄이기 위해 채팅 템플릿에서 `enable_thinking=False`를 사용합니다. 생성 결과에서는 입력 토큰을 제외하고 새로 생성된 토큰만 디코딩합니다.
 
+토큰화 후 입력 토큰 수가 `LLM_INFERENCE_CONFIG.max_input_tokens`(기본 16000)를 초과하면 `generate()`는 모델 호출 전에 `ValueError`를 발생시킵니다. 이 상한은 24GB급 GPU에서 입력 토큰 24054개로 CUDA OOM이 발생한 사례를 반영해 정상 운영 범위(약 9천~1만4천 토큰)보다 여유를 두고 설정되어 있습니다.
+
 ## VLM 입력 처리
 
 `VLMLoader.describe_image()`는 문자열 경로, `Path`, PIL 이미지를 받을 수 있습니다.
@@ -73,6 +75,10 @@ Qwen3의 긴 내부 추론 출력을 줄이기 위해 채팅 템플릿에서 `en
 5. 생성된 토큰만 디코딩
 
 이미지 파일의 존재 여부와 읽기 오류는 상위 `VLMService`에서도 한 번 더 검증합니다.
+
+## GPU 메모리 부족(OOM) 처리
+
+`LLMLoader.generate()`와 `VLMLoader.describe_image()`는 모델 호출을 `torch.OutOfMemoryError`에 대해 감싸고 있습니다. OOM이 발생하면 `torch.cuda.empty_cache()`로 캐시를 비운 뒤, 입력 토큰 수를 포함한 안내 메시지와 함께 `ValueError`로 다시 발생시킵니다. 이렇게 변환된 `ValueError`는 `app/inference_jobs.py`가 잡아 작업 상태의 `message`에 그대로 노출합니다.
 
 ## GPU 메모리 해제
 
