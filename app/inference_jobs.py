@@ -146,7 +146,7 @@ class InferenceJobRunner:
             self.job_store.update(
                 job_id,
                 status="failed",
-                message="추론 작업 중 오류가 발생했습니다.",
+                message=str(error) if isinstance(error, ValueError) else "추론 작업 중 오류가 발생했습니다.",
                 error=str(error),
             )
         finally:
@@ -215,7 +215,7 @@ class InferenceJobRunner:
             self.job_store.update(
                 job_id,
                 status="failed",
-                message="프레임 분석 중 오류가 발생했습니다.",
+                message=str(error) if isinstance(error, ValueError) else "프레임 분석 중 오류가 발생했습니다.",
                 error=str(error),
             )
         finally:
@@ -268,7 +268,7 @@ class InferenceJobRunner:
             self.job_store.update(
                 job_id,
                 status="failed",
-                message="최종 요약 작업 중 오류가 발생했습니다.",
+                message=str(error) if isinstance(error, ValueError) else "최종 요약 작업 중 오류가 발생했습니다.",
                 error=str(error),
             )
         finally:

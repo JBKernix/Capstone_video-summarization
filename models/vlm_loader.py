@@ -166,6 +166,12 @@ class VLMLoader:
                 num_beams=VLM_INFERENCE_CONFIG.num_beams,
                 use_cache=VLM_INFERENCE_CONFIG.use_cache,
             )
+        except torch.OutOfMemoryError as error:
+            torch.cuda.empty_cache()
+            raise ValueError(
+                "GPU 메모리가 부족하여 프레임을 분석하지 못했습니다 "
+                f"(입력 토큰 {input_tokens}개). 잠시 후 다시 시도해주세요."
+            ) from error
         finally:
             logger.info(
                 "VLM generate end | input_tokens=%d | max_new_tokens=%d | "

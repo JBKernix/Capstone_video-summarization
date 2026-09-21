@@ -5,7 +5,7 @@ title Video Summarization API Server
 
 set "PROJECT_ROOT=%~dp0"
 set "PYTHON_EXE=%USERPROFILE%\anaconda3\envs\video_summarization\python.exe"
-set "SERVER_HOST=10.30.2.224"
+set "SERVER_HOST=0.0.0.0"
 set "SERVER_PORT=8000"
 
 if not exist "%PYTHON_EXE%" (

@@ -155,6 +155,14 @@ class LLMLoader:
             input_tokens,
             max_new_tokens,
         )
+
+        if input_tokens > LLM_INFERENCE_CONFIG.max_input_tokens:
+            raise ValueError(
+                f"입력 텍스트가 너무 깁니다 (입력 토큰 {input_tokens}개, "
+                f"최대 {LLM_INFERENCE_CONFIG.max_input_tokens}개). "
+                "텍스트를 줄이거나 나눠서 다시 시도해주세요."
+            )
+
         started_at = time.perf_counter()
         try:
             outputs = model.generate(
@@ -165,6 +173,13 @@ class LLMLoader:
                 use_cache=LLM_INFERENCE_CONFIG.use_cache,
                 pad_token_id=tokenizer.eos_token_id,
             )
+        except torch.OutOfMemoryError as error:
+            torch.cuda.empty_cache()
+            raise ValueError(
+                "GPU 메모리가 부족하여 요약을 생성하지 못했습니다 "
+                f"(입력 토큰 {input_tokens}개). "
+                "입력 텍스트를 줄이거나 잠시 후 다시 시도해주세요."
+            ) from error
         finally:
             logger.info(
                 "LLM generate end | input_tokens=%d | max_new_tokens=%d | "
