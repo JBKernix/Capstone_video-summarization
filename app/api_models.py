@@ -2,7 +2,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from configs.inference_config import LLM_INFERENCE_CONFIG
+from configs.inference_config import DEFAULT_SUMMARY_LEVEL, SummaryLevel
 
 
 class STTSegment(BaseModel):
@@ -16,11 +16,9 @@ class SummaryRequest(BaseModel):
     language: str = "unknown"
     segments: list[STTSegment] = Field(default_factory=list)
     full_text: str = ""
-    max_new_tokens: int = Field(
-        default=LLM_INFERENCE_CONFIG.default_max_new_tokens,
-        ge=1,
-        le=LLM_INFERENCE_CONFIG.max_new_tokens_limit,
-    )
+    # "simple"(간단요약) / "standard"(기본요약) / "detailed"(상세요약).
+    # 실제 토큰 수 등은 configs.inference_config.SUMMARY_LEVEL_PRESETS에서 결정됩니다.
+    summary_level: SummaryLevel = DEFAULT_SUMMARY_LEVEL
 
 
 class ImportantSegment(BaseModel):

@@ -1,4 +1,7 @@
 from dataclasses import dataclass
+from typing import Literal
+
+SummaryLevel = Literal["simple", "standard", "detailed"]
 
 
 @dataclass(frozen=True)
@@ -27,3 +30,61 @@ class VLMInferenceConfig:
 
 LLM_INFERENCE_CONFIG = LLMInferenceConfig()
 VLM_INFERENCE_CONFIG = VLMInferenceConfig()
+
+
+@dataclass(frozen=True)
+class SummaryLevelPreset:
+    """간단/기본/상세 요약 프리셋 한 단계가 각 추론 단계에 적용하는 값입니다."""
+
+    label: str
+    # STT 전체 요약 생성 토큰 수 (LLM_INFERENCE_CONFIG.max_new_tokens_limit 이하)
+    stt_max_new_tokens: int
+    # 중요 구간 추출 생성 토큰 수 (짧은 구조화 출력이라 프리셋 간 차이를 작게 둡니다)
+    important_segments_max_new_tokens: int
+    # 중요 구간 추출 시 STT 세그먼트를 묶는 청크 크기(문자 수).
+    # 작을수록 청크(=LLM 호출) 수가 늘어나 더 꼼꼼하지만 느려집니다.
+    segment_chunk_chars: int
+    # VLM 프레임 1장당 생성 토큰 수 (VLM_INFERENCE_CONFIG.max_new_tokens_limit 이하)
+    vlm_max_new_tokens: int
+    # 최종 통합 요약 생성 토큰 수 (services.final_service.MAX_FINAL_NEW_TOKENS_LIMIT 이하)
+    final_max_new_tokens: int
+
+
+SUMMARY_LEVEL_PRESETS: dict[SummaryLevel, SummaryLevelPreset] = {
+    "simple": SummaryLevelPreset(
+        label="간단요약",
+        stt_max_new_tokens=256,
+        important_segments_max_new_tokens=160,
+        segment_chunk_chars=20000,
+        vlm_max_new_tokens=96,
+        final_max_new_tokens=1024,
+    ),
+    "standard": SummaryLevelPreset(
+        label="기본요약",
+        stt_max_new_tokens=LLM_INFERENCE_CONFIG.default_max_new_tokens,
+        important_segments_max_new_tokens=256,
+        segment_chunk_chars=LLM_INFERENCE_CONFIG.segment_chunk_chars,
+        vlm_max_new_tokens=VLM_INFERENCE_CONFIG.default_max_new_tokens,
+        final_max_new_tokens=2048,
+    ),
+    "detailed": SummaryLevelPreset(
+        label="상세요약",
+        stt_max_new_tokens=LLM_INFERENCE_CONFIG.max_new_tokens_limit,
+        important_segments_max_new_tokens=256,
+        segment_chunk_chars=8000,
+        vlm_max_new_tokens=VLM_INFERENCE_CONFIG.max_new_tokens_limit,
+        final_max_new_tokens=4096,
+    ),
+}
+
+DEFAULT_SUMMARY_LEVEL: SummaryLevel = "standard"
+
+
+def get_summary_level_preset(summary_level: str) -> SummaryLevelPreset:
+    try:
+        return SUMMARY_LEVEL_PRESETS[summary_level]
+    except KeyError as error:
+        allowed = ", ".join(SUMMARY_LEVEL_PRESETS)
+        raise ValueError(
+            f"알 수 없는 summary_level입니다: {summary_level}. 허용값: {allowed}"
+        ) from error

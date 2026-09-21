@@ -10,7 +10,11 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, status
 
-from configs.inference_config import LLM_INFERENCE_CONFIG, VLM_INFERENCE_CONFIG
+from configs.inference_config import (
+    DEFAULT_SUMMARY_LEVEL,
+    VLM_INFERENCE_CONFIG,
+    get_summary_level_preset,
+)
 from app.api_models import (
     JobStatusResponse,
     JobSubmissionResponse,
@@ -25,10 +29,6 @@ from scripts.vlm_upload import (
     read_upload_limited,
     select_ocr_entries_for_frames,
     validate_frame_filename,
-)
-from services.final_service import (
-    DEFAULT_FINAL_MAX_NEW_TOKENS,
-    MAX_FINAL_NEW_TOKENS_LIMIT,
 )
 from services.summary_service import SummaryService
 
@@ -109,11 +109,11 @@ def summarize(request: SummaryRequest):
     job_store.create(job_id, "추론 대기열에 등록되었습니다.")
     logger.info(
         "job_id=%s | 작업 접수 | text_length=%d | segments=%d | "
-        "max_new_tokens=%d",
+        "summary_level=%s",
         job_id,
         len(stt_text),
         len(request.segments),
-        request.max_new_tokens,
+        request.summary_level,
     )
     job_executor.submit(job_runner.run_summary, job_id, request.model_dump())
     return JobSubmissionResponse(
@@ -132,11 +132,7 @@ def summarize(request: SummaryRequest):
 async def summarize_frames(
     ocr_result: UploadFile = File(...),
     frames: list[UploadFile] = File(...),
-    max_new_tokens: int = Form(
-        default=VLM_INFERENCE_CONFIG.default_max_new_tokens,
-        ge=1,
-        le=VLM_INFERENCE_CONFIG.max_new_tokens_limit,
-    ),
+    summary_level: str = Form(default=DEFAULT_SUMMARY_LEVEL),
 ):
     if not frames:
         raise HTTPException(status_code=422, detail="프레임 이미지가 필요합니다.")
@@ -148,6 +144,11 @@ async def summarize_frames(
                 "업로드할 수 있습니다."
             ),
         )
+    try:
+        preset = get_summary_level_preset(summary_level)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    max_new_tokens = preset.vlm_max_new_tokens
 
     try:
         ocr_bytes = await read_upload_limited(ocr_result, MAX_OCR_JSON_BYTES)
@@ -188,10 +189,11 @@ async def summarize_frames(
     job_store.create(job_id, "VLM 추론 대기열에 등록되었습니다.")
     logger.info(
         "job_id=%s | VLM 작업 접수 | ocr_entries=%d | frames=%d | "
-        "max_new_tokens=%d",
+        "summary_level=%s | max_new_tokens=%d",
         job_id,
         len(ocr_entries),
         len(frame_data),
+        summary_level,
         max_new_tokens,
     )
     job_executor.submit(
@@ -219,12 +221,14 @@ async def summarize_final(
     vlm_summary_result: UploadFile = File(...),
     stt_summary: UploadFile | None = File(default=None),
     vlm_summary: UploadFile | None = File(default=None),
-    max_new_tokens: int = Form(
-        default=DEFAULT_FINAL_MAX_NEW_TOKENS,
-        ge=1,
-        le=MAX_FINAL_NEW_TOKENS_LIMIT,
-    ),
+    summary_level: str = Form(default=DEFAULT_SUMMARY_LEVEL),
 ):
+    try:
+        preset = get_summary_level_preset(summary_level)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    max_new_tokens = preset.final_max_new_tokens
+
     try:
         stt_summary_data = await read_optional_summary_upload(stt_summary, ".txt")
         stt_summary_result_data = await read_optional_summary_upload(
@@ -247,8 +251,9 @@ async def summarize_final(
     job_id = job_store.create_id("final-summary")
     job_store.create(job_id, "최종 요약 대기열에 등록되었습니다.")
     logger.info(
-        "job_id=%s | final summary job submitted | max_new_tokens=%d",
+        "job_id=%s | final summary job submitted | summary_level=%s | max_new_tokens=%d",
         job_id,
+        summary_level,
         max_new_tokens,
     )
     job_executor.submit(

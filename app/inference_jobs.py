@@ -6,6 +6,7 @@ from typing import Any
 
 from app.api_models import FinalSummaryResponse, SummaryRequest, SummaryResponse
 from app.job_store import JobStore
+from configs.inference_config import get_summary_level_preset
 from services.summary_service import SummaryService
 
 
@@ -63,6 +64,7 @@ class InferenceJobRunner:
     def run_summary(self, job_id: str, request_data: dict[str, Any]) -> None:
         try:
             request = SummaryRequest.model_validate(request_data)
+            preset = get_summary_level_preset(request.summary_level)
             stt_text = request.full_text.strip() or " ".join(
                 segment.text.strip()
                 for segment in request.segments
@@ -80,14 +82,14 @@ class InferenceJobRunner:
             with self.log_stage(job_id, "STT 전체 요약"):
                 summary = self.summary_service.summarize_stt(
                     stt_text=stt_text,
-                    max_new_tokens=request.max_new_tokens,
+                    max_new_tokens=preset.stt_max_new_tokens,
                 )
 
             important_segments = []
             if segment_data:
                 chunks = self.summary_service.llm_service.split_segments(
                     segment_data,
-                    max_chunk_chars=12000,
+                    max_chunk_chars=preset.segment_chunk_chars,
                 )
 
                 def report_progress(_task: str, index: int, total: int) -> None:
@@ -117,7 +119,8 @@ class InferenceJobRunner:
                         self.summary_service.get_important_segments_in_chunks(
                             stt_segments=segment_data,
                             stt_summary=summary,
-                            max_new_tokens=min(request.max_new_tokens, 256),
+                            max_new_tokens=preset.important_segments_max_new_tokens,
+                            max_chunk_chars=preset.segment_chunk_chars,
                             progress_callback=report_progress,
                         )
                     )

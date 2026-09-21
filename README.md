@@ -113,11 +113,11 @@ GPU 모델과 작업 상태가 프로세스 메모리에 저장되므로 운영 
     }
   ],
   "full_text": "첫 번째 발화 내용입니다.",
-  "max_new_tokens": 1024
+  "summary_level": "standard"
 }
 ```
 
-`full_text`가 비어 있으면 `segments[].text`를 연결하여 사용합니다. `max_new_tokens`는 `1`부터 `2048`까지 지정할 수 있습니다.
+`full_text`가 비어 있으면 `segments[].text`를 연결하여 사용합니다. `summary_level`은 `simple`(간단요약) / `standard`(기본요약, 기본값) / `detailed`(상세요약) 중 하나이며, 실제 생성 토큰 수와 청크 크기는 `configs/inference_config.py`의 `SUMMARY_LEVEL_PRESETS`에서 정의합니다.
 
 ### VLM 프레임 분석 요청
 
@@ -127,7 +127,7 @@ GPU 모델과 작업 상태가 프로세스 메모리에 저장되므로 운영 
 | --- | --- | --- |
 | `ocr_result` | JSON 파일 1개 | 프레임별 OCR 결과 배열 |
 | `frames` | JPG 파일 여러 개 | OCR의 `image_path` 파일명과 매칭할 프레임 |
-| `max_new_tokens` | 정수 | 기본값 `512`, 최대 `2048` |
+| `summary_level` | 문자열 | `simple` / `standard`(기본값) / `detailed` |
 
 PowerShell 요청 예시:
 
@@ -136,7 +136,7 @@ curl.exe -X POST "http://localhost:8000/vlm/summarize" `
   -F "ocr_result=@C:\path\to\ocr_result.json;type=application/json" `
   -F "frames=@C:\path\to\frame_000001.jpg;type=image/jpeg" `
   -F "frames=@C:\path\to\frame_000002.jpg;type=image/jpeg" `
-  -F "max_new_tokens=512"
+  -F "summary_level=standard"
 ```
 
 프레임은 최대 32장, 파일당 최대 20MB까지 받을 수 있습니다. OCR JSON은 최대 10MB입니다.
@@ -151,7 +151,7 @@ curl.exe -X POST "http://localhost:8000/vlm/summarize" `
 | `stt_summary_result` | JSON 파일 1개 | STT 중요 구간 추출 결과 |
 | `vlm_summary` | TXT 파일 1개 | VLM 전체 요약 텍스트 |
 | `vlm_summary_result` | JSON 파일 1개 | VLM 프레임별 요약 결과 |
-| `max_new_tokens` | 정수 | 기본값 `2048`, 최대 `4096` |
+| `summary_level` | 문자열 | `simple` / `standard`(기본값) / `detailed` |
 
 ### 작업 상태 조회
 
