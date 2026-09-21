@@ -39,6 +39,10 @@ class SummaryLevelPreset:
     label: str
     # STT 전체 요약 생성 토큰 수 (LLM_INFERENCE_CONFIG.max_new_tokens_limit 이하)
     stt_max_new_tokens: int
+    # 중요 구간 추출(프레임 샘플링용) 실행 여부입니다.
+    # 클라이언트가 프레임/OCR/VLM 단계를 쓰지 않는 프리셋(예: 간단요약)에서는
+    # 결과를 어차피 쓰지 않으므로 여러 번의 청크별 LLM 호출 자체를 생략합니다.
+    extract_important_segments: bool
     # 중요 구간 추출 생성 토큰 수 (짧은 구조화 출력이라 프리셋 간 차이를 작게 둡니다)
     important_segments_max_new_tokens: int
     # 중요 구간 추출 시 STT 세그먼트를 묶는 청크 크기(문자 수).
@@ -54,6 +58,7 @@ SUMMARY_LEVEL_PRESETS: dict[SummaryLevel, SummaryLevelPreset] = {
     "simple": SummaryLevelPreset(
         label="간단요약",
         stt_max_new_tokens=256,
+        extract_important_segments=False,
         important_segments_max_new_tokens=160,
         segment_chunk_chars=20000,
         vlm_max_new_tokens=96,
@@ -62,6 +67,7 @@ SUMMARY_LEVEL_PRESETS: dict[SummaryLevel, SummaryLevelPreset] = {
     "standard": SummaryLevelPreset(
         label="기본요약",
         stt_max_new_tokens=LLM_INFERENCE_CONFIG.default_max_new_tokens,
+        extract_important_segments=True,
         important_segments_max_new_tokens=256,
         segment_chunk_chars=LLM_INFERENCE_CONFIG.segment_chunk_chars,
         vlm_max_new_tokens=VLM_INFERENCE_CONFIG.default_max_new_tokens,
@@ -70,6 +76,7 @@ SUMMARY_LEVEL_PRESETS: dict[SummaryLevel, SummaryLevelPreset] = {
     "detailed": SummaryLevelPreset(
         label="상세요약",
         stt_max_new_tokens=LLM_INFERENCE_CONFIG.max_new_tokens_limit,
+        extract_important_segments=True,
         important_segments_max_new_tokens=256,
         segment_chunk_chars=8000,
         vlm_max_new_tokens=VLM_INFERENCE_CONFIG.max_new_tokens_limit,

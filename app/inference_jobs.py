@@ -72,12 +72,14 @@ class InferenceJobRunner:
             )
             segment_data = [segment.model_dump() for segment in request.segments]
 
+            run_important_segments = preset.extract_important_segments and bool(segment_data)
+
             self.job_store.update(
                 job_id,
                 status="running",
                 message="STT 전체 요약을 생성하고 있습니다.",
                 current_step=1,
-                total_steps=2 if segment_data else 1,
+                total_steps=2 if run_important_segments else 1,
             )
             with self.log_stage(job_id, "STT 전체 요약"):
                 summary = self.summary_service.summarize_stt(
@@ -86,7 +88,7 @@ class InferenceJobRunner:
                 )
 
             important_segments = []
-            if segment_data:
+            if run_important_segments:
                 chunks = self.summary_service.llm_service.split_segments(
                     segment_data,
                     max_chunk_chars=preset.segment_chunk_chars,
