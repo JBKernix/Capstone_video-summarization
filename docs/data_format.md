@@ -186,3 +186,20 @@ runs/final/final_summary_result.json
 - 제목에 "표"/"차트"가 포함된 섹션은 `runs/ocr/ocr_result.json`에서 해당 타임라인과 겹치고 `scene_type`이 `chart_or_table`인 프레임을 찾아 스크린샷도 함께 보여줍니다.
 
 최종 JSON은 GPU 서버 응답을 그대로 보존하므로 위 세 키 외에 서버 구현 변경에 따라 추가 필드가 포함될 수 있습니다.
+
+### VLM 요약이 없을 때 (`source.mode == "stt_only"`)
+
+VLM 요약이 없는 상태로 최종 요약 단계에 도달하면(요약 레벨 `simple` 또는 `--skip-vlm`), `scripts/run_final_summary.py`의 `write_stt_only_final_summary_step()`이 GPU 서버 호출 없이 STT 요약을 그대로 최종 요약으로 저장합니다. 이 경우 JSON 형태가 다릅니다(`final_summary` 키 없음).
+
+```json
+{
+  "source": {
+    "stt_summary_json_path": "runs/llm/stt_summary_result.json",
+    "vlm_summary_json_path": null,
+    "mode": "stt_only"
+  },
+  "summary": "STT 기반 요약 텍스트"
+}
+```
+
+앱은 `summary`/`final_summary` 중 있는 값을 읽으므로(`get_summary_markdown()`) 이 경우에도 화면 표시는 동일하게 동작합니다. 다만 STT 요약만 사용했으므로 텍스트 안에 표/차트 섹션이나 VLM 기반 내용은 포함되지 않습니다.

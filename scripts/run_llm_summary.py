@@ -16,6 +16,10 @@ from modules.common import (  # noqa: E402
     save_json,
 )
 from modules.llm.stt_summarizer_client import GPULLMClient  # noqa: E402
+from modules.llm.summary_levels import (  # noqa: E402
+    DEFAULT_SUMMARY_LEVEL,
+    SUMMARY_LEVELS,
+)
 
 DEFAULT_LLM_SUMMARY_RELATIVE_PATH = Path("llm") / "stt_summary.txt"
 DEFAULT_LLM_SUMMARY_JSON_RELATIVE_PATH = Path("llm") / "stt_summary_result.json"
@@ -25,13 +29,17 @@ def run_llm_summary_step(
     stt_json_path: str | Path,
     output_path: str | Path,
     output_json_path: str | Path | None = None,
+    summary_level: str = DEFAULT_SUMMARY_LEVEL,
 ) -> tuple[Path, Path]:
     stt_json_path = Path(stt_json_path)
     output_path = Path(output_path)
     output_json_path = Path(output_json_path or output_path.with_name("stt_summary_result.json"))
 
     client = GPULLMClient()
-    result = client.summarize_stt_file_result(stt_json_path=stt_json_path)
+    result = client.summarize_stt_file_result(
+        stt_json_path=stt_json_path,
+        summary_level=summary_level,
+    )
     stt_result = load_json(stt_json_path)
     result = {
         "source": {
@@ -68,6 +76,12 @@ def parse_args() -> argparse.Namespace:
         default=str(run_path(run_dir, DEFAULT_LLM_SUMMARY_JSON_RELATIVE_PATH)),
         help="Path to save the full LLM summary result JSON.",
     )
+    parser.add_argument(
+        "--summary-level",
+        choices=SUMMARY_LEVELS,
+        default=DEFAULT_SUMMARY_LEVEL,
+        help="요약 크기/속도 프리셋입니다. (simple/standard/detailed)",
+    )
     return parser.parse_args()
 
 
@@ -77,6 +91,7 @@ def main() -> None:
         stt_json_path=args.stt_json,
         output_path=args.output,
         output_json_path=args.output_json,
+        summary_level=args.summary_level,
     )
     print(f"LLM summary saved: {output_path}")
     print(f"LLM summary JSON saved: {output_json_path}")

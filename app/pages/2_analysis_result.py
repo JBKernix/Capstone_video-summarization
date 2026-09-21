@@ -9,6 +9,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from app.auth import require_login
 from app.final_summary_view import render_video_and_summary, resolve_video_path
 from app.result_export import save_analysis_result
 from app.styles import apply_global_styles
@@ -22,6 +23,8 @@ st.set_page_config(
     page_icon="video",
     layout="wide",
 )
+
+require_login()
 
 apply_global_styles()
 

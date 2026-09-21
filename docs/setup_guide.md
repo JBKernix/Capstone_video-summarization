@@ -68,7 +68,7 @@ beam_size:
 LLM, VLM, 최종 요약 단계는 외부 GPU 서버를 호출합니다. 기본 서버 주소는 `modules/llm/__init__.py`에 있습니다.
 
 ```python
-GPU_SERVER_URL = "http://10.10.4.27:8000"
+GPU_SERVER_URL = "http://100.124.136.28:8000"
 ```
 
 세 클라이언트(`stt_summarizer_client.py`, `vlm_summarizer_client.py`, `final_summarizer_client.py`)는 모두 `modules/llm/gpu_job_client.py`의 `GPUJobClientMixin`을 상속해 HTTP 에러 처리와 비동기 job 폴링(`status_url`을 주기적으로 조회) 로직을 공유합니다.
@@ -81,6 +81,26 @@ GPU_SERVER_URL = "http://10.10.4.27:8000"
 | `POST /llm/summarize` | STT 요약 및 주요 구간 추출 |
 | `POST /vlm/summarize` | 프레임 이미지 요약 |
 | `POST /llm/final-summary` | STT/VLM 결과 통합 요약 |
+
+## 로그인 보호 (선택)
+
+앱을 로컬에서만 쓰면 필요 없습니다. `.streamlit/secrets.toml`에 아래처럼 `APP_PASSWORD`를 설정하면 모든 페이지 진입 전에 비밀번호 입력 화면이 표시됩니다(`app/auth.py`의 `require_login()`, 세 페이지 모두 호출).
+
+```toml
+APP_PASSWORD = "원하는 비밀번호"
+```
+
+`APP_PASSWORD`가 없거나 `.streamlit/secrets.toml` 자체가 없으면 로그인 화면 없이 통과합니다. 이 파일은 `.gitignore`에 등록되어 있어 커밋되지 않습니다.
+
+## Cloudflare Tunnel로 외부 공개 (선택)
+
+로컬 Streamlit 앱(기본 포트 8501)을 외부에서 접속 가능한 URL로 공개하려면 `cloudflared`가 PATH에 설치되어 있어야 합니다.
+
+```bat
+start_tunnel.bat
+```
+
+내부적으로 `start_tunnel.ps1`이 `cloudflared tunnel --url http://localhost:8501`을 실행하고, 로그(`cloudflared.log`)에서 발급된 `https://*.trycloudflare.com` 주소를 찾아 `tunnel_url.txt`에 저장합니다(최대 30초 대기). 외부에 공개할 때는 위 로그인 보호도 함께 설정하는 것을 권장합니다.
 
 ## 전체 실행
 
@@ -124,6 +144,8 @@ python scripts/run_final_summary.py
 
 현재 `run_pipeline.py`는 최종 통합 요약까지 실행합니다. `run_final_summary.py`는 기존 STT/VLM 요약 파일을 바탕으로 최종 요약만 다시 생성할 때 사용합니다.
 
+`run_llm_summary.py`, `run_vlm_summary.py`, `run_final_summary.py`, `run_pipeline.py` 모두 `--summary-level simple|standard|detailed`(기본값 `standard`) 옵션으로 요약 크기/속도 프리셋을 지정할 수 있습니다. `run_pipeline.py`에서 `simple`을 선택하면 프레임 추출/OCR/VLM 단계 자체를 건너뛰고 STT 요약을 최종 요약으로 사용합니다.
+
 ## 문제 해결
 
 | 증상 | 확인할 것 |
@@ -135,3 +157,5 @@ python scripts/run_final_summary.py
 | 프레임 이미지 파일을 찾지 못함 | `runs/metadata/frame_metadata.json`의 `image_path`와 실제 `runs/frames/` 확인 |
 | 앱에서 진행 상황이 보이지 않음 | `runs/app_pipeline.log` 생성 여부와 로그 안 `##PROGRESS##` 마커, 파이프라인 프로세스 상태 |
 | 유튜브 영상 다운로드 실패 | 링크 형식(`is_youtube_url`), `yt-dlp` 설치 여부, 네트워크/영상 비공개 여부 |
+| 로그인 화면이 계속 나오거나 전혀 안 나옴 | `.streamlit/secrets.toml`의 `APP_PASSWORD` 값 확인 |
+| `start_tunnel.bat` 실행 후 URL을 못 찾음 | `cloudflared` PATH 설치 여부, `cloudflared.log` 내용 확인 |

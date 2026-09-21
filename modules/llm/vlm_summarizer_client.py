@@ -16,6 +16,7 @@ from modules.common import (
 )
 from modules.common.progress import STEP_VLM_SUMMARY, report_progress
 from modules.llm.gpu_job_client import GPUJobClientMixin
+from modules.llm.summary_levels import DEFAULT_SUMMARY_LEVEL, SUMMARY_LEVELS
 from . import GPU_SERVER_URL
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -51,7 +52,7 @@ class GPUVLMClient(GPUJobClientMixin):
     def summarize_ocr_file(
         self,
         ocr_json_path: str | Path | None = None,
-        max_new_tokens: int = 384,
+        summary_level: str = DEFAULT_SUMMARY_LEVEL,
     ) -> list[dict]:
         path = Path(ocr_json_path or self.config.ocr_json_path)
         entries = self._load_ocr_entries(path)
@@ -72,7 +73,7 @@ class GPUVLMClient(GPUJobClientMixin):
                 f"VLM 배치 처리 중 ({batch_index}/{total_batches})",
                 (batch_index - 1) / total_batches * 100,
             )
-            results.extend(self._post_vlm_files(path, batch, max_new_tokens))
+            results.extend(self._post_vlm_files(path, batch, summary_level))
             report_progress(
                 self.progress_step,
                 f"VLM 배치 처리 완료 ({batch_index}/{total_batches})",
@@ -84,10 +85,12 @@ class GPUVLMClient(GPUJobClientMixin):
         self,
         ocr_json_path: Path,
         frame_paths: list[Path],
-        max_new_tokens: int,
+        summary_level: str,
     ) -> list[dict]:
-        if not 1 <= max_new_tokens <= 384:
-            raise ValueError("max_new_tokens must be between 1 and 384")
+        if summary_level not in SUMMARY_LEVELS:
+            raise ValueError(
+                f"summary_level은 {SUMMARY_LEVELS} 중 하나여야 합니다: {summary_level}"
+            )
 
         url = f"{self.config.server_url}/vlm/summarize"
         with ExitStack() as stack:
@@ -104,7 +107,7 @@ class GPUVLMClient(GPUJobClientMixin):
             response = requests.post(
                 url,
                 files=files,
-                data={"max_new_tokens": str(max_new_tokens)},
+                data={"summary_level": summary_level},
                 timeout=self.config.timeout,
             )
 

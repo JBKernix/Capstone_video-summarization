@@ -15,6 +15,10 @@ from modules.common import (  # noqa: E402
     save_json,
 )
 from modules.llm.vlm_summarizer_client import GPUVLMClient  # noqa: E402
+from modules.llm.summary_levels import (  # noqa: E402
+    DEFAULT_SUMMARY_LEVEL,
+    SUMMARY_LEVELS,
+)
 
 DEFAULT_VLM_SUMMARY_RELATIVE_PATH = Path("vlm") / "vlm_summary.txt"
 DEFAULT_VLM_SUMMARY_JSON_RELATIVE_PATH = Path("vlm") / "vlm_summary_result.json"
@@ -37,7 +41,7 @@ def run_vlm_summary_step(
     ocr_json_path: str | Path,
     output_path: str | Path,
     output_json_path: str | Path | None = None,
-    max_new_tokens: int = 384,
+    summary_level: str = DEFAULT_SUMMARY_LEVEL,
 ) -> tuple[Path, Path]:
     ocr_json_path = Path(ocr_json_path)
     output_path = Path(output_path)
@@ -45,7 +49,7 @@ def run_vlm_summary_step(
     client = GPUVLMClient()
     results = client.summarize_ocr_file(
         ocr_json_path=ocr_json_path,
-        max_new_tokens=max_new_tokens,
+        summary_level=summary_level,
     )
     result_payload = {
         "source": {
@@ -82,10 +86,10 @@ def parse_args() -> argparse.Namespace:
         help="Path to save the full VLM result JSON.",
     )
     parser.add_argument(
-        "--max-new-tokens",
-        type=int,
-        default=384,
-        help="Maximum generated tokens per frame (1-384).",
+        "--summary-level",
+        choices=SUMMARY_LEVELS,
+        default=DEFAULT_SUMMARY_LEVEL,
+        help="요약 크기/속도 프리셋입니다. (simple/standard/detailed)",
     )
     return parser.parse_args()
 
@@ -96,7 +100,7 @@ def main() -> None:
         ocr_json_path=args.ocr_json,
         output_path=args.output,
         output_json_path=args.output_json,
-        max_new_tokens=args.max_new_tokens,
+        summary_level=args.summary_level,
     )
     print(f"VLM summary saved: {output_path}")
     print(f"VLM summary JSON saved: {output_json_path}")

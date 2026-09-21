@@ -7,6 +7,7 @@
 | 파일 | 역할 |
 | --- | --- |
 | `modules/llm/__init__.py` | `GPU_SERVER_URL` 기본값 |
+| `modules/llm/summary_levels.py` | 요약 크기/속도 프리셋 상수(`SUMMARY_LEVELS`, `DEFAULT_SUMMARY_LEVEL`) 및 UI 라벨/설명 |
 | `modules/llm/gpu_job_client.py` | `GPUJobClientMixin` - HTTP 에러 처리 및 비동기 job 폴링 공통 로직 |
 | `modules/llm/stt_summarizer_client.py` | STT 결과 요약 및 주요 구간 추출 |
 | `modules/llm/vlm_summarizer_client.py` | OCR 결과와 프레임 이미지를 VLM 서버로 전송 |
@@ -20,7 +21,7 @@
 기본 서버 주소:
 
 ```python
-GPU_SERVER_URL = "http://10.10.4.27:8000"
+GPU_SERVER_URL = "http://100.124.136.28:8000"
 ```
 
 세 클라이언트는 기본 timeout, poll interval, job timeout 값을 사용합니다.
@@ -31,6 +32,20 @@ GPU_SERVER_URL = "http://10.10.4.27:8000"
 | `poll_interval` | `10`초 |
 | `job_timeout` | `3600`초 |
 
+## 요약 레벨 (`modules/llm/summary_levels.py`)
+
+세 요청(`/llm/summarize`, `/vlm/summarize`, `/llm/final-summary`) 모두 `summary_level` 값을 폼 데이터로 함께 보냅니다.
+
+| 값 | 라벨 | 설명 |
+| --- | --- | --- |
+| `simple` | 간단요약 | 핵심만 간략히, 속도 빠름 |
+| `standard` (기본값) | 기본요약 | 균형 잡힌 요약 |
+| `detailed` | 상세요약 | 자세히 요약, 속도 느림 |
+
+> `SUMMARY_LEVELS`의 값은 GPU 서버(`gpu-server` 브랜치)의 `configs/inference_config.py::SUMMARY_LEVEL_PRESETS` 키와 반드시 동일해야 합니다. 실제 토큰 수/속도는 서버가 프리셋에 따라 결정하며, 클라이언트는 값만 전달합니다.
+>
+> `SUMMARY_LEVEL_CAPTIONS`(업로드 페이지 안내 문구)는 "세 레벨 모두 음성과 영상을 함께 분석하고 차이는 길이/속도뿐"이라고 설명하지만, 실제로는 `scripts/run_pipeline.py`가 `simple`일 때 프레임 추출/OCR/VLM 단계를 아예 건너뛰고 STT 요약만 사용합니다(아래 "최종 요약" 및 `pipeline.md` 참고). 안내 문구와 실제 동작이 다르다는 점에 주의하세요.
+
 ## STT 요약
 
 클라이언트: `GPULLMClient` (`GPUJobClientMixin` 상속, `job_label = "LLM"`, `progress_step = STEP_STT_SUMMARY`)
@@ -39,8 +54,8 @@ GPU_SERVER_URL = "http://10.10.4.27:8000"
 
 | 메서드 | 반환 |
 | --- | --- |
-| `summarize_stt_file(stt_json_path=None)` | 요약 문자열 |
-| `summarize_stt_file_result(stt_json_path=None)` | `summary`/`important_segments`를 포함한 dict |
+| `summarize_stt_file(stt_json_path=None, summary_level=DEFAULT_SUMMARY_LEVEL)` | 요약 문자열 |
+| `summarize_stt_file_result(stt_json_path=None, summary_level=DEFAULT_SUMMARY_LEVEL)` | `summary`/`important_segments`를 포함한 dict |
 
 엔드포인트:
 
@@ -71,7 +86,7 @@ runs/llm/stt_summary_result.json
 }
 ```
 
-텍스트가 있는 경우에만 서버에 요청을 보냅니다. 서버 응답에는 `summary`가 반드시 있어야 하며, `important_segments`는 문자열 JSON이어도 파싱을 시도합니다.
+텍스트가 있는 경우에만 서버에 요청을 보냅니다(요청 payload에 `summary_level`도 함께 포함). 서버 응답에는 `summary`가 반드시 있어야 하며, `important_segments`는 문자열 JSON이어도 파싱을 시도합니다.
 
 ## VLM 프레임 요약
 
@@ -102,7 +117,7 @@ runs/vlm/vlm_summary_result.json
 - OCR JSON은 `modules.common.load_json()`으로 읽고, `image_path`로 실제 프레임 파일을 찾습니다.
 - 프레임은 JPG/JPEG만 허용합니다.
 - 한 번에 최대 8개 프레임씩(`MAX_FRAME_COUNT`) 서버에 전송합니다.
-- `max_new_tokens`는 1에서 384 사이여야 합니다.
+- `summarize_ocr_file(ocr_json_path=None, summary_level=DEFAULT_SUMMARY_LEVEL)`은 `summary_level`이 `SUMMARY_LEVELS`(`simple`/`standard`/`detailed`)에 없으면 `ValueError`를 발생시킵니다. 과거에는 프레임당 최대 생성 토큰 수(`max_new_tokens`, 1~384)를 직접 지정했지만, 요약 레벨 프리셋으로 대체되었습니다.
 - 배치마다 시작/완료 시점에 `report_progress()`로 진행률을 보고합니다. 메시지는 `"VLM 배치 처리 중 (N/M)"` / `"VLM 배치 처리 완료 (N/M)"` 형태이며, 배치 수 기준 퍼센트(`(batch_index - 1) / total_batches * 100`, `batch_index / total_batches * 100`)도 함께 전달됩니다.
 
 ## 최종 요약
@@ -129,7 +144,24 @@ runs/final/final_summary.txt
 runs/final/final_summary_result.json
 ```
 
-최종 요약 클라이언트는 STT/VLM 요약 JSON(`modules.common.load_json()`로 읽음) 안의 `summary`(STT)/`results`(VLM)가 비어 있지 않은지 먼저 검증합니다. 과거에는 `stt_summary.txt`/`vlm_summary.txt`도 함께 전송했지만, 두 텍스트 파일 내용이 각 JSON 안에 이미 들어있는 중복 데이터였기 때문에 JSON 2개만 보내도록 변경했습니다.
+최종 요약 클라이언트는 STT/VLM 요약 JSON(`modules.common.load_json()`로 읽음) 안의 `summary`(STT)/`results`(VLM)가 비어 있지 않은지 먼저 검증합니다. 과거에는 `stt_summary.txt`/`vlm_summary.txt`도 함께 전송했지만, 두 텍스트 파일 내용이 각 JSON 안에 이미 들어있는 중복 데이터였기 때문에 JSON 2개만 보내도록 변경했습니다. `summarize_files_result(stt_summary_json_path, vlm_summary_json_path, summary_level=DEFAULT_SUMMARY_LEVEL)`은 `summary_level`도 폼 데이터로 함께 전송합니다.
+
+### VLM 요약이 없을 때 (`write_stt_only_final_summary_step`)
+
+`scripts/run_final_summary.py`에는 서버를 호출하지 않는 `write_stt_only_final_summary_step(stt_summary_json_path, output_path, output_json_path=None)`도 있습니다. `scripts/run_pipeline.py`는 VLM 요약이 없으면(`--summary-level simple`이라 VLM 단계를 건너뛰었거나 `--skip-vlm`을 지정한 경우) 이 함수로 최종 통합 요약 API 호출 없이 STT 요약을 그대로 최종 요약으로 사용합니다. 이 경우 결과 JSON은 일반 경로와 필드 구성이 다릅니다.
+
+```json
+{
+  "source": {
+    "stt_summary_json_path": "runs/llm/stt_summary_result.json",
+    "vlm_summary_json_path": null,
+    "mode": "stt_only"
+  },
+  "summary": "STT 기반 요약 텍스트"
+}
+```
+
+`final_summary` 키가 없고 `source.mode`가 `"stt_only"`라는 점이 일반 경로(`run_final_summary_step`, 아래 데이터 형식 참고)와 다릅니다. STT 요약 자체가 비어 있으면(`summary` 필드가 빈 문자열) `ValueError`가 발생합니다.
 
 ## 비동기 job 응답
 
@@ -158,9 +190,9 @@ runs/final/final_summary_result.json
 ## CLI
 
 ```bash
-python scripts/run_llm_summary.py --stt-json runs/stt/stt_result.json
-python scripts/run_vlm_summary.py --ocr-json runs/ocr/ocr_result.json --max-new-tokens 384
-python scripts/run_final_summary.py
+python scripts/run_llm_summary.py --stt-json runs/stt/stt_result.json --summary-level standard
+python scripts/run_vlm_summary.py --ocr-json runs/ocr/ocr_result.json --summary-level standard
+python scripts/run_final_summary.py --summary-level standard
 ```
 
 ## 주의 사항
@@ -169,3 +201,4 @@ python scripts/run_final_summary.py
 - GPU 서버 응답 형식이 예상과 다르면 `ValueError`가 발생합니다.
 - VLM 단계는 OCR JSON의 프레임 파일 경로가 실제로 존재해야 합니다.
 - 무음 영상은 오류가 아니라 `no_speech: true`가 포함된 정상 결과로 처리되므로, 후속 단계(최종 요약 등)에서 이 플래그를 확인해야 합니다.
+- `--summary-level`(`simple`/`standard`/`detailed`, 기본값 `standard`)은 세 스크립트와 `run_pipeline.py`가 모두 지원하며, 클라이언트 쪽 값은 GPU 서버의 프리셋 키와 반드시 일치해야 합니다.

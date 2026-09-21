@@ -19,3 +19,8 @@ data/saved/
 Thumbs.db
 
 .vscode/
+
+.streamlit/secrets.toml
+
+cloudflared.log
+tunnel_url.txt

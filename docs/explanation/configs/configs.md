@@ -51,7 +51,7 @@ CLI 옵션
 
 ```python
 # modules/llm/__init__.py
-GPU_SERVER_URL = "http://10.10.4.27:8000"
+GPU_SERVER_URL = "http://100.124.136.28:8000"
 ```
 
 향후 `configs/llm_config.yaml`을 사용하려면 LLM/VLM 클라이언트에서 설정 로딩 로직을 추가해야 합니다.

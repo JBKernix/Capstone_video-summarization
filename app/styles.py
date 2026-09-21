@@ -86,6 +86,12 @@ def apply_global_styles(max_width: int | None = 1500) -> None:
     to {{ transform: rotate(360deg); }}
 }}
 
+.step-circle.step-error {{
+    background: #fee2e2;
+    color: #dc2626;
+    border-color: #fca5a5;
+}}
+
 .step-title {{
     text-align: center;
     font-weight: 800;
@@ -102,6 +108,11 @@ def apply_global_styles(max_width: int | None = 1500) -> None:
 
 .step-desc.step-live {{
     color: #2563eb;
+    font-weight: 600;
+}}
+
+.step-desc.step-error-text {{
+    color: #dc2626;
     font-weight: 600;
 }}
 

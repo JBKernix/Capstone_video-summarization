@@ -12,9 +12,16 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from app.auth import require_login
 from styles import apply_global_styles
 from modules.common.progress import PROGRESS_MARKER, STEP_LABELS, STEP_STT, TOTAL_STEPS
 from modules.preprocess import download_youtube_video, is_youtube_url
+from modules.llm.summary_levels import (
+    DEFAULT_SUMMARY_LEVEL,
+    SUMMARY_LEVEL_CAPTIONS,
+    SUMMARY_LEVEL_LABELS,
+    SUMMARY_LEVELS,
+)
 
 INPUT_DIR = PROJECT_ROOT / "data" / "input"
 RUN_LOG_PATH = PROJECT_ROOT / "runs" / "app_pipeline.log"
@@ -112,8 +119,10 @@ def parse_progress_state(raw_lines: list[str]) -> dict[int, dict]:
     return state
 
 
-def describe_step_status(step: int, progress_state: dict[int, dict]) -> dict:
-    """단계 하나의 렌더링 상태(done/active-percent/active-indeterminate/pending)를 계산합니다."""
+def describe_step_status(
+    step: int, progress_state: dict[int, dict], has_error: bool = False
+) -> dict:
+    """단계 하나의 렌더링 상태(done/active-percent/active-indeterminate/error/pending)를 계산합니다."""
     if not progress_state:
         return {"state": "pending", "percent": None, "message": ""}
 
@@ -126,6 +135,8 @@ def describe_step_status(step: int, progress_state: dict[int, dict]) -> dict:
     entry = progress_state[step]
     percent = entry.get("percent")
     message = entry.get("message") or ""
+    if has_error:
+        return {"state": "error", "percent": percent, "message": message or "오류 발생"}
     if percent is not None:
         return {"state": "active-percent", "percent": percent, "message": message}
     return {"state": "active-indeterminate", "percent": None, "message": message}
@@ -146,7 +157,7 @@ def close_analysis_log_handle() -> None:
         log_handle.close()
 
 
-def start_analysis_process(video_path: str) -> None:
+def start_analysis_process(video_path: str, summary_level: str) -> None:
     close_analysis_log_handle()
     log_handle = RUN_LOG_PATH.open("wb")
     creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0
@@ -161,6 +172,8 @@ def start_analysis_process(video_path: str) -> None:
             str(PROJECT_ROOT / "scripts" / "run_pipeline.py"),
             "--video",
             video_path,
+            "--summary-level",
+            summary_level,
         ],
         cwd=str(PROJECT_ROOT),
         stdout=log_handle,
@@ -205,10 +218,19 @@ st.set_page_config(
     layout="wide",
 )
 
+require_login()
+
 apply_global_styles()
 
 process = st.session_state.get("analysis_process")
-analysis_running = bool(process and process.poll() is None)
+returncode = process.poll() if process is not None else None
+analysis_running = process is not None and returncode is None
+analysis_finished_with_error = (
+    process is not None
+    and returncode is not None
+    and returncode != 0
+    and not st.session_state.get("analysis_cancelled")
+)
 
 # 분석이 이번 세션에서 시작된 경우에만 로그를 읽어 진행 상황을 계산합니다.
 # (그렇지 않으면 이전에 실행된 파이프라인의 로그가 남아 있어 착시를 일으킬 수 있습니다.)
@@ -229,9 +251,11 @@ st.markdown(
 )
 
 # =========================
-# 영상 업로드 박스
+# 영상 업로드 박스 / 요약 옵션 박스 (3:2 좌우 분할)
 # =========================
-with st.container(border=True):
+upload_col, option_col = st.columns([3, 2])
+
+with upload_col, st.container(border=True):
     st.subheader("🎥 영상 업로드")
 
     upload_mode = st.radio(
@@ -312,6 +336,24 @@ with st.container(border=True):
     if analysis_running:
         st.info("분석이 진행 중일 때는 새 영상을 업로드할 수 없습니다.")
 
+with option_col, st.container(border=True):
+    st.subheader("⚙️ 요약 옵션")
+
+    if "summary_level" not in st.session_state:
+        st.session_state["summary_level"] = DEFAULT_SUMMARY_LEVEL
+
+    selected_label = st.radio(
+        "요약 크기/속도를 선택하세요.",
+        options=[SUMMARY_LEVEL_LABELS[level] for level in SUMMARY_LEVELS],
+        index=SUMMARY_LEVELS.index(st.session_state["summary_level"]),
+        horizontal=True,
+        disabled=analysis_running,
+    )
+    st.session_state["summary_level"] = SUMMARY_LEVELS[
+        [SUMMARY_LEVEL_LABELS[level] for level in SUMMARY_LEVELS].index(selected_label)
+    ]
+    st.caption(SUMMARY_LEVEL_CAPTIONS[st.session_state["summary_level"]])
+
 st.write("")
 
 # =========================
@@ -323,7 +365,9 @@ with st.container(border=True):
     step_items_html = []
     for step_num in range(1, TOTAL_STEPS + 1):
         title, desc = STEP_LABELS[step_num]
-        status = describe_step_status(step_num, progress_state)
+        status = describe_step_status(
+            step_num, progress_state, has_error=analysis_finished_with_error
+        )
 
         if status["state"] == "done":
             circle_class = "step-circle step-done"
@@ -331,6 +375,12 @@ with st.container(border=True):
             circle_label = "✓"
             desc_class = "step-desc"
             desc_text = desc
+        elif status["state"] == "error":
+            circle_class = "step-circle step-error"
+            circle_style = ""
+            circle_label = "✕"
+            desc_class = "step-desc step-error-text"
+            desc_text = status["message"] or "오류 발생"
         elif status["state"] == "active-percent":
             percent = status["percent"]
             circle_class = "step-circle step-active-percent"
@@ -380,12 +430,13 @@ with center:
     )
 
 if start_button:
-    start_analysis_process(st.session_state["video_path"])
+    start_analysis_process(
+        st.session_state["video_path"],
+        st.session_state.get("summary_level", DEFAULT_SUMMARY_LEVEL),
+    )
     st.rerun()
 
 if process:
-    returncode = process.poll()
-
     if returncode is None:
         visible_logs = read_pipeline_logs(raw_log_lines)
         current_step_num = max(progress_state.keys()) if progress_state else None

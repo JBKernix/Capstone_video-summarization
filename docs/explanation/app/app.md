@@ -7,8 +7,10 @@
 | 파일 | 역할 |
 | --- | --- |
 | `app/main.py` | Streamlit 앱 진입점, 업로드 페이지로 이동 |
-| `app/pages/1_upload.py` | 영상 업로드(파일/유튜브), 파이프라인 백그라운드 실행, 실시간 진행률 표시, 분석 중지 |
+| `app/auth.py` | `require_login()` — `st.secrets["APP_PASSWORD"]`가 설정된 경우에만 비밀번호 로그인 화면을 띄우는 선택적 게이트 |
+| `app/pages/1_upload.py` | 영상 업로드(파일/유튜브), 요약 옵션(간단/기본/상세) 선택, 파이프라인 백그라운드 실행, 실시간 진행률/오류 표시, 분석 중지 |
 | `app/pages/2_analysis_result.py` | 원본 영상과 최종 요약 결과 표시, 결과 저장 버튼 |
+| `app/pages/3_saved_summaries.py` | `data/saved/`에 저장된 결과 목록을 불러와 다시 확인하거나 삭제 |
 | `app/final_summary_view.py` | 영상+요약을 나란히 표시하는 공통 렌더링 함수, 자체 테스트 페이지 |
 | `app/summary_result.py` | `runs/final` 결과 파일 로더와 요약 데이터 판별 |
 | `app/summary_timeline.py` | 최종 요약 텍스트의 타임라인 표기를 파싱해 클릭 가능한 뱃지/카드로 렌더링 |
@@ -16,7 +18,7 @@
 | `app/styles.py` | Streamlit 공통 CSS |
 | `app/__init__.py` | app 패키지 표시 |
 
-`app/pages/3_settings.py`는 현재 존재하지 않습니다.
+세 페이지(`1_upload.py`, `2_analysis_result.py`, `3_saved_summaries.py`)와 `main.py`는 모두 `st.set_page_config()` 직후 `require_login()`을 호출합니다.
 
 ## 실행
 
@@ -43,6 +45,10 @@ maxUploadSize = 500
 
 > 한때 `st.video()` 대신 정적 파일 서빙(`enableStaticServing`)을 검토했지만, Streamlit에 하드코딩된 200MB 파일 크기 제한 때문에 폐기했습니다. 영상 표시는 항상 `st.video()`를 사용합니다.
 
+## 로그인 게이트 (`app/auth.py`)
+
+`require_login()`은 `st.secrets.get("APP_PASSWORD")`가 비어 있으면 아무 일도 하지 않고 그대로 통과시킵니다(로컬 전용 실행 등). 값이 설정되어 있으면 비밀번호 입력 화면을 띄우고, 맞는 비밀번호를 입력해 `st.session_state["authenticated"] = True`가 될 때까지 `st.stop()`으로 이후 렌더링을 막습니다. Cloudflare Tunnel(`start_tunnel.ps1`) 등으로 앱을 외부에 노출할 때 사용하기 위한 것으로, `app/main.py`와 세 페이지 모두 `apply_global_styles()`보다 먼저 호출합니다.
+
 ## 업로드 페이지
 
 `app/pages/1_upload.py`는 다음 일을 처리합니다.
@@ -56,12 +62,13 @@ maxUploadSize = 500
    - 내부적으로 `yt-dlp` 사용, 확장자와 무관하게 항상 `.mp4`로 저장(기존 파일이 있으면 삭제 후 재다운로드)
    - 반환값은 `(저장 경로, 영상 제목)` 튜플이며 영상 제목은 유튜브 메타데이터의 실제 제목
    - `is_youtube_url(url)`로 링크 형식을 먼저 검증
-4. `scripts/run_pipeline.py --video <저장된 경로>`를 `subprocess.Popen`으로 실행 (`--skip-stt` 옵션은 비활성화되어 있어 STT는 항상 실행됨)
-5. stdout/stderr를 `runs/app_pipeline.log`에 저장 (UTF-8 강제: `PYTHONIOENCODING`/`PYTHONUTF8` 환경변수 설정)
-6. 로그에서 `##PROGRESS##` 마커(JSON)와 Whisper STT의 tqdm 퍼센트 표시줄을 파싱해 "분석 절차" 영역의 7개 단계별 원형 아이콘을 실시간으로 갱신
-7. 사람이 보는 로그 영역은 진행률 마커/tqdm 진행바/산출물 경로 줄을 필터링해서 표시
-8. 분석 완료(returncode 0) 시 `pages/2_analysis_result.py`로 이동
-9. 분석 중지 버튼으로 프로세스 종료
+4. 업로드 박스 옆 "⚙️ 요약 옵션" 박스에서 요약 크기/속도 프리셋(간단요약/기본요약/상세요약)을 라디오 버튼으로 선택 (`st.session_state["summary_level"]`, 기본값 `standard`). 분석 진행 중에는 비활성화됩니다. 자세한 내용은 [`llm.md`](../llm/llm.md)를 참고하세요.
+5. `scripts/run_pipeline.py --video <저장된 경로> --summary-level <선택값>`을 `subprocess.Popen`으로 실행 (`--skip-stt` 옵션은 비활성화되어 있어 STT는 항상 실행됨)
+6. stdout/stderr를 `runs/app_pipeline.log`에 저장 (UTF-8 강제: `PYTHONIOENCODING`/`PYTHONUTF8` 환경변수 설정)
+7. 로그에서 `##PROGRESS##` 마커(JSON)와 Whisper STT의 tqdm 퍼센트 표시줄을 파싱해 "분석 절차" 영역의 7개 단계별 원형 아이콘을 실시간으로 갱신
+8. 사람이 보는 로그 영역은 진행률 마커/tqdm 진행바/산출물 경로 줄을 필터링해서 표시
+9. 분석 완료(returncode 0) 시 `pages/2_analysis_result.py`로 이동. 프로세스가 0이 아닌 코드로 끝나고 사용자가 직접 중지한 것이 아니면(`analysis_cancelled`가 아님) 진행 중이던 단계가 오류 상태로 표시됨
+10. 분석 중지 버튼으로 프로세스 종료
 
 Windows에서는 중지 시 `taskkill /PID <pid> /T /F`를 사용합니다.
 
@@ -87,6 +94,7 @@ Windows에서는 중지 시 `taskkill /PID <pid> /T /F`를 사용합니다.
 | 진행중·퍼센트 있음 (`active-percent`) | 현재 단계이고 percent 값이 있음(주로 STT tqdm) | 원이 conic-gradient로 퍼센트만큼 차오르고, 원 안에 `NN%` 텍스트 |
 | 진행중·퍼센트 모름 (`active-indeterminate`) | 현재 단계이고 percent 값이 없음 | 원이 스피너 애니메이션으로 회전, 아래에 현재 메시지 텍스트 |
 | 완료 (`done`) | 현재 진행 중인 단계보다 앞 | 원이 파란색으로 채워지고 체크마크(`✓`) 표시 |
+| 오류 (`error`) | 파이프라인 프로세스가 0이 아닌 코드로 종료되고 사용자가 중지한 것이 아님 | 현재 진행 중이던 단계 원이 빨간색(`step-error`)으로 바뀌고 `✕` 표시, 설명 텍스트도 빨간색(`step-error-text`)으로 표시 |
 
 같은 단계에서 퍼센트 없는 메시지가 나중에 도착해도 이전 퍼센트 값은 유지됩니다(sticky).
 
@@ -113,6 +121,17 @@ Windows에서는 중지 시 `taskkill /PID <pid> /T /F`를 사용합니다.
 ### 결과 저장
 
 "💾 영상과 요약 결과 저장" 버튼을 누르면 `app/result_export.py`의 `save_analysis_result()`가 실행되어 현재 영상 파일과 `runs/final/`의 `final_summary.txt`/`final_summary_result.json`을 `data/saved/[영상 제목] - YYYYMMDD-HHMMSS/` 폴더에 복사합니다. 제목이 없으면 날짜시각(`YYYYMMDD-HHMMSS`)만으로 폴더명을 만들고, 폴더명에 쓸 수 없는 Windows 금지 문자(`\ / : * ? " < > |`)는 제거됩니다. 영상과 요약 결과가 모두 없으면 `FileNotFoundError`가 발생해 화면에 에러로 표시됩니다.
+
+## 저장된 요약 페이지 (`app/pages/3_saved_summaries.py`)
+
+`data/saved/` 아래 폴더들을 스캔해 저장된 결과 목록을 보여줍니다.
+
+1. `list_saved_items()`가 `data/saved/`의 하위 폴더를 모두 순회하고, `parse_saved_folder_name()`으로 폴더명 `[제목] - YYYYMMDD-HHMMSS`에서 제목과 저장 시각을 추출해 시각 역순으로 정렬 (패턴에 맞지 않으면 폴더명 전체를 제목으로 사용하고 시각은 `None`)
+2. 라디오 버튼으로 항목을 고르면 `find_saved_video()`가 폴더 안에서 `.mp4`/`.mov`/`.avi` 중 먼저 찾은 파일을 영상으로 사용
+3. `load_final_summary(selected_folder)`로 요약을 읽어 `render_video_and_summary()`로 2번 페이지와 동일한 레이아웃(`column_ratio=(0.85, 1.15)`, `summary_container_height=600`)으로 표시. 읽기 실패 시 경고만 표시하고 중단
+4. "🗑️ 이 저장 결과 삭제" 버튼은 `st.session_state["confirm_delete_folder"]`로 확인 단계를 거친 뒤 `shutil.rmtree()`로 폴더 전체를 삭제 (되돌릴 수 없음)
+
+저장된 항목이 하나도 없으면 안내 메시지와 함께 업로드 페이지로 이동하는 버튼을 표시합니다.
 
 ## 요약 렌더링
 
@@ -156,11 +175,14 @@ JSON이 있으면 `mode="json"`으로, 텍스트 파일만 있으면 `mode="mark
 | `uploaded_filename` | 표시용 파일명(파일 업로드는 원본 파일명, 유튜브는 저장된 파일명) |
 | `uploaded_file_key` | 같은 파일/링크의 중복 처리를 막기 위한 키 — 파일은 `"{파일명}_{크기}"`, 유튜브는 `"youtube_{url}"` |
 | `video_title` | 영상 제목 — 파일 업로드는 파일명(확장자 제외), 유튜브는 실제 영상 제목. 결과 저장 폴더명에 사용 |
+| `summary_level` | 선택된 요약 프리셋(`simple`/`standard`/`detailed`), 기본값 `standard` |
 | `analysis_process` | 실행 중인 파이프라인 `subprocess.Popen` 프로세스 |
 | `analysis_log_handle` | 로그 파일 핸들 |
 | `analysis_done` | 분석 완료 여부 |
 | `analysis_cancelled` | 분석 중지 여부 |
 | `last_analysis_log` | 마지막 표시 로그 |
+| `authenticated` | `require_login()`이 로그인 성공 시 설정 (`APP_PASSWORD` 미설정 시 사용 안 함) |
+| `confirm_delete_folder` | 저장된 요약 페이지에서 삭제 확인 중인 폴더 경로 |
 
 ## 주의 사항
 
@@ -169,3 +191,5 @@ JSON이 있으면 `mode="json"`으로, 텍스트 파일만 있으면 `mode="mark
 - 업로드 파일은 원본 확장자를 유지해 `data/input/input{확장자}`로 저장됩니다(유튜브 다운로드는 항상 `.mp4`).
 - `--skip-stt` 옵션은 현재 비활성화되어 있어 STT 단계는 항상 실행됩니다.
 - 최종 결과 페이지는 `runs/final` 산출물이 있어야 정상 표시되며, 표/차트 구간 스크린샷을 보려면 `runs/ocr/ocr_result.json`도 필요합니다.
+- 간단요약(`simple`) 프리셋은 프레임 추출/OCR/VLM 단계를 건너뛰므로, 저장된 결과라도 `runs/ocr/ocr_result.json`이 없어 표/차트 스크린샷이 나오지 않을 수 있습니다.
+- `require_login()`은 `.streamlit/secrets.toml`에 `APP_PASSWORD`가 설정된 경우에만 동작하며, 로컬 전용 실행에는 영향이 없습니다.

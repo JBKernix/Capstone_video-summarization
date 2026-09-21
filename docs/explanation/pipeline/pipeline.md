@@ -45,7 +45,7 @@ main()
 | `--ocr-lang` | `korean` | EasyOCR 언어 설정 |
 | `--skip-ocr` | false | OCR 단계 건너뛰기 |
 | `--skip-vlm` | false | VLM 단계 건너뛰기 |
-| `--vlm-max-new-tokens` | `384` | 프레임당 VLM 생성 토큰 수 |
+| `--summary-level` | `standard` | 요약 크기/속도 프리셋 (`simple`/`standard`/`detailed`, `modules/llm/summary_levels.py`) |
 | `--stt-config` | `configs/stt_config.yaml` | STT 설정 파일 |
 | `--stt-model-size` | 설정 파일 또는 `medium` | Whisper 모델 크기 |
 | `--stt-language` | 설정 파일 또는 `ko` | STT 언어 |
@@ -60,8 +60,10 @@ main()
 
 ## 건너뛰기 동작
 
-- 프레임 메타데이터가 없거나 `--skip-ocr`가 지정되면 OCR 결과가 생성되지 않습니다.
+- `--summary-level simple`이면 `skip_visual_stages = True`가 되어 프레임 추출(4단계)부터 아예 건너뛰고, OCR/VLM도 이어서 건너뜁니다.
+- 프레임 메타데이터가 없거나 `--skip-ocr`가 지정되면(또는 위 `simple` 프리셋이면) OCR 결과가 생성되지 않습니다.
 - OCR 결과가 없거나 `--skip-vlm`가 지정되면 VLM 요약이 실행되지 않습니다.
+- VLM 요약이 없는 상태로 최종 요약 단계에 도달하면(`simple` 프리셋 또는 `--skip-vlm`), `run_final_summary_step()`(서버 호출) 대신 `write_stt_only_final_summary_step()`으로 STT 요약을 최종 요약으로 그대로 저장합니다. 이때 진행 상황 메시지는 "완료 (STT 요약만 사용)"으로 표시됩니다. STT 요약 자체가 없으면(`llm_summary_path`/`llm_summary_json_path`가 `None`) 최종 요약 단계 자체가 "건너뜀"으로 표시됩니다.
 
 ## 진행률 보고
 

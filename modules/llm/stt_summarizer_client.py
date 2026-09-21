@@ -15,6 +15,7 @@ from modules.common import (
 )
 from modules.common.progress import STEP_STT_SUMMARY, report_progress
 from modules.llm.gpu_job_client import GPUJobClientMixin
+from modules.llm.summary_levels import DEFAULT_SUMMARY_LEVEL
 from . import GPU_SERVER_URL
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -53,15 +54,21 @@ class GPULLMClient(GPUJobClientMixin):
     def summarize_stt_file(
         self,
         stt_json_path: str | Path | None = None,
+        summary_level: str = DEFAULT_SUMMARY_LEVEL,
     ) -> str:
-        return self.summarize_stt_file_result(stt_json_path=stt_json_path)["summary"]
+        return self.summarize_stt_file_result(
+            stt_json_path=stt_json_path,
+            summary_level=summary_level,
+        )["summary"]
 
     def summarize_stt_file_result(
         self,
         stt_json_path: str | Path | None = None,
+        summary_level: str = DEFAULT_SUMMARY_LEVEL,
     ) -> dict:
         path = Path(stt_json_path or self.config.stt_json_path)
         payload = self._load_stt_payload(path)
+        payload["summary_level"] = summary_level
         if not payload.get("full_text", "").strip():
             report_progress(self.progress_step, "음성이 감지되지 않아 STT 요약을 건너뜀", 100.0)
             return {

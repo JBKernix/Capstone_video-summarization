@@ -54,7 +54,7 @@ python scripts/run_final_summary.py
 | `--ocr-lang` | `korean` | EasyOCR 언어 설정 |
 | `--skip-ocr` | false | OCR 단계 건너뛰기 |
 | `--skip-vlm` | false | VLM 단계 건너뛰기 |
-| `--vlm-max-new-tokens` | `384` | 프레임당 VLM 최대 생성 토큰 수 (1~384) |
+| `--summary-level` | `standard` | 요약 크기/속도 프리셋 (`simple`/`standard`/`detailed`). `simple`이면 프레임 추출/OCR/VLM 단계를 건너뛰고 STT 요약을 최종 요약으로 사용 |
 | `--stt-config` | `configs/stt_config.yaml` | STT 설정 파일 |
 | `--stt-model-size` | 설정 파일 또는 `medium` | Whisper 모델 크기 |
 | `--stt-language` | 설정 파일 또는 `ko` | STT 언어 |
@@ -74,6 +74,12 @@ python scripts/run_final_summary.py
 ## STT 요약(`run_llm_summary.py`) 수정 사항
 
 `stt_result.get("duration_sec")`가 이제 실제 값을 반환합니다. STT 포맷터가 이 필드를 생성하도록 고쳐지기 전에는 항상 `None`이었습니다.
+
+## 요약 레벨(`--summary-level`)
+
+`run_llm_summary.py`, `run_vlm_summary.py`, `run_final_summary.py`, `run_pipeline.py`는 모두 `--summary-level simple|standard|detailed`(기본값 `standard`, `modules/llm/summary_levels.py`) 옵션을 공유합니다. `run_vlm_summary.py`의 옛 `--max-new-tokens` 옵션은 이 옵션으로 대체되었습니다. 자세한 내용은 [`llm.md`](../llm/llm.md)를 참고하세요.
+
+`run_final_summary.py`에는 GPU 서버를 호출하지 않는 `write_stt_only_final_summary_step()`도 추가되었습니다. `run_pipeline.py`는 VLM 요약이 없을 때(`--summary-level simple` 또는 `--skip-vlm`) 이 함수로 STT 요약을 최종 요약 대신 그대로 저장합니다.
 
 ## 경로 기본값
 

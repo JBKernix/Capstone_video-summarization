@@ -18,6 +18,8 @@
   -> 최종 LLM 통합 요약
 ```
 
+요약 레벨을 "간단요약"(`simple`)으로 선택하면 프레임 샘플링/OCR/VLM 단계를 건너뛰고 STT 요약을 최종 요약으로 그대로 사용합니다. 자세한 내용은 `docs/explanation/pipeline/pipeline.md`의 "건너뛰기 동작"을 참고하세요.
+
 ## 주요 컴포넌트
 
 | 영역 | 위치 | 역할 |
@@ -26,9 +28,9 @@
 | 전처리 | `modules/preprocess/` | 영상 정보 조회, MP4 변환, 오디오 추출, 프레임 샘플링, 유튜브 다운로드(`youtube_downloader.py`) |
 | STT | `modules/stt/` | Whisper 실행 및 STT 결과 포맷팅 |
 | OCR | `modules/ocr/` | EasyOCR 실행, 화면 유형 추정, OCR 결과 저장 |
-| LLM/VLM | `modules/llm/` | 외부 GPU 서버 API 클라이언트, 공통 HTTP/폴링 로직(`gpu_job_client.py`) |
+| LLM/VLM | `modules/llm/` | 외부 GPU 서버 API 클라이언트, 공통 HTTP/폴링 로직(`gpu_job_client.py`), 요약 크기/속도 프리셋(`summary_levels.py`) |
 | 공통 유틸리티 | `modules/common/` | 기본 경로, JSON/YAML 유틸리티, 경로 탐색(`file_utils.py`), 진행률 보고(`progress.py`) |
-| UI | `app/` | Streamlit 기반 업로드(유튜브 링크 포함), 분석 진행률 표시, 결과 확인, 결과 저장(`result_export.py`) 화면 |
+| UI | `app/` | Streamlit 기반 업로드(유튜브 링크 포함)와 요약 옵션 선택, 분석 진행률/오류 표시, 결과 확인, 결과 저장(`result_export.py`), 저장된 요약 다시보기, 선택적 로그인 게이트(`auth.py`) 화면 |
 
 ## 기본 실행 진입점
 
@@ -80,7 +82,9 @@ Streamlit 앱에서 "영상과 요약 결과 저장" 버튼을 누르면 `data/s
 | 전처리/STT/OCR | 구현됨 |
 | LLM/VLM 서버 클라이언트 | 구현됨 |
 | 유튜브 링크 다운로드 | 구현됨 (`yt-dlp`) |
-| Streamlit UI | 구현됨 (업로드, 진행률 표시, 결과 확인/저장) |
+| Streamlit UI | 구현됨 (업로드, 요약 옵션 선택, 진행률/오류 표시, 결과 확인/저장, 저장된 요약 다시보기) |
+| 로그인 보호 | 구현됨, 선택 사항 (`APP_PASSWORD` 설정 시에만 동작) |
+| 외부 공개 | 구현됨, 선택 사항 (`start_tunnel.bat`/`.ps1`로 Cloudflare Tunnel 실행) |
 | 설정 파일 | `stt_config.yaml`만 값이 있음, 나머지(`app_config.yaml`, `ffmpeg_config.yaml`, `llm_config.yaml`)는 비어 있음 |
 
 ## 참고 문서

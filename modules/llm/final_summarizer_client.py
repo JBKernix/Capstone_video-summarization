@@ -10,6 +10,7 @@ import requests
 from modules.common import load_json
 from modules.common.progress import STEP_FINAL_SUMMARY, report_progress
 from modules.llm.gpu_job_client import GPUJobClientMixin
+from modules.llm.summary_levels import DEFAULT_SUMMARY_LEVEL
 from . import GPU_SERVER_URL
 
 
@@ -37,16 +38,19 @@ class GPUFinalSummaryClient(GPUJobClientMixin):
         self,
         stt_summary_json_path: str | Path,
         vlm_summary_json_path: str | Path,
+        summary_level: str = DEFAULT_SUMMARY_LEVEL,
     ) -> dict:
         return self._post_final_summary_files(
             stt_summary_json_path=Path(stt_summary_json_path),
             vlm_summary_json_path=Path(vlm_summary_json_path),
+            summary_level=summary_level,
         )
 
     def _post_final_summary_files(
         self,
         stt_summary_json_path: Path,
         vlm_summary_json_path: Path,
+        summary_level: str,
     ) -> dict:
         self._validate_summary_files(
             stt_summary_json_path=stt_summary_json_path,
@@ -73,6 +77,7 @@ class GPUFinalSummaryClient(GPUJobClientMixin):
             response = requests.post(
                 url,
                 files=files,
+                data={"summary_level": summary_level},
                 timeout=self.config.timeout,
             )
 

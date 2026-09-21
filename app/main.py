@@ -8,11 +8,15 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from app.auth import require_login
+
 st.set_page_config(
     page_title="멀티모달 기반 영상 요약 시스템",
     page_icon="🎬",
     layout="wide",
 )
+
+require_login()
 
 apply_global_styles(max_width=None)
 

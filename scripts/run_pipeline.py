@@ -41,6 +41,10 @@ from modules.stt import (  # noqa: E402
     DEFAULT_STT_BEAM_SIZE,
 )
 from modules.ocr import DEFAULT_OCR_LANGUAGE  # noqa: E402
+from modules.llm.summary_levels import (  # noqa: E402
+    DEFAULT_SUMMARY_LEVEL,
+    SUMMARY_LEVELS,
+)
 from scripts.run_llm_summary import (  # noqa: E402
     DEFAULT_LLM_SUMMARY_JSON_RELATIVE_PATH,
     DEFAULT_LLM_SUMMARY_RELATIVE_PATH,
@@ -55,6 +59,7 @@ from scripts.run_final_summary import (  # noqa: E402
     DEFAULT_FINAL_SUMMARY_JSON_RELATIVE_PATH,
     DEFAULT_FINAL_SUMMARY_RELATIVE_PATH,
     run_final_summary_step,
+    write_stt_only_final_summary_step,
 )
 
 
@@ -178,10 +183,10 @@ def parse_args():
         help="VLM 프레임 요약 단계를 건너뜁니다.",
     )
     parser.add_argument(
-        "--vlm-max-new-tokens",
-        type=int,
-        default=384,
-        help="프레임당 VLM 최대 생성 토큰 수입니다. 허용 범위는 1~384입니다.",
+        "--summary-level",
+        choices=SUMMARY_LEVELS,
+        default=DEFAULT_SUMMARY_LEVEL,
+        help="요약 크기/속도 프리셋입니다. (simple=간단요약, standard=기본요약, detailed=상세요약)",
     )
     # NOTE: --skip-stt를 사용하면 STT뿐 아니라 이후 모든 단계(요약/프레임/OCR/VLM/최종요약)가
     # 연쇄적으로 건너뛰어져 옵션 설명과 실제 동작이 달라 혼란을 줄 수 있어 우선 비활성화합니다.
@@ -380,12 +385,16 @@ def main():
                 stt_json_path=stt_json_path,
                 output_path=run_path(run_dir, DEFAULT_LLM_SUMMARY_RELATIVE_PATH),
                 output_json_path=run_path(run_dir, DEFAULT_LLM_SUMMARY_JSON_RELATIVE_PATH),
+                summary_level=args.summary_level,
             )
             print(f"STT 요약 저장(txt): {llm_summary_path}")
             print(f"STT 요약 저장(json): {llm_summary_json_path}")
 
+    # 간단요약은 속도를 위해 프레임/OCR/VLM 단계를 아예 건너뛰고 STT 요약만 사용합니다.
+    skip_visual_stages = args.summary_level == "simple"
+
     with _stage_timeline("4/7", "중요 구간 프레임 추출") as stage:
-        if llm_summary_json_path is None:
+        if llm_summary_json_path is None or skip_visual_stages:
             stage["status"] = "건너뜀"
             metadata_path = None
         else:
@@ -420,27 +429,32 @@ def main():
                 ocr_json_path=ocr_path,
                 output_path=run_path(run_dir, DEFAULT_VLM_SUMMARY_RELATIVE_PATH),
                 output_json_path=run_path(run_dir, DEFAULT_VLM_SUMMARY_JSON_RELATIVE_PATH),
-                max_new_tokens=args.vlm_max_new_tokens,
+                summary_level=args.summary_level,
             )
             print(f"VLM 요약 저장(txt): {vlm_summary_path}")
             print(f"VLM 요약 저장(json): {vlm_summary_json_path}")
 
     with _stage_timeline("7/7", "최종 통합 요약") as stage:
-        if (
-            llm_summary_path is None
-            or llm_summary_json_path is None
-            or vlm_summary_path is None
-            or vlm_summary_json_path is None
-        ):
+        if llm_summary_path is None or llm_summary_json_path is None:
             stage["status"] = "건너뜀"
             final_summary_path = None
             final_summary_json_path = None
+        elif vlm_summary_path is None or vlm_summary_json_path is None:
+            # VLM 요약이 없는 경우(간단요약, --skip-vlm 등)에는 서버 병합 호출 없이
+            # STT 요약을 최종 요약으로 그대로 사용합니다.
+            stage["status"] = "완료 (STT 요약만 사용)"
+            final_summary_path, final_summary_json_path = write_stt_only_final_summary_step(
+                stt_summary_json_path=llm_summary_json_path,
+                output_path=run_path(run_dir, DEFAULT_FINAL_SUMMARY_RELATIVE_PATH),
+                output_json_path=run_path(run_dir, DEFAULT_FINAL_SUMMARY_JSON_RELATIVE_PATH),
+            )
         else:
             final_summary_path, final_summary_json_path = run_final_summary_step(
                 stt_summary_json_path=llm_summary_json_path,
                 vlm_summary_json_path=vlm_summary_json_path,
                 output_path=run_path(run_dir, DEFAULT_FINAL_SUMMARY_RELATIVE_PATH),
                 output_json_path=run_path(run_dir, DEFAULT_FINAL_SUMMARY_JSON_RELATIVE_PATH),
+                summary_level=args.summary_level,
             )
             print(f"최종 요약 저장(txt): {final_summary_path}")
             print(f"최종 요약 저장(json): {final_summary_json_path}")
