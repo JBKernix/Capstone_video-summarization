@@ -94,8 +94,10 @@ def render_video_and_summary(
     column_gap: str = "large",
     show_captions: bool = True,
     summary_container_height: int | None = None,
+    ocr_result_path: Path | None = None,
 ) -> None:
     """원본 영상과 최종 요약 결과를 나란히 표시합니다."""
+    ocr_result_path = ocr_result_path or OCR_RESULT_PATH
     video_column, summary_column = st.columns(list(column_ratio), gap=column_gap)
 
     with video_column:
@@ -119,7 +121,7 @@ def render_video_and_summary(
             if final_summary.mode == "json":
                 render_summary_data(final_summary.content)
             else:
-                render_summary_with_timeline(final_summary.content, OCR_RESULT_PATH, PROJECT_ROOT)
+                render_summary_with_timeline(final_summary.content, ocr_result_path, PROJECT_ROOT)
 
 
 def render_final_summary_page(

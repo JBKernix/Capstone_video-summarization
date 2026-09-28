@@ -33,13 +33,24 @@ beam_size:
 
 ## 적용 우선순위
 
-STT 실행에서는 다음 순서로 값이 결정됩니다.
+STT 실행에서 `language`/`device`/`temperature`/`beam_size`는 다음 순서로 값이 결정됩니다.
 
 ```text
 CLI 옵션
   -> configs/stt_config.yaml
   -> modules/stt/whisper_stt.py fallback 기본값
 ```
+
+`model_size`만 예외로, `modules/llm/summary_levels.py`의 `SUMMARY_LEVEL_STT_MODELS`가 `configs/stt_config.yaml`의 `model_size`보다 먼저 적용됩니다.
+
+```text
+--stt-model-size (CLI)
+  -> SUMMARY_LEVEL_STT_MODELS[summary_level]  (simple=base, standard=small, detailed=medium)
+  -> configs/stt_config.yaml의 model_size
+  -> modules/stt/whisper_stt.py fallback 기본값
+```
+
+즉 `--stt-model-size`를 지정하지 않으면 `stt_config.yaml`에 `model_size`를 적어 두어도 `--summary-level`(기본값 `standard`)에 따른 모델 크기가 우선 적용됩니다. `stt_config.yaml`의 `model_size` 값을 그대로 쓰려면 `--stt-model-size`로 명시해야 합니다.
 
 ## `load_yaml_config` 공유
 

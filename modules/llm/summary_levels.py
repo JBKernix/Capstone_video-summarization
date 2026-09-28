@@ -18,3 +18,11 @@ SUMMARY_LEVEL_CAPTIONS = {
     "standard": "기본요약은 음성과 영상을 균형 있게 요약합니다.",
     "detailed": "상세요약은 음성과 영상을 자세히 요약하지만 속도가 느립니다.",
 }
+
+# summary_level별 Whisper STT 모델 크기입니다.
+# --stt-model-size를 명시적으로 지정하지 않았을 때의 기본값으로 사용됩니다.
+SUMMARY_LEVEL_STT_MODELS = {
+    "simple": "base",
+    "standard": "small",
+    "detailed": "medium",
+}

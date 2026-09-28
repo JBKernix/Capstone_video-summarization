@@ -63,6 +63,8 @@ beam_size:
 
 `device`가 비어 있으면 Whisper 기본 동작을 따릅니다. GPU를 명시하려면 실행 시 `--stt-device cuda` 또는 설정 파일 값을 사용합니다.
 
+`model_size`는 `--stt-model-size`를 지정하지 않으면 이 설정 파일 값보다 `--summary-level`(간단요약=`base`, 기본요약=`small`, 상세요약=`medium`)이 먼저 적용됩니다. 이 설정 파일의 `model_size`를 그대로 쓰려면 `--stt-model-size`를 함께 지정하세요.
+
 ## GPU 서버 설정
 
 LLM, VLM, 최종 요약 단계는 외부 GPU 서버를 호출합니다. 기본 서버 주소는 `modules/llm/__init__.py`에 있습니다.

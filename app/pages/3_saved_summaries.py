@@ -123,6 +123,7 @@ render_video_and_summary(
     column_gap="medium",
     show_captions=False,
     summary_container_height=600,
+    ocr_result_path=selected_folder / "ocr_result.json",
 )
 
 st.write("")

@@ -110,6 +110,7 @@ Windows에서는 중지 시 `taskkill /PID <pid> /T /F`를 사용합니다.
 | `column_gap` | `"medium"` |
 | `show_captions` | `False` (파일 경로 캡션 숨김) |
 | `summary_container_height` | `600` |
+| `ocr_result_path` | `OCR_RESULT_PATH`(`runs/ocr/ocr_result.json`, 기본값) — 표/차트 스크린샷 조회에 사용 |
 
 | 영역 | 데이터 |
 | --- | --- |
@@ -122,13 +123,15 @@ Windows에서는 중지 시 `taskkill /PID <pid> /T /F`를 사용합니다.
 
 "💾 영상과 요약 결과 저장" 버튼을 누르면 `app/result_export.py`의 `save_analysis_result()`가 실행되어 현재 영상 파일과 `runs/final/`의 `final_summary.txt`/`final_summary_result.json`을 `data/saved/[영상 제목] - YYYYMMDD-HHMMSS/` 폴더에 복사합니다. 제목이 없으면 날짜시각(`YYYYMMDD-HHMMSS`)만으로 폴더명을 만들고, 폴더명에 쓸 수 없는 Windows 금지 문자(`\ / : * ? " < > |`)는 제거됩니다. 영상과 요약 결과가 모두 없으면 `FileNotFoundError`가 발생해 화면에 에러로 표시됩니다.
 
+`runs/ocr/ocr_result.json`(`OCR_RESULT_PATH`)이 있으면 함께 저장됩니다. `_copy_ocr_result_with_frames()`가 OCR 결과 안의 `image_path`가 가리키는 프레임 이미지를 저장 폴더의 `frames/`로 복사하고, JSON의 `image_path`도 그 복사본을 가리키는 `frames/<파일명>` 상대경로로 고쳐서 `data/saved/.../ocr_result.json`에 저장합니다. `runs/frames/`의 원본 이미지는 다음 분석 실행 때 덮어써지므로, 복사해두지 않으면 나중에 저장 결과를 열었을 때 표/차트 스크린샷이 다른 영상의 프레임으로 바뀌어 보이는 문제가 있었기 때문입니다.
+
 ## 저장된 요약 페이지 (`app/pages/3_saved_summaries.py`)
 
 `data/saved/` 아래 폴더들을 스캔해 저장된 결과 목록을 보여줍니다.
 
 1. `list_saved_items()`가 `data/saved/`의 하위 폴더를 모두 순회하고, `parse_saved_folder_name()`으로 폴더명 `[제목] - YYYYMMDD-HHMMSS`에서 제목과 저장 시각을 추출해 시각 역순으로 정렬 (패턴에 맞지 않으면 폴더명 전체를 제목으로 사용하고 시각은 `None`)
 2. 라디오 버튼으로 항목을 고르면 `find_saved_video()`가 폴더 안에서 `.mp4`/`.mov`/`.avi` 중 먼저 찾은 파일을 영상으로 사용
-3. `load_final_summary(selected_folder)`로 요약을 읽어 `render_video_and_summary()`로 2번 페이지와 동일한 레이아웃(`column_ratio=(0.85, 1.15)`, `summary_container_height=600`)으로 표시. 읽기 실패 시 경고만 표시하고 중단
+3. `load_final_summary(selected_folder)`로 요약을 읽어 `render_video_and_summary()`로 2번 페이지와 동일한 레이아웃(`column_ratio=(0.85, 1.15)`, `summary_container_height=600`)으로 표시. `ocr_result_path=selected_folder / "ocr_result.json"`을 넘겨 저장 당시 함께 복사된 프레임(`frames/`)으로 표/차트 스크린샷도 복원(저장 시점에 OCR 결과가 없었으면 이 파일 자체가 없어 스크린샷 없이 표시). 읽기 실패 시 경고만 표시하고 중단
 4. "🗑️ 이 저장 결과 삭제" 버튼은 `st.session_state["confirm_delete_folder"]`로 확인 단계를 거친 뒤 `shutil.rmtree()`로 폴더 전체를 삭제 (되돌릴 수 없음)
 
 저장된 항목이 하나도 없으면 안내 메시지와 함께 업로드 페이지로 이동하는 버튼을 표시합니다.
@@ -191,5 +194,5 @@ JSON이 있으면 `mode="json"`으로, 텍스트 파일만 있으면 `mode="mark
 - 업로드 파일은 원본 확장자를 유지해 `data/input/input{확장자}`로 저장됩니다(유튜브 다운로드는 항상 `.mp4`).
 - `--skip-stt` 옵션은 현재 비활성화되어 있어 STT 단계는 항상 실행됩니다.
 - 최종 결과 페이지는 `runs/final` 산출물이 있어야 정상 표시되며, 표/차트 구간 스크린샷을 보려면 `runs/ocr/ocr_result.json`도 필요합니다.
-- 간단요약(`simple`) 프리셋은 프레임 추출/OCR/VLM 단계를 건너뛰므로, 저장된 결과라도 `runs/ocr/ocr_result.json`이 없어 표/차트 스크린샷이 나오지 않을 수 있습니다.
+- 간단요약(`simple`) 프리셋은 프레임 추출/OCR/VLM 단계를 건너뛰므로 `runs/ocr/ocr_result.json` 자체가 없어 표/차트 스크린샷이 나오지 않습니다. `standard`/`detailed`는 결과 저장 시 프레임과 OCR 결과도 `data/saved/.../frames/`, `data/saved/.../ocr_result.json`으로 함께 복사되므로, 나중에 `runs/frames/`가 다른 영상으로 덮어써져도 저장된 요약의 스크린샷은 그대로 유지됩니다.
 - `require_login()`은 `.streamlit/secrets.toml`에 `APP_PASSWORD`가 설정된 경우에만 동작하며, 로컬 전용 실행에는 영향이 없습니다.

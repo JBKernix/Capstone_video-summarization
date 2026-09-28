@@ -43,6 +43,7 @@ from modules.stt import (  # noqa: E402
 from modules.ocr import DEFAULT_OCR_LANGUAGE  # noqa: E402
 from modules.llm.summary_levels import (  # noqa: E402
     DEFAULT_SUMMARY_LEVEL,
+    SUMMARY_LEVEL_STT_MODELS,
     SUMMARY_LEVELS,
 )
 from scripts.run_llm_summary import (  # noqa: E402
@@ -216,6 +217,9 @@ def parse_args():
 def build_stt_options(args: argparse.Namespace) -> dict:
     """명령줄 인자와 설정 파일을 합쳐 STT 실행 옵션을 구성합니다.
 
+    summary_level별 Whisper 모델 크기(simple=base, standard=small, detailed=medium)를
+    기본값으로 사용하며, --stt-model-size를 명시하면 그 값이 우선합니다.
+
     Args:
         args: ``parse_args``가 반환한 명령줄 인자입니다.
 
@@ -229,8 +233,13 @@ def build_stt_options(args: argparse.Namespace) -> dict:
 
     beam_size = config.get("beam_size", DEFAULT_STT_BEAM_SIZE)
 
+    level_model_size = SUMMARY_LEVEL_STT_MODELS.get(
+        getattr(args, "summary_level", DEFAULT_SUMMARY_LEVEL)
+    )
+    default_model_size = config.get("model_size", DEFAULT_STT_MODEL_SIZE)
+
     return {
-        "model_size": args.stt_model_size or config.get("model_size", DEFAULT_STT_MODEL_SIZE),
+        "model_size": args.stt_model_size or level_model_size or default_model_size,
         "language": args.stt_language or config.get("language", DEFAULT_STT_LANGUAGE),
         "device": args.stt_device if args.stt_device is not None else config.get("device", DEFAULT_STT_DEVICE),
         "temperature": float(config.get("temperature", DEFAULT_STT_TEMPERATURE)),

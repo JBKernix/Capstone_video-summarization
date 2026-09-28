@@ -111,6 +111,15 @@ runs/llm/stt_summary_result.json
 
 앱의 요약 화면(`app/summary_timeline.py`)은 이 중 `scene_type`이 `chart_or_table`인 프레임을 우선으로 찾아 "표/차트 기반 주요 정보" 구간의 스크린샷으로 사용합니다.
 
+### 저장된 결과의 OCR 사본 (`data/saved/.../ocr_result.json`)
+
+"영상과 요약 결과 저장" 시 `app/result_export.py`가 `runs/ocr/ocr_result.json`이 있으면 함께 복사합니다. 원본과 두 가지가 다릅니다.
+
+- `image_path`가 절대경로가 아니라 저장 폴더 기준 상대경로 `frames/<파일명>`입니다.
+- 프레임 이미지 자체도 `data/saved/[영상 제목] - YYYYMMDD-HHMMSS/frames/`로 함께 복사됩니다.
+
+`runs/frames/`의 원본 이미지는 다음 분석 실행 때 덮어써질 수 있어, 저장 시점에 이미지를 별도로 복사해두지 않으면 나중에 저장 결과를 열었을 때 다른 영상의 프레임이 표시되는 문제가 있었습니다. 간단요약(`simple`) 프리셋으로 분석한 결과는 OCR 자체가 생성되지 않으므로 이 파일이 저장되지 않습니다.
+
 ## VLM 요약 결과
 
 경로:

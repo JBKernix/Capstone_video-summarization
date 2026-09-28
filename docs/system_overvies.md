@@ -72,7 +72,7 @@ runs/
   final/
 ```
 
-Streamlit 앱에서 "영상과 요약 결과 저장" 버튼을 누르면 `data/saved/[영상 제목] - 년월일시분초/` 폴더에 원본 영상과 `runs/final/`의 요약 파일이 복사되어 남습니다. (`app/result_export.py`)
+Streamlit 앱에서 "영상과 요약 결과 저장" 버튼을 누르면 `data/saved/[영상 제목] - 년월일시분초/` 폴더에 원본 영상과 `runs/final/`의 요약 파일이 복사되어 남습니다. `runs/ocr/ocr_result.json`이 있으면(즉 `simple` 프리셋이 아니면) 표/차트 스크린샷 복원을 위해 프레임 이미지(`frames/`)와 OCR 결과 사본도 함께 저장됩니다. (`app/result_export.py`)
 
 ## 현재 상태
 

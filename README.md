@@ -125,7 +125,7 @@ streamlit run app/main.py
 
 영상이 준비되면 `scripts/run_pipeline.py --summary-level <선택값>`을 백그라운드 프로세스로 실행합니다. 실행 로그는 `runs/app_pipeline.log`에 저장되며, 파이프라인이 `modules/common/progress.py`의 `report_progress()`로 남기는 `##PROGRESS##` 마커를 앱이 폴링해 7단계 진행 상황을 원형 아이콘과 퍼센트로 보여줍니다. 파이프라인 프로세스가 오류로 종료되면 진행 중이던 단계가 빨간 오류 아이콘으로 표시됩니다.
 
-분석이 끝나면 `pages/2_analysis_result.py`에서 원본 영상과 최종 요약을 함께 확인할 수 있고, "영상과 요약 결과 저장" 버튼(`app/result_export.py`)으로 `data/saved/[영상 제목] - 년월일시분초/` 폴더에 영상과 요약 파일을 복사해 보관할 수 있습니다. 요약 화면의 타임라인은 `분:초` 형식의 클릭 가능한 뱃지로 표시되며, 클릭하면 영상이 해당 지점으로 이동합니다. `pages/3_saved_summaries.py`에서는 저장된 결과 목록을 다시 불러와 확인하거나 삭제할 수 있습니다.
+분석이 끝나면 `pages/2_analysis_result.py`에서 원본 영상과 최종 요약을 함께 확인할 수 있고, "영상과 요약 결과 저장" 버튼(`app/result_export.py`)으로 `data/saved/[영상 제목] - 년월일시분초/` 폴더에 영상과 요약 파일을 복사해 보관할 수 있습니다(표/차트 스크린샷 복원용 프레임/OCR 결과도 있으면 함께 저장). 요약 화면의 타임라인은 `분:초` 형식의 클릭 가능한 뱃지로 표시되며, 클릭하면 영상이 해당 지점으로 이동합니다. `pages/3_saved_summaries.py`에서는 저장된 결과 목록을 다시 불러와 확인하거나 삭제할 수 있습니다.
 
 ## 로그인 보호 및 외부 공개 (선택)
 

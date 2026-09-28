@@ -32,35 +32,56 @@ class PipelineOCRProcessTests(unittest.TestCase):
 
 
 class PipelineSttTests(unittest.TestCase):
-    def test_build_stt_options_uses_config_defaults(self):
+    def _write_config(self, temp_dir: str) -> Path:
+        config_path = Path(temp_dir) / "stt_config.yaml"
+        config_path.write_text(
+            "\n".join(
+                [
+                    "model_size: tiny",
+                    "language: ko",
+                    "device: cpu",
+                    "temperature: 0",
+                    "beam_size:",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        return config_path
+
+    def test_build_stt_options_uses_summary_level_model_size(self):
         with tempfile.TemporaryDirectory() as temp_dir:
-            config_path = Path(temp_dir) / "stt_config.yaml"
-            config_path.write_text(
-                "\n".join(
-                    [
-                        "model_size: tiny",
-                        "language: ko",
-                        "device: cpu",
-                        "temperature: 0",
-                        "beam_size:",
-                    ]
-                ),
-                encoding="utf-8",
-            )
+            config_path = self._write_config(temp_dir)
             args = SimpleNamespace(
                 stt_config=str(config_path),
                 stt_model_size=None,
                 stt_language=None,
                 stt_device=None,
                 stt_timestamps=False,
+                summary_level="detailed",
             )
 
             options = build_stt_options(args)
 
-        self.assertEqual(options["model_size"], "tiny")
+        self.assertEqual(options["model_size"], "medium")
         self.assertEqual(options["device"], "cpu")
         self.assertEqual(options["temperature"], 0.0)
         self.assertIsNone(options["beam_size"])
+
+    def test_build_stt_options_explicit_model_size_overrides_summary_level(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = self._write_config(temp_dir)
+            args = SimpleNamespace(
+                stt_config=str(config_path),
+                stt_model_size="large",
+                stt_language=None,
+                stt_device=None,
+                stt_timestamps=False,
+                summary_level="simple",
+            )
+
+            options = build_stt_options(args)
+
+        self.assertEqual(options["model_size"], "large")
 
     def test_run_stt_step_runs_in_current_process(self):
         with tempfile.TemporaryDirectory() as temp_dir:

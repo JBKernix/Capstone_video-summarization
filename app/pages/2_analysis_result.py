@@ -10,7 +10,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.auth import require_login
-from app.final_summary_view import render_video_and_summary, resolve_video_path
+from app.final_summary_view import OCR_RESULT_PATH, render_video_and_summary, resolve_video_path
 from app.result_export import save_analysis_result
 from app.styles import apply_global_styles
 from app.summary_result import load_final_summary
@@ -67,6 +67,7 @@ if st.button("💾 영상과 요약 결과 저장", use_container_width=False):
             FINAL_DIR,
             SAVE_ROOT,
             title=st.session_state.get("video_title"),
+            ocr_result_path=OCR_RESULT_PATH,
         )
     except FileNotFoundError as error:
         st.error(str(error))

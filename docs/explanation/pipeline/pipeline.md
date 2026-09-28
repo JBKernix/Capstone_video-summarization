@@ -58,6 +58,8 @@ main()
 
 `build_stt_options()`는 `modules.common.config.load_yaml_config()`로 `--stt-config` YAML을 읽은 뒤, 명령줄 인자가 있으면 그 값을 우선하고 없으면 설정 파일 값을, 그마저도 없으면 `modules.stt`의 `DEFAULT_STT_*` 상수를 사용합니다. `run_stt.py`와 동일한 `load_yaml_config()`를 공유하므로 두 스크립트의 STT 설정 로딩 방식이 일치합니다. (과거에는 `run_pipeline.py`에 별도의 `load_stt_config()`/`_parse_simple_stt_config()` 함수가 있었으나 삭제되었습니다.)
 
+`model_size`만 예외입니다. `--stt-model-size`가 없으면 설정 파일 값보다 `modules/llm/summary_levels.py`의 `SUMMARY_LEVEL_STT_MODELS`(`simple`=`base`, `standard`=`small`, `detailed`=`medium`)가 먼저 적용됩니다(`--stt-model-size > SUMMARY_LEVEL_STT_MODELS[--summary-level] > configs/stt_config.yaml의 model_size > DEFAULT_STT_MODEL_SIZE`). 요약 프리셋이 빠를수록 더 작은 Whisper 모델을 써서 STT 자체도 함께 빨라집니다. 자세한 우선순위는 [`configs.md`](../configs/configs.md)를 참고하세요.
+
 ## 건너뛰기 동작
 
 - `--summary-level simple`이면 `skip_visual_stages = True`가 되어 프레임 추출(4단계)부터 아예 건너뛰고, OCR/VLM도 이어서 건너뜁니다.

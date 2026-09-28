@@ -46,6 +46,8 @@ GPU_SERVER_URL = "http://100.124.136.28:8000"
 >
 > `simple`은 `standard`/`detailed`와 달리 영상(VLM) 분석 자체를 생략합니다. `scripts/run_pipeline.py`가 `simple`일 때 프레임 추출/OCR/VLM 단계를 아예 건너뛰고 STT 요약만 최종 요약으로 사용하기 때문입니다(아래 "최종 요약" 및 `pipeline.md` 참고). `SUMMARY_LEVEL_CAPTIONS`(업로드 페이지 안내 문구)도 이를 반영해 "영상 분석 생략"을 명시합니다.
 
+`summary_levels.py`에는 `SUMMARY_LEVEL_STT_MODELS`(`simple`=`base`, `standard`=`small`, `detailed`=`medium`)도 정의되어 있습니다. GPU 서버 요청과는 무관하며, `--stt-model-size`를 지정하지 않았을 때 `run_pipeline.py`가 STT 단계의 Whisper 모델 크기를 요약 프리셋에 맞춰 고르는 데 사용합니다(자세한 우선순위는 [`pipeline.md`](../pipeline/pipeline.md) 참고).
+
 ## STT 요약
 
 클라이언트: `GPULLMClient` (`GPUJobClientMixin` 상속, `job_label = "LLM"`, `progress_step = STEP_STT_SUMMARY`)
