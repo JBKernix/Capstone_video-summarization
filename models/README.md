@@ -9,6 +9,7 @@ Hugging Face 모델의 로드, 입력 전처리, 생성 호출과 GPU 메모리 
 | 파일 | 모델 | 역할 |
 | --- | --- | --- |
 | `llm_loader.py` | Qwen3-8B | 토크나이저와 Causal LM 로드, 텍스트 생성 |
+| `claude_llm_loader.py` | Claude (Anthropic API) | Anthropic API 호출을 통한 텍스트 생성, `llm_loader.py`와 동일한 인터페이스 |
 | `vlm_loader.py` | Qwen2.5-VL-7B-Instruct | 프로세서와 VLM 로드, 이미지 기반 텍스트 생성 |
 | `hf_cache/` | 로컬 모델 파일 | Git에서 제외되는 모델 설정 및 가중치 저장소 |
 
@@ -114,3 +115,17 @@ python scripts\download_models.py
 6. VLM이면 processor 입력 형식과 이미지 토큰 규칙 확인
 
 모델별 프롬프트와 출력 파싱은 로더가 아니라 `services/`에서 변경합니다.
+
+## 분석 LLM 백엔드 전환 (로컬 <-> Claude API)
+
+`services/llm_service.py`의 `_build_loader()`가 환경변수 `LLM_BACKEND`를 읽어 로더를 선택합니다.
+
+| 환경변수 | 기본값 | 설명 |
+| --- | --- | --- |
+| `LLM_BACKEND` | `local` | `claude`로 설정하면 `ClaudeLLMLoader`(Anthropic API)를 사용 |
+| `ANTHROPIC_API_KEY` | (없음) | `claude` 백엔드 사용 시 필수. Anthropic API 키 |
+| `CLAUDE_LLM_MODEL` | `claude-haiku-4-5` | `claude` 백엔드에서 사용할 모델 ID |
+
+`ClaudeLLMLoader`는 `llm_loader.py`와 동일하게 `load()` / `unload()` / `generate(prompt, max_new_tokens)`를 제공하므로 `LLMService`와 `FinalService`는 백엔드가 로컬인지 API인지 알 필요가 없습니다. 다만 API 백엔드에는 GPU 자원이 없어 `unload()`는 클라이언트 참조만 제거하는 no-op이며, `KEEP_LLM_LOADED` 설정과 무관하게 동작합니다. Claude API 오류(인증 실패, 요청 한도 초과, 연결 실패, 안전 거부)는 로컬 모델의 CUDA OOM과 동일하게 `ValueError`로 변환되어 작업 상태의 `message`에 노출됩니다.
+
+VLM(`vlm_loader.py`)은 이 전환과 무관하게 항상 로컬 모델을 사용합니다.

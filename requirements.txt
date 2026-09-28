@@ -13,3 +13,6 @@ safetensors>=0.4,<1.0
 
 # Local model download
 huggingface-hub>=0.27,<2.0
+
+# Claude API backend (analysis LLM)
+anthropic>=1.0,<2.0

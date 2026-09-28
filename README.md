@@ -83,11 +83,14 @@ GPU 모델과 작업 상태가 프로세스 메모리에 저장되므로 운영 
 | --- | --- | --- |
 | `SERVER_HOST` | `0.0.0.0` | `server.py` 직접 실행 시 호스트 주소 |
 | `SERVER_PORT` | `8000` | `server.py` 직접 실행 시 포트 |
-| `KEEP_LLM_LOADED` | `0` | `1`이면 LLM 작업 후 모델을 GPU에 유지 |
+| `KEEP_LLM_LOADED` | `0` | `1`이면 LLM 작업 후 모델을 GPU에 유지 (로컬 백엔드에만 적용) |
 | `KEEP_VLM_LOADED` | `0` | `1`이면 VLM 작업 후 모델을 GPU에 유지 |
 | `NO_COLOR` | 미설정 | 설정하면 콘솔 컬러 로그 비활성화 |
+| `LLM_BACKEND` | `local` | `claude`로 설정하면 STT 요약/중요 구간 추출/최종 요약에 로컬 Qwen3-8B 대신 Claude API 사용 |
+| `ANTHROPIC_API_KEY` | 미설정 | `LLM_BACKEND=claude`일 때 필수인 Anthropic API 키 |
+| `CLAUDE_LLM_MODEL` | `claude-haiku-4-5` | `LLM_BACKEND=claude`일 때 사용할 Claude 모델 ID |
 
-기본 설정에서는 각 작업이 끝날 때 모델 참조와 CUDA 캐시를 해제합니다.
+기본 설정에서는 각 작업이 끝날 때 모델 참조와 CUDA 캐시를 해제합니다(`LLM_BACKEND=claude`인 경우 LLM 쪽은 해제할 GPU 자원이 없습니다).
 
 ## API
 

@@ -1,20 +1,29 @@
 import json
+import os
 from threading import Lock
 from typing import Any, Callable
 
 from configs.inference_config import LLM_INFERENCE_CONFIG
 from models.llm_loader import LLMLoader, LLMConfig
+from models.claude_llm_loader import ClaudeLLMLoader, ClaudeLLMConfig
 
 ProgressCallback = Callable[[str, int, int], None]
 
 
+def _build_loader():
+    """LLM_BACKEND 환경변수로 로컬 모델과 Claude API 백엔드를 전환합니다."""
+    backend = os.getenv("LLM_BACKEND", "local").strip().lower()
+
+    if backend == "claude":
+        model = os.getenv("CLAUDE_LLM_MODEL", "claude-haiku-4-5")
+        return ClaudeLLMLoader(ClaudeLLMConfig(model=model))
+
+    return LLMLoader(LLMConfig(device="cuda", torch_dtype="float16"))
+
+
 class LLMService:
     def __init__(self, generation_lock=None):
-        config = LLMConfig(
-            device="cuda",
-            torch_dtype="float16",
-        )
-        self.loader = LLMLoader(config)
+        self.loader = _build_loader()
         # 전달받은 공용 lock으로 LLM/VLM의 GPU 사용을 함께 직렬화합니다.
         self._generation_lock = generation_lock or Lock()
 
