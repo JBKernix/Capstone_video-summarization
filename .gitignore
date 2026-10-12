@@ -24,3 +24,12 @@ Thumbs.db
 
 cloudflared.log
 tunnel_url.txt
+# single-server runtime files (logs, uploads, per-run outputs, launcher PIDs, tunnel logs)
+logs/
+*.log
+*.log.out
+data/input/
+runs/
+.cloudflared/
+*.pem
+.env
