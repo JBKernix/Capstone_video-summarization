@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Any, Dict, List
 
+from modules.common.run_history import record_counts
 from modules.common import find_existing_path, load_json, save_json
 from modules.common.progress import STEP_OCR, report_progress
 from modules.ocr.ocr_extractor import DEFAULT_OCR_LANGUAGE, OCRExtractor
@@ -124,6 +125,7 @@ def analyze_frames_metadata(
     failed_count = 0
     total_frames = len(frames_metadata)
 
+    record_counts(ocr_success=0, ocr_failed=0)
     for index, frame_info in enumerate(frames_metadata):
         frame_info = dict(frame_info)
         frame_info["image_path"] = _resolve_image_path(frame_info.get("image_path", ""), metadata_path)
@@ -141,6 +143,7 @@ def analyze_frames_metadata(
             failed_count += 1
             print(f"프레임 분석 중 오류 발생 (frame_id: {frame_id}) error={e}")
 
+        record_counts(ocr_success=len(results), ocr_failed=failed_count)
         if total_frames > 0:
             report_progress(
                 STEP_OCR,

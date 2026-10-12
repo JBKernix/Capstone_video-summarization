@@ -8,6 +8,9 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(PROJECT_ROOT))
 
+from modules.llm.backends import add_backend_arguments, options_from_args, use_backend
+from modules.common.run_history import RunRecorder, ACTIVE_RUN, record_counts, snapshot_result
+
 from modules.common import (  # noqa: E402
     DEFAULT_AUDIO_RELATIVE_PATH,
     DEFAULT_FRAME_METADATA_RELATIVE_PATH,
@@ -72,7 +75,7 @@ def _format_elapsed(seconds: float) -> str:
 
 
 @contextmanager
-def _stage_timeline(step: str, name: str):
+def _console_stage_timeline(step: str, name: str):
     started_at = time.monotonic()
     print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] [{step}] {name} 시작")
     state = {"status": "완료"}
@@ -88,6 +91,20 @@ def _stage_timeline(step: str, name: str):
             f"[{datetime.now():%Y-%m-%d %H:%M:%S}] [{step}] "
             f"{name} {state['status']} (소요 {elapsed})"
         )
+
+
+@contextmanager
+def _stage_timeline(step: str, name: str):
+    recorder = ACTIVE_RUN.get()
+    with _console_stage_timeline(step, name) as state:
+        if recorder is None:
+            yield state
+        else:
+            with recorder.stage(int(step.split("/")[0]), name) as metrics_state:
+                try:
+                    yield state
+                finally:
+                    metrics_state.update(state)
 
 
 def _execute_stt(
@@ -187,7 +204,7 @@ def parse_args():
         "--summary-level",
         choices=SUMMARY_LEVELS,
         default=DEFAULT_SUMMARY_LEVEL,
-        help="요약 크기/속도 프리셋입니다. (simple=간단요약, standard=기본요약, detailed=상세요약)",
+        help="Whisper 음성 인식 모델: simple=base, standard=small, detailed=medium. 화면 분석 범위는 동일합니다.",
     )
     # NOTE: --skip-stt를 사용하면 STT뿐 아니라 이후 모든 단계(요약/프레임/OCR/VLM/최종요약)가
     # 연쇄적으로 건너뛰어져 옵션 설명과 실제 동작이 달라 혼란을 줄 수 있어 우선 비활성화합니다.
@@ -211,6 +228,10 @@ def parse_args():
         action="store_true",
         help="STT 텍스트 결과에 segment 시간 정보를 포함합니다.",
     )
+    parser.add_argument("--history-dir", help="실행별 로그/지표 저장 폴더. 기본값: <run-dir>/history")
+    parser.add_argument("--run-id", help=argparse.SUPPRESS)
+    parser.add_argument("--input-name", help="이력에 표시할 원본 영상 이름")
+    add_backend_arguments(parser)
     return parser.parse_args()
 
 
@@ -286,6 +307,12 @@ def run_preprocess_step(
         f"FPS: {video_info.fps:.2f}"
     )
 
+    if important_segments_path is not None:
+        from modules.preprocess import load_important_time_ranges
+        if not load_important_time_ranges(important_segments_path):
+            print("선정된 음성 중요 구간이 없어 전체 영상에서 프레임을 샘플링합니다.")
+            important_segments_path = None
+
     metadata = sample_frames(
         video_path=video_path,
         run_dir=run_dir,
@@ -300,6 +327,8 @@ def run_preprocess_step(
     metadata_path = run_path(run_dir, DEFAULT_FRAME_METADATA_RELATIVE_PATH)
     print(f"프레임 추출 완료: {metadata_path}")
     print(f"추출 프레임 수: {len(metadata)}")
+    record_counts(frames_extracted=len(metadata))
+    snapshot_result(metadata_path, "frame_metadata.json")
     return metadata_path
 
 
@@ -357,15 +386,37 @@ def run_stt_step(
     print(f"STT 완료: {output_json}")
     print(f"STT 텍스트 저장: {output_text}")
     print(f"STT segment 수: {segment_count}")
+    record_counts(stt_segments=segment_count)
     return output_json, output_text
 
 
 def main():
-    """구현되어 있는 파이프라인 단계를 순서대로 실행합니다."""
+    """실행 시작부터 실패/완료까지 이력을 보관합니다."""
     args = parse_args()
+    recorder = RunRecorder(
+        getattr(args, "history_dir", None) or Path(args.run_dir) / "history",
+        run_id=getattr(args, "run_id", None),
+        input_name=getattr(args, "input_name", None) or Path(args.video).name,
+        settings=vars(args),
+    )
+    with recorder.capture():
+        with use_backend(options_from_args(args)) as backend_metadata:
+            recorder.update("settings", **backend_metadata, preset_semantics="whisper_only_v1")
+            _run_pipeline(args, recorder)
+
+
+def _run_pipeline(args, recorder):
     video_path = resolve_path_pattern(args.video)
     run_dir = Path(args.run_dir)
     stt_options = build_stt_options(args)
+    recorder.update("settings", stt=stt_options)
+    recorder.update("input", path=str(video_path.resolve()), size_bytes=video_path.stat().st_size)
+    try:
+        info = get_video_info(video_path)
+        recorder.update("input", duration_seconds=info.duration, width=info.width,
+                        height=info.height, fps=info.fps)
+    except (OSError, RuntimeError, ValueError) as error:
+        recorder.update("input", metadata_error=str(error))
     video_path = ensure_mp4_video(video_path, run_dir / "data" / "input")
 
     with _stage_timeline("1/7", "오디오 추출"):
@@ -394,16 +445,16 @@ def main():
                 stt_json_path=stt_json_path,
                 output_path=run_path(run_dir, DEFAULT_LLM_SUMMARY_RELATIVE_PATH),
                 output_json_path=run_path(run_dir, DEFAULT_LLM_SUMMARY_JSON_RELATIVE_PATH),
-                summary_level=args.summary_level,
+                summary_level=DEFAULT_SUMMARY_LEVEL,
             )
+            snapshot_result(llm_summary_json_path, "stt_summary_result.json")
             print(f"STT 요약 저장(txt): {llm_summary_path}")
             print(f"STT 요약 저장(json): {llm_summary_json_path}")
 
-    # 간단요약은 속도를 위해 프레임/OCR/VLM 단계를 아예 건너뛰고 STT 요약만 사용합니다.
-    skip_visual_stages = args.summary_level == "simple"
+    # 모든 Whisper 프리셋에서 동일한 시각 분석 단계를 실행합니다.
 
     with _stage_timeline("4/7", "중요 구간 프레임 추출") as stage:
-        if llm_summary_json_path is None or skip_visual_stages:
+        if llm_summary_json_path is None:
             stage["status"] = "건너뜀"
             metadata_path = None
         else:
@@ -438,7 +489,7 @@ def main():
                 ocr_json_path=ocr_path,
                 output_path=run_path(run_dir, DEFAULT_VLM_SUMMARY_RELATIVE_PATH),
                 output_json_path=run_path(run_dir, DEFAULT_VLM_SUMMARY_JSON_RELATIVE_PATH),
-                summary_level=args.summary_level,
+                summary_level=DEFAULT_SUMMARY_LEVEL,
             )
             print(f"VLM 요약 저장(txt): {vlm_summary_path}")
             print(f"VLM 요약 저장(json): {vlm_summary_json_path}")
@@ -449,7 +500,7 @@ def main():
             final_summary_path = None
             final_summary_json_path = None
         elif vlm_summary_path is None or vlm_summary_json_path is None:
-            # VLM 요약이 없는 경우(간단요약, --skip-vlm 등)에는 서버 병합 호출 없이
+            # 명시적으로 --skip-ocr/--skip-vlm을 지정한 경우 서버 병합 호출 없이
             # STT 요약을 최종 요약으로 그대로 사용합니다.
             stage["status"] = "완료 (STT 요약만 사용)"
             final_summary_path, final_summary_json_path = write_stt_only_final_summary_step(
@@ -463,11 +514,13 @@ def main():
                 vlm_summary_json_path=vlm_summary_json_path,
                 output_path=run_path(run_dir, DEFAULT_FINAL_SUMMARY_RELATIVE_PATH),
                 output_json_path=run_path(run_dir, DEFAULT_FINAL_SUMMARY_JSON_RELATIVE_PATH),
-                summary_level=args.summary_level,
+                summary_level=DEFAULT_SUMMARY_LEVEL,
             )
             print(f"최종 요약 저장(txt): {final_summary_path}")
             print(f"최종 요약 저장(json): {final_summary_json_path}")
 
+    if final_summary_json_path is not None:
+        snapshot_result(final_summary_json_path, "final_summary_result.json")
     print("파이프라인 실행이 완료되었습니다.")
     print(f"오디오 파일: {audio_path}")
     if stt_json_path is not None:

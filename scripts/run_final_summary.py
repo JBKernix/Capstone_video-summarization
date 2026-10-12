@@ -7,6 +7,8 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(PROJECT_ROOT))
 
+from modules.llm.backends import add_backend_arguments, get_summary_client, options_from_args, use_backend
+
 from modules.common import (  # noqa: E402
     DEFAULT_RUN_DIR_RELATIVE_PATH,
     load_json,
@@ -40,11 +42,11 @@ def run_final_summary_step(
     output_path = Path(output_path)
     output_json_path = Path(output_json_path or output_path.with_name("final_summary_result.json"))
 
-    client = GPUFinalSummaryClient()
+    client = get_summary_client("final")
     result = client.summarize_files_result(
         stt_summary_json_path=stt_summary_json_path,
         vlm_summary_json_path=vlm_summary_json_path,
-        summary_level=summary_level,
+        summary_level=DEFAULT_SUMMARY_LEVEL,
     )
 
     result = {
@@ -67,10 +69,10 @@ def write_stt_only_final_summary_step(
     output_path: str | Path,
     output_json_path: str | Path | None = None,
 ) -> tuple[Path, Path]:
-    """VLM 요약을 만들지 않는 프리셋(예: 간단요약)에서 STT 요약을 최종 요약 대신 사용합니다.
+    """명시적인 --skip-ocr/--skip-vlm 옵션으로 VLM 요약이 없을 때 STT 요약을 최종 요약 대신 사용합니다.
 
     서버에 최종 요약 병합 요청을 보내지 않으므로 네트워크 호출과 LLM 생성이 줄어
-    간단요약의 속도 이점을 그대로 유지합니다.
+    선택한 단계 생략 옵션을 반영합니다.
     """
     stt_summary_json_path = Path(stt_summary_json_path)
     output_path = Path(output_path)
@@ -127,20 +129,22 @@ def parse_args() -> argparse.Namespace:
         "--summary-level",
         choices=SUMMARY_LEVELS,
         default=DEFAULT_SUMMARY_LEVEL,
-        help="요약 크기/속도 프리셋입니다. (simple/standard/detailed)",
+        help="호환 옵션입니다. 단독 요약 단계는 항상 동일한 standard 정책을 사용합니다.",
     )
+    add_backend_arguments(parser)
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    output_path, output_json_path = run_final_summary_step(
-        stt_summary_json_path=args.stt_summary_json,
-        vlm_summary_json_path=args.vlm_summary_json,
-        output_path=args.output,
-        output_json_path=args.output_json,
-        summary_level=args.summary_level,
-    )
+    with use_backend(options_from_args(args)):
+        output_path, output_json_path = run_final_summary_step(
+            stt_summary_json_path=args.stt_summary_json,
+            vlm_summary_json_path=args.vlm_summary_json,
+            output_path=args.output,
+            output_json_path=args.output_json,
+            summary_level=args.summary_level,
+        )
     print(f"Final summary saved: {output_path}")
     print(f"Final summary JSON saved: {output_json_path}")
 

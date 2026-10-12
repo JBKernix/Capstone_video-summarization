@@ -118,10 +118,11 @@ class PipelineVlmTests(unittest.TestCase):
                 ocr_lang="korean",
                 skip_ocr=False,
                 skip_vlm=False,
-                vlm_max_new_tokens=256,
+                summary_level="standard",
                 skip_stt=False,
             )
             video_path = run_dir / "input.mp4"
+            video_path.write_bytes(b"fake")
             audio_path = run_dir / "audio" / "audio.wav"
             stt_json_path = run_dir / "stt" / "stt_result.json"
             stt_text_path = run_dir / "stt" / "stt_result.txt"
@@ -132,7 +133,9 @@ class PipelineVlmTests(unittest.TestCase):
             vlm_summary_path = run_dir / "vlm" / "vlm_summary.txt"
             vlm_summary_json_path = run_dir / "vlm" / "vlm_summary_result.json"
 
-            with patch("scripts.run_pipeline.parse_args", return_value=args), patch(
+            with patch("modules.llm.backends.BackendOptions.validate", return_value={"analysis_backend": "local"}), patch("scripts.run_pipeline.get_video_info", side_effect=RuntimeError("fake")), patch(
+                "scripts.run_pipeline.snapshot_result"
+            ), patch("scripts.run_pipeline.run_final_summary_step", return_value=(run_dir / "final.txt", run_dir / "final.json")), patch("scripts.run_pipeline.parse_args", return_value=args), patch(
                 "scripts.run_pipeline.resolve_path_pattern", return_value=video_path
             ), patch("scripts.run_pipeline.build_stt_options", return_value={}), patch(
                 "scripts.run_pipeline.ensure_mp4_video", return_value=video_path
@@ -154,7 +157,7 @@ class PipelineVlmTests(unittest.TestCase):
             ocr_json_path=ocr_path,
             output_path=vlm_summary_path,
             output_json_path=vlm_summary_json_path,
-            max_new_tokens=256,
+            summary_level="standard",
         )
 
 

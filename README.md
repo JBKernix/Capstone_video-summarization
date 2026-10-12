@@ -1,6 +1,6 @@
 # Multimodal Video Summarization
 
-영상에서 음성, 주요 프레임, OCR 텍스트를 추출하고 외부 GPU 서버의 LLM/VLM API를 사용해 최종 요약을 만드는 캡스톤 프로젝트입니다.
+영상에서 음성, 주요 프레임, OCR 텍스트를 추출하고 로컬 모델 서버 또는 Claude Haiku API를 사용해 최종 요약을 만드는 캡스톤 프로젝트입니다.
 
 현재 저장소는 `scripts/` CLI 파이프라인과 Streamlit 기반 `app/` UI를 함께 제공합니다. UI는 영상 업로드, 파이프라인 실행, 원본 영상과 최종 요약 결과 확인을 담당합니다.
 
@@ -14,7 +14,8 @@
 - OCR/프레임 결과를 VLM 서버로 보내 프레임별 요약 생성
 - STT 요약과 VLM 요약을 결합한 최종 요약 생성
 - 파일 업로드 또는 유튜브 링크로 분석할 영상 지정 (`yt-dlp` 기반 다운로드)
-- 요약 크기/속도 프리셋(간단요약/기본요약/상세요약) 선택
+- 로컬 모델 서버 / Claude API 분석 방식 선택
+- Whisper 크기 선택: 간단(base) / 기본(small) / 상세(medium)
 - 분석 진행 중 7단계 진행 상황을 원형 아이콘/퍼센트로 실시간 표시, 실패 시 오류 표시
 - 분석 완료 후 영상과 요약 결과를 `data/saved/`에 함께 저장
 - 저장된 요약 결과를 다시 불러와 확인/삭제
@@ -88,13 +89,7 @@ temperature: 0.0
 beam_size:
 ```
 
-LLM/VLM/최종 요약 단계는 외부 GPU 서버를 호출합니다. 기본 서버 주소는 `modules/llm/__init__.py`의 `GPU_SERVER_URL` 값입니다.
-
-```python
-GPU_SERVER_URL = "http://100.124.136.28:8000"
-```
-
-서버가 접근 가능하지 않으면 `run_llm_summary.py`, `run_vlm_summary.py`, `run_final_summary.py` 및 전체 파이프라인의 관련 단계가 실패합니다.
+LLM/VLM/최종 요약은 `--analysis-backend local|claude`로 선택합니다. 로컬 모드는 `gpu-server`의 Qwen 모델 서버를, API 모드는 같은 분석 서버를 거쳐 Claude Haiku를 사용합니다. 키는 서버 컴퓨터의 `ANTHROPIC_API_KEY` 환경변수에서만 읽습니다. 서버 업데이트 방법은 [분석 방식 설정](docs/analysis_backends.md)을 참고하세요.
 
 ## Streamlit 앱 실행
 
@@ -115,15 +110,17 @@ streamlit run app/main.py
 - 파일 업로드: `data/input/input.<확장자>` (mp4/mov/avi)로 저장
 - 유튜브 링크: `modules/preprocess/youtube_downloader.py`의 `download_youtube_video()`가 `yt-dlp`로 다운로드해 `data/input/input.mp4`로 저장
 
-업로드 화면에는 요약 크기/속도 프리셋을 고르는 "요약 옵션"도 함께 있습니다 (`modules/llm/summary_levels.py`).
+업로드 화면에는 **분석 방식**과 **Whisper 음성 인식**을 독립적으로 선택하는 설정이 있습니다.
 
-| 프리셋 | 설명 |
-| --- | --- |
-| 간단요약 (`simple`) | 속도 우선. 프레임 추출/OCR/VLM 단계를 건너뛰고 STT 요약만으로 최종 요약을 만듭니다 |
-| 기본요약 (`standard`, 기본값) | 음성과 영상을 균형 있게 요약 |
-| 상세요약 (`detailed`) | 음성과 영상을 자세히 요약하지만 속도가 느림 |
+| Whisper 설정 | 모델 | 화면 분석 |
+| --- | --- | --- |
+| 간단 (`simple`) | base | OCR·VLM 실행 |
+| 기본 (`standard`, 기본값) | small | OCR·VLM 실행 |
+| 상세 (`detailed`) | medium | OCR·VLM 실행 |
 
-영상이 준비되면 `scripts/run_pipeline.py --summary-level <선택값>`을 백그라운드 프로세스로 실행합니다. 실행 로그는 `runs/app_pipeline.log`에 저장되며, 파이프라인이 `modules/common/progress.py`의 `report_progress()`로 남기는 `##PROGRESS##` 마커를 앱이 폴링해 7단계 진행 상황을 원형 아이콘과 퍼센트로 보여줍니다. 파이프라인 프로세스가 오류로 종료되면 진행 중이던 단계가 빨간 오류 아이콘으로 표시됩니다.
+세 설정은 Whisper 크기만 변경하며 요약 생성 정책은 동일합니다.
+
+영상이 준비되면 `scripts/run_pipeline.py --summary-level <선택값>`을 백그라운드 프로세스로 실행합니다. 실행 로그는 `runs/history/<실행 ID>/process.log`에 저장되며, 파이프라인이 `modules/common/progress.py`의 `report_progress()`로 남기는 `##PROGRESS##` 마커를 앱이 폴링해 7단계 진행 상황을 원형 아이콘과 퍼센트로 보여줍니다. 파이프라인 프로세스가 오류로 종료되면 진행 중이던 단계가 빨간 오류 아이콘으로 표시됩니다.
 
 분석이 끝나면 `pages/2_analysis_result.py`에서 원본 영상과 최종 요약을 함께 확인할 수 있고, "영상과 요약 결과 저장" 버튼(`app/result_export.py`)으로 `data/saved/[영상 제목] - 년월일시분초/` 폴더에 영상과 요약 파일을 복사해 보관할 수 있습니다(표/차트 스크린샷 복원용 프레임/OCR 결과도 있으면 함께 저장). 요약 화면의 타임라인은 `분:초` 형식의 클릭 가능한 뱃지로 표시되며, 클릭하면 영상이 해당 지점으로 이동합니다. `pages/3_saved_summaries.py`에서는 저장된 결과 목록을 다시 불러와 확인하거나 삭제할 수 있습니다.
 
@@ -153,7 +150,7 @@ python scripts/run_pipeline.py \
   --summary-level standard
 ```
 
-`--summary-level`은 `simple`/`standard`(기본값)/`detailed` 중 하나이며, `simple`을 선택하면 프레임 추출/OCR/VLM 단계가 건너뛰어지고 STT 요약이 최종 요약으로 그대로 사용됩니다.
+`--summary-level`은 Whisper 모델만 선택합니다: `simple=base`, `standard=small`, `detailed=medium`. 모든 선택에서 전체 분석 단계를 수행합니다.
 
 일부 단계를 건너뛸 수 있습니다.
 
@@ -162,7 +159,7 @@ python scripts/run_pipeline.py --skip-ocr
 python scripts/run_pipeline.py --skip-vlm
 ```
 
-`--skip-vlm`을 사용하거나 `--summary-level simple`이어서 VLM 요약이 없으면, 최종 통합 요약 단계는 서버에 병합 요청을 보내지 않고 STT 요약을 그대로 최종 요약으로 저장합니다.
+명시적으로 `--skip-ocr` 또는 `--skip-vlm`을 사용해 VLM 요약이 없으면, 최종 통합 요약 단계는 서버에 병합 요청을 보내지 않고 STT 요약을 그대로 최종 요약으로 저장합니다.
 
 `--skip-stt` 옵션은 현재 비활성화되어 있습니다(`scripts/run_pipeline.py`에서 주석 처리). STT를 건너뛰면 이후 요약/프레임/OCR/VLM/최종요약 단계가 모두 연쇄적으로 건너뛰어져 옵션 설명과 실제 동작이 달라 혼란을 줄 수 있기 때문입니다. STT는 항상 실행됩니다.
 
@@ -257,3 +254,7 @@ python scripts/run_final_summary.py
 | 김승민 | 영상 전처리, 프레임/오디오 분할, 입출력 UI |
 | 정병두 | OCR 데이터, AI 모델 조사, VLM/LLM 모듈 설계 |
 | 조윤호 | 입출력 UI |
+
+## 실행 이력과 성능 분석
+
+실행별 소요 시간, 프레임 수, OCR/VLM 처리량과 원본 로그가 `runs/history/<실행 ID>/`에 자동 보관됩니다. Streamlit의 **실행 이력** 화면에서 조회·필터링하고 CSV/JSON/로그를 다운로드할 수 있습니다. [자세한 사용법](docs/run_history.md)을 참고하세요.

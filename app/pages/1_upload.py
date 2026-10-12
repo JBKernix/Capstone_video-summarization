@@ -1,10 +1,8 @@
 import streamlit as st
 from pathlib import Path
 import json
-import os
 import re
 import shutil
-import subprocess
 import sys
 import time
 
@@ -13,7 +11,11 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.auth import require_login
-from styles import apply_global_styles
+from app.analysis_options import render_analysis_options
+from modules.llm import GPU_SERVER_URL
+from app.pipeline_process import launch_pipeline, stop_pipeline
+from modules.common.run_history import finish_external
+from app.styles import apply_global_styles
 from modules.common.progress import PROGRESS_MARKER, STEP_LABELS, STEP_STT, TOTAL_STEPS
 from modules.preprocess import download_youtube_video, is_youtube_url
 from modules.llm.summary_levels import (
@@ -62,10 +64,11 @@ def is_path_output_log_line(line: str) -> bool:
 
 
 def read_raw_log_lines() -> list[str]:
-    if not RUN_LOG_PATH.exists():
+    log_path = Path(st.session_state.get("analysis_log_path", RUN_LOG_PATH))
+    if not log_path.exists():
         return []
 
-    raw_text = RUN_LOG_PATH.read_bytes()
+    raw_text = log_path.read_bytes()
     try:
         text = raw_text.decode("utf-8")
     except UnicodeDecodeError:
@@ -159,29 +162,15 @@ def close_analysis_log_handle() -> None:
 
 def start_analysis_process(video_path: str, summary_level: str) -> None:
     close_analysis_log_handle()
-    log_handle = RUN_LOG_PATH.open("wb")
-    creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0
-    env = os.environ.copy()
-    env["PYTHONIOENCODING"] = "utf-8"
-    env["PYTHONUTF8"] = "1"
-
-    process = subprocess.Popen(
-        [
-            sys.executable,
-            "-u",
-            str(PROJECT_ROOT / "scripts" / "run_pipeline.py"),
-            "--video",
-            video_path,
-            "--summary-level",
-            summary_level,
-        ],
-        cwd=str(PROJECT_ROOT),
-        stdout=log_handle,
-        stderr=subprocess.STDOUT,
-        creationflags=creationflags,
-        env=env,
+    process, log_handle, directory = launch_pipeline(
+        video_path, summary_level,
+        st.session_state.get("video_title") or st.session_state.get("uploaded_filename") or Path(video_path).name,
+        analysis_backend=st.session_state.get("analysis_backend", "local"),
+        local_server_url=GPU_SERVER_URL,
+        local_model=st.session_state.get("local_model", "legacy-qwen"),
     )
-
+    st.session_state["analysis_history_dir"] = str(directory)
+    st.session_state["analysis_log_path"] = str(directory / "process.log")
     st.session_state["analysis_process"] = process
     st.session_state["analysis_log_handle"] = log_handle
     st.session_state["analysis_done"] = False
@@ -191,15 +180,8 @@ def start_analysis_process(video_path: str, summary_level: str) -> None:
 def stop_analysis_process() -> None:
     process = st.session_state.get("analysis_process")
 
-    if process and process.poll() is None:
-        if sys.platform == "win32":
-            subprocess.run(
-                ["taskkill", "/PID", str(process.pid), "/T", "/F"],
-                capture_output=True,
-                text=True,
-            )
-        else:
-            process.terminate()
+    if process:
+        stop_pipeline(process, st.session_state["analysis_history_dir"])
 
     close_analysis_log_handle()
     st.session_state["analysis_done"] = False
@@ -249,6 +231,8 @@ st.markdown(
     '<div class="sub-title">분석할 영상을 업로드한 뒤 영상 분석을 시작하세요.</div>',
     unsafe_allow_html=True,
 )
+
+st.page_link("pages/4_run_history.py", label="실행 이력과 성능 지표 보기", icon="📊")
 
 # =========================
 # 영상 업로드 박스 / 요약 옵션 박스 (3:2 좌우 분할)
@@ -337,22 +321,7 @@ with upload_col, st.container(border=True):
         st.info("분석이 진행 중일 때는 새 영상을 업로드할 수 없습니다.")
 
 with option_col, st.container(border=True):
-    st.subheader("⚙️ 요약 옵션")
-
-    if "summary_level" not in st.session_state:
-        st.session_state["summary_level"] = DEFAULT_SUMMARY_LEVEL
-
-    selected_label = st.radio(
-        "요약 크기/속도를 선택하세요.",
-        options=[SUMMARY_LEVEL_LABELS[level] for level in SUMMARY_LEVELS],
-        index=SUMMARY_LEVELS.index(st.session_state["summary_level"]),
-        horizontal=True,
-        disabled=analysis_running,
-    )
-    st.session_state["summary_level"] = SUMMARY_LEVELS[
-        [SUMMARY_LEVEL_LABELS[level] for level in SUMMARY_LEVELS].index(selected_label)
-    ]
-    st.caption(SUMMARY_LEVEL_CAPTIONS[st.session_state["summary_level"]])
+    backend_ready = render_analysis_options(disabled=analysis_running)
 
 st.write("")
 
@@ -426,7 +395,7 @@ with center:
         "✨ 영상 분석 시작",
         use_container_width=True,
         type="primary",
-        disabled="video_path" not in st.session_state or analysis_running,
+        disabled="video_path" not in st.session_state or analysis_running or not backend_ready,
     )
 
 if start_button:
@@ -471,6 +440,9 @@ if process:
 
     else:
         close_analysis_log_handle()
+        history_dir = st.session_state.get("analysis_history_dir")
+        if history_dir:
+            finish_external(history_dir, "interrupted", f"프로세스 종료 (코드 {returncode}). 정상 종료 기록이 없습니다.")
         logs = read_pipeline_logs(read_raw_log_lines())
         visible_logs = logs[-40:]
         st.session_state["last_analysis_log"] = "\n".join(visible_logs)

@@ -39,7 +39,7 @@ def test_run_vlm_summary_step_saves_vlm_results(tmp_path):
             ocr_json_path=ocr_path,
             output_path=output_path,
             output_json_path=output_json_path,
-            max_new_tokens=256,
+            summary_level="standard",
         )
 
     assert result == (output_path, output_json_path)
@@ -48,7 +48,7 @@ def test_run_vlm_summary_step_saves_vlm_results(tmp_path):
     assert payload["results"] == frame_results
     summarize.assert_called_once_with(
         ocr_json_path=ocr_path,
-        max_new_tokens=256,
+        summary_level="standard",
     )
 
 
@@ -70,7 +70,7 @@ def test_summarize_ocr_file_combines_batches(tmp_path):
             [{"frame_id": 8}],
         ],
     ) as post_files:
-        result = client.summarize_ocr_file(ocr_path, max_new_tokens=128)
+        result = client.summarize_ocr_file(ocr_path, summary_level="simple")
 
     assert len(result) == 9
     assert [len(call.args[1]) for call in post_files.call_args_list] == [8, 1]
@@ -128,8 +128,8 @@ def test_client_extracts_vlm_results_from_wrapped_server_result(tmp_path):
         "modules.llm.vlm_summarizer_client.requests.get", side_effect=fake_get
     ):
         result = client._post_vlm_files(
-            ocr_path, [frame_path], max_new_tokens=256
+            ocr_path, [frame_path], summary_level="standard"
         )
 
     assert result == [{"frame_id": 0, "vlm_summary": "summary"}]
-    assert posted["data"] == {"max_new_tokens": "256"}
+    assert posted["data"] == {"summary_level": "standard", "local_model": "legacy-qwen"}

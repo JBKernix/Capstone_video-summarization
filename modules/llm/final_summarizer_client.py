@@ -17,6 +17,7 @@ from . import GPU_SERVER_URL
 @dataclass
 class GPUFinalSummaryClientConfig:
     server_url: str = GPU_SERVER_URL
+    local_model: str = "legacy-qwen"
     timeout: int = 600
     poll_interval: int = 10
     job_timeout: int = 3600
@@ -77,7 +78,7 @@ class GPUFinalSummaryClient(GPUJobClientMixin):
             response = requests.post(
                 url,
                 files=files,
-                data={"summary_level": summary_level},
+                data={"summary_level": summary_level, "local_model": self.config.local_model},
                 timeout=self.config.timeout,
             )
 

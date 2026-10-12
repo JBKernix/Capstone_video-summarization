@@ -65,24 +65,11 @@ beam_size:
 
 `model_size`는 `--stt-model-size`를 지정하지 않으면 이 설정 파일 값보다 `--summary-level`(간단요약=`base`, 기본요약=`small`, 상세요약=`medium`)이 먼저 적용됩니다. 이 설정 파일의 `model_size`를 그대로 쓰려면 `--stt-model-size`를 함께 지정하세요.
 
-## GPU 서버 설정
+## 분석 방식 설정
 
-LLM, VLM, 최종 요약 단계는 외부 GPU 서버를 호출합니다. 기본 서버 주소는 `modules/llm/__init__.py`에 있습니다.
+Streamlit에서 **로컬 모델 서버 / Claude API**를 선택합니다. 로컬 서버 모드는 Qwen LLM·VLM 서버가 필요하며, Claude API 모드는 같은 서버가 자신의 `ANTHROPIC_API_KEY` 환경변수로 Anthropic에 요청합니다. 앱에는 키 입력란이 없으며, 키는 앱에 전달되지 않습니다. Whisper와 OCR은 두 모드 모두 앱 실행 PC에서 처리합니다.
 
-```python
-GPU_SERVER_URL = "http://100.124.136.28:8000"
-```
-
-세 클라이언트(`stt_summarizer_client.py`, `vlm_summarizer_client.py`, `final_summarizer_client.py`)는 모두 `modules/llm/gpu_job_client.py`의 `GPUJobClientMixin`을 상속해 HTTP 에러 처리와 비동기 job 폴링(`status_url`을 주기적으로 조회) 로직을 공유합니다.
-
-서버는 다음 API를 제공해야 합니다.
-
-| 엔드포인트 | 사용 위치 |
-| --- | --- |
-| `GET /health` | 클라이언트 상태 확인 |
-| `POST /llm/summarize` | STT 요약 및 주요 구간 추출 |
-| `POST /vlm/summarize` | 프레임 이미지 요약 |
-| `POST /llm/final-summary` | STT/VLM 결과 통합 요약 |
+서버 수정본 적용과 키 설정 방법은 [분석 방식 가이드](analysis_backends.md)를 참고하세요.
 
 ## 로그인 보호 (선택)
 
@@ -146,7 +133,7 @@ python scripts/run_final_summary.py
 
 현재 `run_pipeline.py`는 최종 통합 요약까지 실행합니다. `run_final_summary.py`는 기존 STT/VLM 요약 파일을 바탕으로 최종 요약만 다시 생성할 때 사용합니다.
 
-`run_llm_summary.py`, `run_vlm_summary.py`, `run_final_summary.py`, `run_pipeline.py` 모두 `--summary-level simple|standard|detailed`(기본값 `standard`) 옵션으로 요약 크기/속도 프리셋을 지정할 수 있습니다. `run_pipeline.py`에서 `simple`을 선택하면 프레임 추출/OCR/VLM 단계 자체를 건너뛰고 STT 요약을 최종 요약으로 사용합니다.
+`run_pipeline.py --summary-level simple|standard|detailed`는 Whisper base/small/medium만 선택합니다. 모든 선택에서 OCR·VLM을 실행합니다. 단독 요약 명령의 같은 옵션은 호환용이며 요약 정책은 동일합니다. 분석 방식은 모든 명령에서 `--analysis-backend local|claude`로 선택합니다.
 
 ## 문제 해결
 
@@ -157,7 +144,7 @@ python scripts/run_final_summary.py
 | EasyOCR 초기화 실패 | `easyocr`, `torch` 설치 상태와 CUDA 호환성 |
 | LLM/VLM 단계 연결 실패 | `GPU_SERVER_URL` 서버 접근 가능 여부 |
 | 프레임 이미지 파일을 찾지 못함 | `runs/metadata/frame_metadata.json`의 `image_path`와 실제 `runs/frames/` 확인 |
-| 앱에서 진행 상황이 보이지 않음 | `runs/app_pipeline.log` 생성 여부와 로그 안 `##PROGRESS##` 마커, 파이프라인 프로세스 상태 |
+| 앱에서 진행 상황이 보이지 않음 | `runs/history/<실행 ID>/process.log` 생성 여부와 로그 안 `##PROGRESS##` 마커, 파이프라인 프로세스 상태 |
 | 유튜브 영상 다운로드 실패 | 링크 형식(`is_youtube_url`), `yt-dlp` 설치 여부, 네트워크/영상 비공개 여부 |
 | 로그인 화면이 계속 나오거나 전혀 안 나옴 | `.streamlit/secrets.toml`의 `APP_PASSWORD` 값 확인 |
 | `start_tunnel.bat` 실행 후 URL을 못 찾음 | `cloudflared` PATH 설치 여부, `cloudflared.log` 내용 확인 |

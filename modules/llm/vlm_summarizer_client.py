@@ -7,6 +7,7 @@ from typing import Optional
 
 import requests
 
+from modules.common.run_history import record_counts
 from modules.common import (
     DEFAULT_OCR_RESULT_RELATIVE_PATH,
     DEFAULT_RUN_DIR_RELATIVE_PATH,
@@ -31,6 +32,7 @@ ALLOWED_FRAME_SUFFIXES = {".jpg", ".jpeg"}
 @dataclass
 class GPUVLMClientConfig:
     server_url: str = GPU_SERVER_URL
+    local_model: str = "legacy-qwen"
     timeout: int = 600
     poll_interval: int = 10
     job_timeout: int = 3600
@@ -59,6 +61,7 @@ class GPUVLMClient(GPUJobClientMixin):
         frame_paths = self._resolve_frame_paths(entries, path)
         results: list[dict] = []
         total_batches = (len(frame_paths) + MAX_FRAME_COUNT - 1) // MAX_FRAME_COUNT
+        record_counts(vlm_frames=0, vlm_batches=0)
         for batch_index, start in enumerate(
             range(0, len(frame_paths), MAX_FRAME_COUNT),
             start=1,
@@ -74,6 +77,7 @@ class GPUVLMClient(GPUJobClientMixin):
                 (batch_index - 1) / total_batches * 100,
             )
             results.extend(self._post_vlm_files(path, batch, summary_level))
+            record_counts(vlm_frames=len(results), vlm_batches=batch_index)
             report_progress(
                 self.progress_step,
                 f"VLM 배치 처리 완료 ({batch_index}/{total_batches})",
@@ -107,7 +111,7 @@ class GPUVLMClient(GPUJobClientMixin):
             response = requests.post(
                 url,
                 files=files,
-                data={"summary_level": summary_level},
+                data={"summary_level": summary_level, "local_model": self.config.local_model},
                 timeout=self.config.timeout,
             )
 

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import streamlit as st
+from pathlib import Path
+from streamlit.errors import StreamlitSecretNotFoundError
 
 
 def require_login() -> None:
@@ -8,7 +10,14 @@ def require_login() -> None:
 
     st.secrets에 APP_PASSWORD가 없으면(로컬 전용 실행 등) 그냥 통과시킵니다.
     """
-    password = st.secrets.get("APP_PASSWORD")
+    try:
+        password = st.secrets.get("APP_PASSWORD")
+    except StreamlitSecretNotFoundError:
+        # A clean local checkout has no secrets file. Preserve failure for an
+        # existing but malformed configuration instead of bypassing its login.
+        if any(Path(path).expanduser().exists() for path in st.get_option("secrets.files")):
+            raise
+        password = None
     if not password:
         return
 

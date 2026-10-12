@@ -37,6 +37,8 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+st.page_link("pages/4_run_history.py", label="실행 시간과 처리량 확인", icon="📊")
+
 video_path = st.session_state.get("video_path")
 selected_video_path = resolve_video_path(video_path)
 

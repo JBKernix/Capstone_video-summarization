@@ -7,6 +7,7 @@ import time
 import requests
 
 from modules.common.progress import report_progress
+from modules.common.run_history import record_model_loads
 
 
 class GPUJobClientMixin:
@@ -39,6 +40,7 @@ class GPUJobClientMixin:
             response = requests.get(url, timeout=self.config.timeout)
             self._raise_for_status(response)
             data = response.json()
+            record_model_loads(data, self.progress_step)
 
             message = data.get("message")
             if message and message != last_message:

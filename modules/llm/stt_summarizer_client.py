@@ -27,6 +27,7 @@ DEFAULT_STT_JSON_PATH = run_path(
 @dataclass
 class GPULLMClientConfig:
     server_url: str = GPU_SERVER_URL
+    local_model: str = "legacy-qwen"
     timeout: int = 600
     poll_interval: int = 10
     job_timeout: int = 3600
@@ -85,7 +86,7 @@ class GPULLMClient(GPUJobClientMixin):
         url = f"{self.config.server_url}/llm/summarize"
         response = requests.post(
             url,
-            json=payload,
+            json={**payload, "local_model": self.config.local_model},
             timeout=self.config.timeout,
         )
 
