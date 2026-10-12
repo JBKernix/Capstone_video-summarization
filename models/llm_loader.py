@@ -11,6 +11,7 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from configs.inference_config import LLM_INFERENCE_CONFIG
+from app.model_load_metrics import measure_model_load
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -53,6 +54,7 @@ class LLMLoader:
 
         raise ValueError(f"지원하지 않는 torch_dtype입니다: {self.config.torch_dtype}")
 
+    @measure_model_load("llm", "tokenizer")
     def load(self):
         """
         LLM 모델과 tokenizer를 로드합니다.
@@ -94,6 +96,8 @@ class LLMLoader:
             self.model = self.model.to("cpu")
 
         self.model.eval()
+        if self.config.device == "cuda":
+            torch.cuda.synchronize()
 
         print("[LLM 로드 완료]")
 

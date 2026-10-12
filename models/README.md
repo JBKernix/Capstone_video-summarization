@@ -11,7 +11,11 @@ Hugging Face 모델의 로드, 입력 전처리, 생성 호출과 GPU 메모리 
 | `llm_loader.py` | Qwen3-8B | 토크나이저와 Causal LM 로드, 텍스트 생성 |
 | `claude_llm_loader.py` | Claude (Anthropic API) | Anthropic API 호출을 통한 텍스트 생성, `llm_loader.py`와 동일한 인터페이스 |
 | `vlm_loader.py` | Qwen2.5-VL-7B-Instruct | 프로세서와 VLM 로드, 이미지 기반 텍스트 생성 |
+| `multimodal_loader.py` | Qwen3.5-9B, Qwen3-VL-8B, Gemma4-12B, InternVL3.5-8B, GLM-4.6V-Flash | 4비트 양자화된 단일 체크포인트를 텍스트/이미지 단계에 공유하는 공용 로더 |
+| `minicpm_loader.py` | MiniCPM-V 4.5 | `multimodal_loader.py`를 상속, 서버와 다른 Transformers 버전이 필요해 서브프로세스로 격리 실행 |
 | `hf_cache/` | 로컬 모델 파일 | Git에서 제외되는 모델 설정 및 가중치 저장소 |
+
+모델 선택 ID, 저장소 경로, 정밀도(precision)는 로더가 아니라 `configs/local_models.py`의 `PROFILES`에서 관리합니다. 설치·다운로드·검증 절차는 [로컬 모델 가이드](../docs/local_models.md)를 참고하세요.
 
 ## 설정 객체
 
@@ -81,6 +85,29 @@ Qwen3의 긴 내부 추론 출력을 줄이기 위해 채팅 템플릿에서 `en
 
 `LLMLoader.generate()`와 `VLMLoader.describe_image()`는 모델 호출을 `torch.OutOfMemoryError`에 대해 감싸고 있습니다. OOM이 발생하면 `torch.cuda.empty_cache()`로 캐시를 비운 뒤, 입력 토큰 수를 포함한 안내 메시지와 함께 `ValueError`로 다시 발생시킵니다. 이렇게 변환된 `ValueError`는 `app/inference_jobs.py`가 잡아 작업 상태의 `message`에 그대로 노출합니다.
 
+## 신규 로컬 멀티모달 모델 (MultimodalLoader)
+
+`multimodal_loader.py`는 `legacy-qwen`(Qwen3-8B + Qwen2.5-VL) 조합 대신 선택할 수 있는 신규 6개 프로필 중 MiniCPM을 제외한 5개(Qwen3.5, Qwen3-VL, Gemma4, InternVL3.5, GLM-4.6V)가 공통으로 사용하는 로더입니다. `LLMLoader`/`VLMLoader`처럼 모델을 두 개 따로 두지 않고, 텍스트 전용 요약과 이미지 설명 모두에 같은 4비트(NF4) 체크포인트 하나를 `load_text()`/`load_vision()`으로 재사용합니다.
+
+- 모델 클래스는 `configs/local_models.py`의 `ModelProfile.architecture`(예: `Qwen3VLForConditionalGeneration`)로 `transformers`에서 동적으로 조회합니다. 설치된 Transformers 버전에 해당 클래스가 없으면 즉시 `RuntimeError`를 발생시킵니다.
+- `BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4", ...)`로 로딩 시점에 4비트 양자화하며, `trust_remote_code=False`로 고정되어 있습니다(공식 저장소의 커스텀 코드를 실행하지 않음).
+- 입력 토큰이 16384개를 넘으면 `LLMLoader`의 `max_input_tokens`와 별개로 자체 `ValueError`를 발생시킵니다. `torch.OutOfMemoryError`는 별도로 잡지 않으므로, `LLMLoader`/`VLMLoader`와 달리 CUDA OOM이 사용자 메시지로 변환되지 않고 그대로 전파됩니다.
+- `gemma4-12b`는 `processor.parse_response()`로 응답을 파싱하고, 그 외 모델은 `<think>...</think>` 블록(비활성화한 thinking 모드가 완료된 채 출력된 경우)을 제거한 뒤 빈 응답이면 `ValueError`를 발생시킵니다.
+
+## MiniCPM 서브프로세스 격리 (MiniCPMLoader)
+
+MiniCPM-V 4.5는 공식 커스텀 코드가 서버의 Transformers 5.x가 아닌 4.51.3을 요구해, `MultimodalLoader`를 상속하되 실제 모델 로딩과 추론은 별도 가상환경(`.venv-minicpm/`, `scripts/setup_minicpm.py`로 생성)의 `scripts/minicpm_worker.py` 서브프로세스에서 수행합니다.
+
+```text
+MiniCPMLoader._load()
+  -> 이미 실행 중인 worker가 있으면 재사용
+  -> .venv-minicpm의 Python으로 minicpm_worker.py를 subprocess로 실행
+     (HF_HUB_OFFLINE=1, TRANSFORMERS_OFFLINE=1, ANTHROPIC_API_KEY/HF_TOKEN 환경변수는 전달하지 않음)
+  -> 준비 완료 응답을 stdin/stdout JSON 한 줄 프로토콜로 대기
+```
+
+`_generate()`는 프롬프트(및 있으면 PNG로 인코딩한 이미지)를 JSON 한 줄로 worker에 보내고 결과 텍스트를 받습니다. worker 응답이 없거나 타임아웃되면 `ValueError`로 변환하고 프로세스를 종료·재시작할 수 있도록 `unload()`합니다. worker 표준 에러는 `logs/minicpm-worker.log`에 남습니다. `MINICPM_PYTHON` 환경변수로 가상환경 Python 경로를 바꿀 수 있습니다.
+
 ## GPU 메모리 해제
 
 두 로더의 `unload()`는 다음 작업을 수행합니다.
@@ -100,7 +127,7 @@ torch.cuda.ipc_collect()
 `models/hf_cache/`는 `.gitignore`에 의해 GitHub에 업로드되지 않습니다. 저장소를 새로 clone한 뒤 다음 명령으로 모델을 준비합니다.
 
 ```powershell
-python scripts\download_models.py
+python scripts\download_models.py --all
 ```
 
 `local_files_only=True`이므로 모델이 다운로드되지 않은 상태에서는 서버가 자동으로 네트워크에서 모델을 가져오지 않습니다.
@@ -115,6 +142,8 @@ python scripts\download_models.py
 6. VLM이면 processor 입력 형식과 이미지 토큰 규칙 확인
 
 모델별 프롬프트와 출력 파싱은 로더가 아니라 `services/`에서 변경합니다.
+
+위 절차는 `llm_loader.py`/`vlm_loader.py`처럼 고정된 단일 모델 조합을 교체할 때 기준입니다. `multimodal_loader.py`/`minicpm_loader.py`가 다루는 신규 모델 카탈로그에 모델을 추가/교체할 때는 대신 `configs/local_models.py`의 `PROFILES`에 `ModelProfile`을 등록하고 [로컬 모델 가이드](../docs/local_models.md)의 절차를 따릅니다.
 
 ## 분석 LLM 백엔드 전환 (로컬 <-> Claude API)
 

@@ -22,8 +22,8 @@ def _build_loader():
 
 
 class LLMService:
-    def __init__(self, generation_lock=None):
-        self.loader = _build_loader()
+    def __init__(self, generation_lock=None, loader=None):
+        self.loader = loader if loader is not None else _build_loader()
         # 전달받은 공용 lock으로 LLM/VLM의 GPU 사용을 함께 직렬화합니다.
         self._generation_lock = generation_lock or Lock()
 

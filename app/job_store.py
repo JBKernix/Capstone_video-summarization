@@ -24,6 +24,7 @@ class JobStore:
                 "current_step": 0,
                 "total_steps": 0,
                 "result": None,
+                "model_loads": [],
                 "error": None,
                 "created_at": now,
                 "updated_at": now,
@@ -40,6 +41,11 @@ class JobStore:
             started_at = self.jobs[job_id]["started_monotonic"]
         return round(time.perf_counter() - started_at, 1)
 
+    def record_model_load(self, job_id: str, event: dict) -> None:
+        with self.lock:
+            self.jobs[job_id]["model_loads"].append(dict(event))
+            self.jobs[job_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
+
     def active_count(self) -> int:
         with self.lock:
             return sum(
@@ -53,6 +59,7 @@ class JobStore:
             if job is None:
                 return None
             response = job.copy()
+            response["model_loads"] = [dict(event) for event in job["model_loads"]]
             response["elapsed_seconds"] = round(
                 time.perf_counter() - job["started_monotonic"],
                 1,

@@ -17,3 +17,7 @@ logs/*
 # env
 .env
 __pycache__/
+
+# isolated local-model environments
+.venv*/
+.pytest_cache/

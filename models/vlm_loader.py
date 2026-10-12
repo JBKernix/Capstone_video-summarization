@@ -12,6 +12,7 @@ from PIL import Image
 from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration
 
 from configs.inference_config import VLM_INFERENCE_CONFIG
+from app.model_load_metrics import measure_model_load
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -43,6 +44,7 @@ class VLMLoader:
 
         raise ValueError(f"지원하지 않는 torch_dtype입니다: {self.config.torch_dtype}")
 
+    @measure_model_load("vlm", "processor")
     def load(self):
         if self.model is not None and self.processor is not None:
             return self.model, self.processor
@@ -77,6 +79,8 @@ class VLMLoader:
             self.model = self.model.to("cpu")
 
         self.model.eval()
+        if self.config.device == "cuda":
+            torch.cuda.synchronize()
 
         print("[VLM 로드 완료]")
 

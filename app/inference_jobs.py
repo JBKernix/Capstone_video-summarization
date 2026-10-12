@@ -2,18 +2,20 @@ import logging
 import time
 from contextlib import contextmanager
 from threading import Event, Thread
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 from app.api_models import FinalSummaryResponse, SummaryRequest, SummaryResponse
 from app.job_store import JobStore
 from configs.inference_config import get_summary_level_preset
-from services.summary_service import SummaryService
+from app.model_load_metrics import collect_job_loads
+if TYPE_CHECKING:
+    from services.summary_service import SummaryService
 
 
 class InferenceJobRunner:
     def __init__(
         self,
-        summary_service: SummaryService,
+        summary_service: "SummaryService",
         job_store: JobStore,
         logger: logging.Logger,
         keep_llm_loaded: bool = False,
@@ -61,6 +63,7 @@ class InferenceJobRunner:
                 self.job_store.elapsed(job_id),
             )
 
+    @collect_job_loads
     def run_summary(self, job_id: str, request_data: dict[str, Any]) -> None:
         try:
             request = SummaryRequest.model_validate(request_data)
@@ -159,6 +162,7 @@ class InferenceJobRunner:
                 self.summary_service.unload_llm()
                 self.logger.info("job_id=%s | LLM GPU 메모리 해제 완료", job_id)
 
+    @collect_job_loads
     def run_vlm(
         self,
         job_id: str,
@@ -228,6 +232,7 @@ class InferenceJobRunner:
                 self.summary_service.unload_vlm()
                 self.logger.info("job_id=%s | VLM GPU 메모리 해제 완료", job_id)
 
+    @collect_job_loads
     def run_final(
         self,
         job_id: str,

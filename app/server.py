@@ -21,8 +21,12 @@ from app.api_models import (
     SummaryRequest,
 )
 from app.inference_jobs import InferenceJobRunner
+from app.local_model_api import router as model_router
+from app.local_model_manager import LocalModelManager
+from configs.local_models import require_downloaded
 from app.job_store import JobStore
 from app.server_logging import configure_logging
+from app.claude_api import router as claude_router, claude_api_configured
 from scripts.vlm_upload import (
     MAX_FRAME_BYTES,
     MAX_OCR_JSON_BYTES,
@@ -63,6 +67,8 @@ app = FastAPI(
     description="LLM/VLM 처리를 위한 FastAPI 서버",
     version="0.1.0",
 )
+app.include_router(claude_router)
+app.include_router(model_router)
 
 summary_service = SummaryService()
 job_store = JobStore()
@@ -73,6 +79,15 @@ job_runner = InferenceJobRunner(
     keep_llm_loaded=env_flag("KEEP_LLM_LOADED"),
     keep_vlm_loaded=env_flag("KEEP_VLM_LOADED"),
 )
+model_manager = LocalModelManager(job_runner)
+
+def validate_local_model(model_id):
+    if model_id is not None:
+        try:
+            require_downloaded(model_id)
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from error
+
 job_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="summary-job")
 
 
@@ -83,7 +98,20 @@ def root():
 
 @app.get("/health")
 def health_check():
-    return {"status": "ok", "active_jobs": job_store.active_count()}
+    llm = summary_service.llm_service.loader
+    vlm = summary_service.vlm_service.loader
+    # Expose actual instantiated backends, never credentials or full model paths.
+    llm_type = type(llm).__name__
+    vlm_type = type(vlm).__name__
+    return {
+        "status": "ok", "active_jobs": job_store.active_count(),
+        "local_model_selection": True,
+        "claude_api_proxy": True, "claude_api_configured": claude_api_configured(),
+        "llm_backend": "local" if llm_type == "LLMLoader" else "claude" if llm_type == "ClaudeLLMLoader" else "unknown",
+        "vlm_backend": "local" if vlm_type == "VLMLoader" else "unknown",
+        "llm_model": getattr(llm.config, "model", None) or Path(llm.config.model_path).name,
+        "vlm_model": Path(vlm.config.model_path).name,
+    }
 
 
 @app.post(
@@ -92,6 +120,7 @@ def health_check():
     status_code=status.HTTP_202_ACCEPTED,
 )
 def summarize(request: SummaryRequest):
+    validate_local_model(request.local_model)
     stt_text = request.full_text.strip() or " ".join(
         segment.text.strip()
         for segment in request.segments
@@ -115,7 +144,7 @@ def summarize(request: SummaryRequest):
         len(request.segments),
         request.summary_level,
     )
-    job_executor.submit(job_runner.run_summary, job_id, request.model_dump())
+    job_executor.submit(model_manager.run, request.local_model, "run_summary", job_id, request.model_dump())
     return JobSubmissionResponse(
         job_id=job_id,
         status="queued",
@@ -133,7 +162,9 @@ async def summarize_frames(
     ocr_result: UploadFile = File(...),
     frames: list[UploadFile] = File(...),
     summary_level: str = Form(default=DEFAULT_SUMMARY_LEVEL),
+    local_model: str | None = Form(default=None),
 ):
+    validate_local_model(local_model)
     if not frames:
         raise HTTPException(status_code=422, detail="프레임 이미지가 필요합니다.")
     if len(frames) > VLM_INFERENCE_CONFIG.max_frame_count:
@@ -197,7 +228,7 @@ async def summarize_frames(
         max_new_tokens,
     )
     job_executor.submit(
-        job_runner.run_vlm,
+        model_manager.run, local_model, "run_vlm",
         job_id,
         selected_entries,
         frame_data,
@@ -222,7 +253,9 @@ async def summarize_final(
     stt_summary: UploadFile | None = File(default=None),
     vlm_summary: UploadFile | None = File(default=None),
     summary_level: str = Form(default=DEFAULT_SUMMARY_LEVEL),
+    local_model: str | None = Form(default=None),
 ):
+    validate_local_model(local_model)
     try:
         preset = get_summary_level_preset(summary_level)
     except ValueError as error:
@@ -257,7 +290,7 @@ async def summarize_final(
         max_new_tokens,
     )
     job_executor.submit(
-        job_runner.run_final,
+        model_manager.run, local_model, "run_final",
         job_id,
         stt_summary_data,
         stt_summary_result_data,

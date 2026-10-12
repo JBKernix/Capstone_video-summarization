@@ -8,11 +8,11 @@ from services.final_service import FinalService
 
 
 class SummaryService:
-    def __init__(self):
+    def __init__(self, llm_loader=None, vlm_loader=None):
         # 두 모델이 같은 GPU를 동시에 점유하지 않도록 공용 lock을 사용합니다.
         generation_lock = Lock()
-        self.llm_service = LLMService(generation_lock=generation_lock)
-        self.vlm_service = VLMService(generation_lock=generation_lock)
+        self.llm_service = LLMService(generation_lock=generation_lock, loader=llm_loader)
+        self.vlm_service = VLMService(generation_lock=generation_lock, loader=vlm_loader)
         self.final_service = FinalService(llm_service=self.llm_service)
 
     def summarize_stt(self, stt_text: str, **kwargs) -> str:

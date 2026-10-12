@@ -26,6 +26,8 @@ SummaryService
 
 LLM과 VLM에 같은 `Lock`을 전달하여 두 모델이 동시에 GPU 추론이나 해제를 수행하지 않게 합니다.
 
+생성자는 `llm_loader`/`vlm_loader`를 선택적으로 받습니다. 생략하면 `LLMService`/`VLMService`가 각자 기본 로더(`LLM_BACKEND`에 따른 로컬 Qwen 또는 Claude API, 로컬 Qwen VLM)를 만들지만, `app/local_model_manager.py`는 신규 로컬 모델로 전환할 때 이 인자로 `MultimodalLoader`/`MiniCPMLoader` 인스턴스 하나를 LLM과 VLM 양쪽에 동일하게 주입해 하나의 체크포인트를 공유시킵니다.
+
 주요 메서드:
 
 | 메서드 | 설명 |
@@ -170,7 +172,7 @@ progress_callback("vlm_frames", current_index, total_frames)
 
 ## 동시성과 모델 해제
 
-모든 모델 생성과 `unload()`는 공유 lock 내부에서 실행됩니다. 서비스 메서드에서 별도 스레드를 만들지 않으며, 비동기 작업 관리는 `scripts/inference_jobs.py`가 담당합니다.
+모든 모델 생성과 `unload()`는 공유 lock 내부에서 실행됩니다. 서비스 메서드에서 별도 스레드를 만들지 않으며, 비동기 작업 관리는 `app/inference_jobs.py`가 담당합니다.
 
 ```text
 작업 실행기

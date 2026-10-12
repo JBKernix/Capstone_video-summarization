@@ -13,6 +13,7 @@ class STTSegment(BaseModel):
 
 
 class SummaryRequest(BaseModel):
+    local_model: str | None = None
     language: str = "unknown"
     segments: list[STTSegment] = Field(default_factory=list)
     full_text: str = ""
@@ -56,3 +57,4 @@ class JobStatusResponse(BaseModel):
     created_at: str
     updated_at: str
     elapsed_seconds: float = 0.0
+    model_loads: list[dict[str, Any]] | None = None
