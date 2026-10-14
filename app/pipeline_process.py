@@ -7,6 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from app.run_registry import PipelineBusyError, active_job, job_dir, start_job
 from modules.common.run_history import DEFAULT_HISTORY_DIR, prepare_run, finish_external
 from modules.llm import GPU_SERVER_URL
 from modules.llm.backends import DEFAULT_CLAUDE_MODEL
@@ -17,18 +18,29 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 def launch_pipeline(video_path, summary_level, input_name, *, analysis_backend="local",
                     local_server_url=GPU_SERVER_URL, claude_model=DEFAULT_CLAUDE_MODEL,
-                    local_model=DEFAULT_LOCAL_MODEL):
+                    local_model=DEFAULT_LOCAL_MODEL, job_info=None):
+    """파이프라인을 실행별 산출물 폴더(runs/jobs/<run_id>)로 시작합니다.
+
+    GPU 서버 한 대에서 전체 파이프라인은 동시에 하나만 실행합니다. 다른 분석이 실행 중이면
+    ``PipelineBusyError``를 발생시킵니다.
+    """
+    if active_job() is not None:
+        raise PipelineBusyError("다른 사용자의 영상 분석이 진행 중입니다. 완료된 뒤 다시 시작하세요.")
     directory = prepare_run(input_name=input_name, settings={"summary_level": summary_level,
                             "analysis_backend": analysis_backend, "local_model": local_model if analysis_backend == "local" else None, "preset_semantics": "whisper_only_v1"})
+    run_dir = job_dir(directory.name)
     log = (directory / "process.log").open("wb")
     env = os.environ.copy()
     env.update(PYTHONIOENCODING="utf-8", PYTHONUTF8="1")
     # Only the inference server reads the key; pipeline children never need it.
     env.pop("ANTHROPIC_API_KEY", None)
-    try:
-        process = subprocess.Popen(
+
+    def spawn():
+        run_dir.mkdir(parents=True, exist_ok=True)
+        return subprocess.Popen(
             [sys.executable, "-u", str(PROJECT_ROOT / "scripts" / "run_pipeline.py"),
-             "--video", video_path, "--summary-level", summary_level,
+             "--video", str(video_path), "--summary-level", summary_level,
+             "--run-dir", str(run_dir),
              "--history-dir", str(DEFAULT_HISTORY_DIR), "--run-id", directory.name,
              "--input-name", input_name, "--analysis-backend", analysis_backend,
              "--local-server-url", local_server_url, "--claude-model", claude_model,
@@ -37,6 +49,15 @@ def launch_pipeline(video_path, summary_level, input_name, *, analysis_backend="
             creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0,
             start_new_session=sys.platform != "win32",
         )
+
+    try:
+        _job, process = start_job(spawn, run_id=directory.name, history_dir=directory,
+                                  info={"video_path": str(video_path), "input_name": input_name,
+                                        **(job_info or {})})
+    except PipelineBusyError as error:
+        log.close()
+        finish_external(directory, "cancelled", str(error))
+        raise
     except Exception as error:
         log.close()
         finish_external(directory, "failed", f"프로세스 시작 실패: {error}")

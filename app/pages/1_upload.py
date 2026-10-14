@@ -14,10 +14,22 @@ from app.auth import require_login
 from app.analysis_options import render_analysis_options
 from modules.llm import GPU_SERVER_URL
 from app.pipeline_process import launch_pipeline, stop_pipeline
-from modules.common.run_history import finish_external
+from app.run_registry import (
+    EXTERNAL_UPLOAD_LIMIT_MB,
+    PipelineBusyError,
+    active_job,
+    check_free_space,
+    cleanup_expired,
+    handle_for,
+    job_is_running,
+    load_job,
+    new_upload_dir,
+    remove_upload_dir,
+)
+from modules.common.run_history import finish_external, read_record
 from app.styles import apply_global_styles
 from modules.common.progress import PROGRESS_MARKER, STEP_LABELS, STEP_STT, TOTAL_STEPS
-from modules.preprocess import download_youtube_video, is_youtube_url
+from modules.preprocess import download_youtube_video, get_video_info, is_youtube_url
 from modules.llm.summary_levels import (
     DEFAULT_SUMMARY_LEVEL,
     SUMMARY_LEVEL_CAPTIONS,
@@ -145,7 +157,19 @@ def describe_step_status(
     return {"state": "active-indeterminate", "percent": None, "message": message}
 
 
+def is_cloudflare_request() -> bool:
+    """Cloudflare Tunnel을 거친 요청인지 확인합니다(Cloudflare가 붙이는 헤더 기준)."""
+    try:
+        return bool(st.context.headers.get("Cf-Connecting-Ip"))
+    except Exception:
+        return False
+
+
 def set_current_video(save_path: Path, display_name: str, source_key: str, title: str = "") -> None:
+    previous = st.session_state.get("video_path")
+    if previous and Path(previous).parent != Path(save_path).parent:
+        # 이 세션이 이전에 올린 영상만 정리합니다. 실행 중인 작업의 영상은 보존됩니다.
+        remove_upload_dir(Path(previous).parent)
     st.session_state["video_path"] = str(save_path)
     st.session_state["uploaded_filename"] = display_name
     st.session_state["uploaded_file_key"] = source_key
@@ -160,6 +184,54 @@ def close_analysis_log_handle() -> None:
         log_handle.close()
 
 
+def save_uploaded_video(uploaded_file) -> Path:
+    """업로드 영상을 서버의 업로드별 고유 폴더에 저장하고 영상 파일인지 검증합니다."""
+    check_free_space(uploaded_file.size)
+    upload_suffix = Path(uploaded_file.name).suffix.lower() or ".mp4"
+    upload_dir = new_upload_dir()
+    save_path = upload_dir / f"input{upload_suffix}"
+    try:
+        uploaded_file.seek(0)
+        with open(save_path, "wb") as f:
+            f.write(uploaded_file.getbuffer())
+
+        if save_path.stat().st_size != uploaded_file.size:
+            raise ValueError(
+                f"파일 저장 크기 불일치: 업로드={uploaded_file.size}, 저장={save_path.stat().st_size}"
+            )
+        try:
+            get_video_info(save_path)
+        except (OSError, RuntimeError, ValueError) as error:
+            raise ValueError("영상 정보를 읽을 수 없습니다. 손상되었거나 지원하지 않는 영상 파일입니다.") from error
+    except BaseException:
+        remove_upload_dir(upload_dir)
+        raise
+    return save_path
+
+
+def attach_job(job: dict) -> None:
+    """새로고침·재접속한 세션을 서버에 남아 있는 분석 작업에 다시 연결합니다."""
+    st.session_state["attached_run_id"] = job["run_id"]
+    st.session_state["analysis_run_id"] = job["run_id"]
+    st.session_state["analysis_run_dir"] = job["run_dir"]
+    st.session_state["analysis_history_dir"] = job["history_dir"]
+    st.session_state["analysis_log_path"] = str(Path(job["history_dir"]) / "process.log")
+    st.session_state["video_path"] = job.get("video_path")
+    st.session_state["uploaded_filename"] = job.get("uploaded_filename") or job.get("input_name")
+    st.session_state["uploaded_file_key"] = job.get("uploaded_file_key") or ""
+    st.session_state["video_title"] = job.get("video_title") or ""
+    try:
+        status = read_record(job["history_dir"]).get("status")
+    except (OSError, ValueError):
+        status = None
+    st.session_state["analysis_cancelled"] = status == "cancelled"
+    if job_is_running(job):
+        st.session_state["analysis_process"] = handle_for(job)
+        st.session_state["analysis_done"] = False
+    else:
+        st.session_state["analysis_done"] = status == "success"
+
+
 def start_analysis_process(video_path: str, summary_level: str) -> None:
     close_analysis_log_handle()
     process, log_handle, directory = launch_pipeline(
@@ -168,7 +240,16 @@ def start_analysis_process(video_path: str, summary_level: str) -> None:
         analysis_backend=st.session_state.get("analysis_backend", "local"),
         local_server_url=GPU_SERVER_URL,
         local_model=st.session_state.get("local_model", "legacy-qwen"),
+        job_info={
+            "uploaded_filename": st.session_state.get("uploaded_filename"),
+            "uploaded_file_key": st.session_state.get("uploaded_file_key"),
+            "video_title": st.session_state.get("video_title"),
+        },
     )
+    st.session_state["analysis_run_id"] = directory.name
+    st.session_state["attached_run_id"] = directory.name
+    st.session_state["analysis_run_dir"] = load_job(directory.name)["run_dir"]
+    st.query_params["run"] = directory.name
     st.session_state["analysis_history_dir"] = str(directory)
     st.session_state["analysis_log_path"] = str(directory / "process.log")
     st.session_state["analysis_process"] = process
@@ -203,6 +284,23 @@ st.set_page_config(
 require_login()
 
 apply_global_styles()
+
+if not st.session_state.get("upload_cleanup_done"):
+    st.session_state["upload_cleanup_done"] = True
+    cleanup_expired()
+
+# 새로고침하거나 브라우저 연결이 끊겼다가 다시 접속하면 URL의 run 값으로 작업에 다시 연결합니다.
+_run_param = st.query_params.get("run")
+if (
+    _run_param
+    and st.session_state.get("analysis_process") is None
+    and st.session_state.get("attached_run_id") != _run_param
+):
+    _job = load_job(_run_param)
+    if _job:
+        attach_job(_job)
+    else:
+        st.session_state["attached_run_id"] = _run_param
 
 process = st.session_state.get("analysis_process")
 returncode = process.poll() if process is not None else None
@@ -251,28 +349,29 @@ with upload_col, st.container(border=True):
     )
 
     if upload_mode == "파일 업로드":
+        external_upload = is_cloudflare_request()
         uploaded_file = st.file_uploader(
             "분석할 영상을 업로드하세요.",
             type=["mp4", "mov", "avi"],
             disabled=analysis_running,
+            max_upload_size=EXTERNAL_UPLOAD_LIMIT_MB if external_upload else None,
         )
 
-        st.caption("지원 형식: MP4, MOV, AVI")
+        if external_upload:
+            st.caption(
+                f"지원 형식: MP4, MOV, AVI · 외부 접속 업로드 한도: 파일당 {EXTERNAL_UPLOAD_LIMIT_MB}MB "
+                "(Cloudflare 요청 크기 제한). 더 큰 영상은 유튜브 링크를 사용하거나 서버 PC에서 직접 업로드하세요."
+            )
+        else:
+            st.caption("지원 형식: MP4, MOV, AVI")
         if uploaded_file is not None and not analysis_running:
             uploaded_key = f"{uploaded_file.name}_{uploaded_file.size}"
 
             if st.session_state.get("uploaded_file_key") != uploaded_key:
-                upload_suffix = Path(uploaded_file.name).suffix.lower() or ".mp4"
-                save_path = INPUT_DIR / f"input{upload_suffix}"
-
-                uploaded_file.seek(0)
-                with open(save_path, "wb") as f:
-                    f.write(uploaded_file.getbuffer())
-
-                if save_path.stat().st_size != uploaded_file.size:
-                    st.error(
-                        f"파일 저장 크기 불일치: 업로드={uploaded_file.size}, 저장={save_path.stat().st_size}"
-                    )
+                try:
+                    save_path = save_uploaded_video(uploaded_file)
+                except (OSError, ValueError) as error:
+                    st.error(f"영상 저장에 실패했습니다: {error}")
                     st.stop()
 
                 set_current_video(
@@ -304,9 +403,13 @@ with upload_col, st.container(border=True):
             else:
                 download_key = f"youtube_{youtube_url.strip()}"
                 with st.spinner("유튜브 영상을 다운로드하는 중입니다..."):
+                    upload_dir = None
                     try:
-                        save_path, video_title = download_youtube_video(youtube_url, INPUT_DIR / "input")
+                        check_free_space(0)
+                        upload_dir = new_upload_dir()
+                        save_path, video_title = download_youtube_video(youtube_url, upload_dir / "input")
                     except Exception as error:
+                        remove_upload_dir(upload_dir)
                         st.error(f"유튜브 영상 다운로드에 실패했습니다: {error}")
                     else:
                         set_current_video(save_path, save_path.name, download_key, title=video_title)
@@ -319,6 +422,9 @@ with upload_col, st.container(border=True):
 
     if analysis_running:
         st.info("분석이 진행 중일 때는 새 영상을 업로드할 수 없습니다.")
+    elif process is None and st.session_state.get("analysis_done") and st.session_state.get("analysis_run_id"):
+        st.page_link("pages/2_analysis_result.py", label="최근 분석 결과 보기", icon="📄",
+                     query_params={"run": st.session_state["analysis_run_id"]})
 
 with option_col, st.container(border=True):
     backend_ready = render_analysis_options(disabled=analysis_running)
@@ -388,6 +494,11 @@ with st.container(border=True):
 # =========================
 # 분석 시작 버튼
 # =========================
+# GPU 서버 한 대에서 전체 파이프라인은 한 번에 하나만 실행합니다.
+other_job = None if analysis_running else active_job()
+if other_job is not None:
+    st.warning("다른 사용자의 영상 분석이 진행 중입니다. 완료된 뒤 분석을 시작할 수 있습니다.")
+
 left, center, right = st.columns([1, 1.2, 1])
 
 with center:
@@ -395,15 +506,20 @@ with center:
         "✨ 영상 분석 시작",
         use_container_width=True,
         type="primary",
-        disabled="video_path" not in st.session_state or analysis_running or not backend_ready,
+        disabled=not st.session_state.get("video_path") or analysis_running or not backend_ready
+        or other_job is not None,
     )
 
 if start_button:
-    start_analysis_process(
-        st.session_state["video_path"],
-        st.session_state.get("summary_level", DEFAULT_SUMMARY_LEVEL),
-    )
-    st.rerun()
+    try:
+        start_analysis_process(
+            st.session_state["video_path"],
+            st.session_state.get("summary_level", DEFAULT_SUMMARY_LEVEL),
+        )
+    except PipelineBusyError as error:
+        st.error(str(error))
+    else:
+        st.rerun()
 
 if process:
     if returncode is None:
@@ -451,7 +567,8 @@ if process:
         if returncode == 0:
             st.session_state["analysis_done"] = True
             st.success("분석 완료! 결과 화면으로 이동합니다.")
-            st.switch_page("pages/2_analysis_result.py")
+            st.switch_page("pages/2_analysis_result.py",
+                           query_params={"run": st.session_state["analysis_run_id"]})
         elif st.session_state.get("analysis_cancelled"):
             st.session_state["analysis_done"] = False
             st.warning("분석이 중지되었습니다.")

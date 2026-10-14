@@ -1,2 +1,14 @@
 [server]
+# Streamlit 자체 업로드 한도(MB)입니다. Cloudflare Tunnel 경유 업로드는 앱에서
+# EXTERNAL_UPLOAD_LIMIT_MB(기본 100MB, Cloudflare 요청 크기 제한)로 더 낮게 제한합니다.
 maxUploadSize = 500
+enableXsrfProtection = true
+
+[client]
+# 외부 사용자에게 개발자 메뉴(재실행/캐시 삭제/배포)와 서버 경로가 담긴 예외 상세를 숨깁니다.
+# 예외 전체 내용은 서버 콘솔과 logs/ 에만 기록됩니다.
+toolbarMode = "viewer"
+showErrorDetails = "none"
+
+[browser]
+gatherUsageStats = false
