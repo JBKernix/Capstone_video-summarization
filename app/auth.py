@@ -1,18 +1,12 @@
 from __future__ import annotations
 
 import hmac
-import threading
-import time
 
 import streamlit as st
 from pathlib import Path
 from streamlit.errors import StreamlitSecretNotFoundError
 
-# 같은 접속 IP에서 비밀번호를 연속으로 틀리면 잠시 로그인을 막습니다(무차별 대입 완화).
-MAX_FAILED_ATTEMPTS = 5
-LOCKOUT_SECONDS = 60
-_failures: dict[str, tuple[int, float]] = {}
-_failures_lock = threading.Lock()
+from app.login_throttle import locked_out as _locked_out, record_failure as _record_failure
 
 
 def _header(name: str) -> str:
@@ -33,23 +27,6 @@ def _client_ip() -> str:
     except Exception:
         return "-"
     return value if isinstance(value, str) and value else "-"
-
-
-def _locked_out(ip: str) -> float:
-    with _failures_lock:
-        count, last = _failures.get(ip, (0, 0.0))
-        remaining = LOCKOUT_SECONDS - (time.time() - last)
-        if count >= MAX_FAILED_ATTEMPTS and remaining > 0:
-            return remaining
-        if count >= MAX_FAILED_ATTEMPTS:
-            _failures.pop(ip, None)
-        return 0.0
-
-
-def _record_failure(ip: str) -> None:
-    with _failures_lock:
-        count, _ = _failures.get(ip, (0, 0.0))
-        _failures[ip] = (count + 1, time.time())
 
 
 def require_login() -> None:

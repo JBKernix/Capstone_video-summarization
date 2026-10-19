@@ -12,11 +12,26 @@
 | `tests/test_stt.py` | STT 포맷팅/실행 관련 동작 |
 | `tests/test_vlm_summary.py` | VLM 요약 클라이언트 |
 | `tests/test_summary_result.py` | 앱 최종 요약 로더와 영상 경로 해석 |
+| `tests/test_api_server.py` | React 화면용 앱 API 서버(`app/api/`): 로그인·잠금·CSRF, 업로드 검증, 분석 실행·진행 상황, 결과·프레임·영상, 저장·삭제, 실행 이력·CSV, 결과 다시 열기(`has_result`), React 라우트 |
+| `tests/test_run_registry.py` | 업로드·실행 폴더, 단일 실행 슬롯, 보존 기간 정리 |
+| `tests/test_pipeline_process.py` | 파이프라인 실행·중지 |
+| `tests/test_pipeline_history.py`, `tests/test_run_history.py`, `tests/test_model_load_history.py` | 실행 이력 기록(`metrics.json`)과 모델 로딩 지표 |
+| `tests/test_history_ui.py` | Streamlit 실행 이력 화면 |
+| `tests/test_auth.py`, `tests/test_analysis_options.py`, `tests/test_local_models.py` | Streamlit 로그인 게이트, 분석 설정 위젯, 로컬 모델 선택 |
+| `tests/test_analysis_backends.py` | 로컬/Claude 분석 방식 설정과 오류 처리 |
+
+`tests/conftest.py`는 모든 테스트에서 `app/run_registry.py`의 업로드·실행 폴더와 실행 슬롯 파일을 임시 폴더로 바꿔, 테스트가 실제 `runs/`·`data/`를 건드리지 않게 합니다.
 
 ## 실행
 
 ```bash
 pytest
+```
+
+앱이 실행되는 `capstone` conda 환경(FastAPI·httpx·Streamlit 설치됨)에서 실행하세요. 앱 API 테스트(`test_api_server.py`)는 FastAPI `TestClient`(httpx)가 필요합니다.
+
+```bash
+%USERPROFILE%\anaconda3\envs\capstone\python.exe -m pytest
 ```
 
 특정 파일만 실행:
@@ -48,7 +63,16 @@ pytest tests/test_summary_result.py
 
 ## 알려진 실패 테스트
 
-`tests/test_pipeline.py::PipelineVlmTests::test_main_requests_vlm_summary_after_ocr`는 `run_pipeline.main()`의 STT~VLM 단계만 모킹하고 `run_final_summary_step`은 모킹하지 않습니다. STT 요약/VLM 요약 결과가 모두 채워지면 `main()`이 7단계(최종 통합 요약)까지 진행해 `run_final_summary_step`을 실제로 호출하는데, 이때 전달되는 경로들이 임시 디렉터리에 실존하지 않아 실패합니다. 이 세션의 변경과는 무관하게 이전부터 실패하던 테스트입니다.
+2026-10-19 기준 `capstone` 환경(Windows)에서 아래 9개가 실패합니다. React·앱 API 작업 전 코드에서도 이 9개가 실패했으며(기본 Anaconda 환경에서 작업 전후 비교), 원인은 아직 확인하지 않았습니다. 출력에 한글이 깨져 보이는 경우가 있어 Windows 콘솔 인코딩(cp949) 관련 가능성이 있습니다.
+
+- `tests/test_analysis_backends.py::test_api_errors_do_not_log_credentials_or_response_body` (401·429·500, 3개)
+- `tests/test_model_load_history.py::test_poll_snapshots_do_not_double_count_and_csv_preserves_missing`
+- `tests/test_pipeline_history.py::test_claude_pipeline_archives_all_stage_outputs`
+- `tests/test_pipeline_process.py::test_stop_waits_for_exit_before_recording_cancel`
+- `tests/test_run_history.py::test_runs_keep_separate_logs_and_snapshots`
+- `tests/test_run_history.py::test_failure_or_interrupt_preserves_partial_run` (failed·cancelled, 2개)
+
+예전에 이 절에 있던 `tests/test_pipeline.py::PipelineVlmTests::test_main_requests_vlm_summary_after_ocr`는 현재 통과합니다.
 
 ## 주의 사항
 

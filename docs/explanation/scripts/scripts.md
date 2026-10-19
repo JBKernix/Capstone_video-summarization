@@ -1,6 +1,6 @@
 # 실행 스크립트
 
-`scripts/` 폴더는 CLI 실행 진입점입니다. Streamlit 앱도 내부적으로 `scripts/run_pipeline.py`를 백그라운드 프로세스로 실행하고, 표준출력의 `##PROGRESS##` 로그를 폴링해 단계별 진행률을 표시합니다.
+`scripts/` 폴더는 CLI 실행 진입점입니다. 앱(React 화면의 앱 API 서버와 예비 Streamlit 화면)도 내부적으로 `scripts/run_pipeline.py`를 백그라운드 프로세스로 실행하고(`app/pipeline_process.py`), 표준출력의 `##PROGRESS##` 로그를 폴링해 단계별 진행률을 표시합니다(`app/pipeline_log.py`).
 
 ## 스크립트 목록
 
@@ -16,7 +16,13 @@
 
 ## 기본 실행 순서
 
-Streamlit 앱:
+앱(추론 서버 + React 앱 서버):
+
+```bat
+start_all.bat
+```
+
+예비 Streamlit 앱만:
 
 ```bat
 run_app.bat
@@ -69,7 +75,7 @@ python scripts/run_final_summary.py
 
 - **STT 설정 로딩**: `run_stt.py`, `run_pipeline.py` 모두 자체 YAML 파서 대신 `modules.common.config.load_yaml_config()`를 사용합니다. 설정 파일이 없으면 빈 dict, PyYAML 미설치 시 `ImportError`로 동작이 통일되었습니다.
 - **JSON 읽기/쓰기**: `run_llm_summary.py`, `run_vlm_summary.py`, `run_final_summary.py`는 각자 JSON을 직접 다루던 코드를 `modules.common.load_json()` / `save_json()` 호출로 대체했습니다. 동작은 동일하고 구현 위치만 정리되었습니다.
-- **진행률 보고**: `run_pipeline.py`가 호출하는 오디오 추출, 프레임 샘플링, OCR, STT/VLM/최종 요약 각 단계 내부에서 `modules.common.progress.report_progress()`를 호출해 `##PROGRESS##` 마커가 붙은 JSON 한 줄을 표준출력에 남깁니다. `app/pages/1_upload.py`가 이 로그를 읽어 실시간 진행률 UI를 구성합니다.
+- **진행률 보고**: `run_pipeline.py`가 호출하는 오디오 추출, 프레임 샘플링, OCR, STT/VLM/최종 요약 각 단계 내부에서 `modules.common.progress.report_progress()`를 호출해 `##PROGRESS##` 마커가 붙은 JSON 한 줄을 표준출력에 남깁니다. `app/pipeline_log.py`가 이 로그를 해석하고, React 화면(앱 API 경유)과 Streamlit `app/pages/1_upload.py`가 실시간 진행률 UI를 구성합니다.
 
 ## STT 요약(`run_llm_summary.py`) 수정 사항
 

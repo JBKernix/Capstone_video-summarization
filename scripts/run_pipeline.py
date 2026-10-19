@@ -204,7 +204,7 @@ def parse_args():
         "--summary-level",
         choices=SUMMARY_LEVELS,
         default=DEFAULT_SUMMARY_LEVEL,
-        help="Whisper 음성 인식 모델: simple=base, standard=small, detailed=medium. 화면 분석 범위는 동일합니다.",
+        help="Whisper 음성 인식 모델: simple=small, standard=medium, detailed=large. 화면 분석 범위는 동일합니다.",
     )
     # NOTE: --skip-stt를 사용하면 STT뿐 아니라 이후 모든 단계(요약/프레임/OCR/VLM/최종요약)가
     # 연쇄적으로 건너뛰어져 옵션 설명과 실제 동작이 달라 혼란을 줄 수 있어 우선 비활성화합니다.
@@ -238,7 +238,7 @@ def parse_args():
 def build_stt_options(args: argparse.Namespace) -> dict:
     """명령줄 인자와 설정 파일을 합쳐 STT 실행 옵션을 구성합니다.
 
-    summary_level별 Whisper 모델 크기(simple=base, standard=small, detailed=medium)를
+    summary_level별 Whisper 모델 크기(simple=small, standard=medium, detailed=large)를
     기본값으로 사용하며, --stt-model-size를 명시하면 그 값이 우선합니다.
 
     Args:

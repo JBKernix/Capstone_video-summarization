@@ -1,13 +1,14 @@
-﻿# GPU 서버 PC 한 대에서 FastAPI(LLM/VLM) -> Streamlit -> (선택) Cloudflare Tunnel 순서로 실행합니다.
+﻿# GPU 서버 PC 한 대에서 FastAPI(LLM/VLM) -> 앱 서버(React, 또는 -Streamlit) -> (선택) Cloudflare Tunnel 순서로 실행합니다.
 #
 #   FastAPI   : 127.0.0.1:8000 (서버 PC 내부 전용, 외부 공개 안 함)
-#   Streamlit : 127.0.0.1:8501 (Cloudflare Tunnel만 이 포트로 연결)
+#   앱 서버   : 127.0.0.1:8501 (React 화면 + 앱 API. Cloudflare Tunnel만 이 포트로 연결)
 #
 # 이미 실행 중인 서버는 재사용하며 종료하지 않습니다. 모델/패키지를 다시 설치하지 않습니다.
 # 환경변수로 경로와 포트를 바꿀 수 있습니다(README의 "단일 서버 실행" 참고).
 param(
     [switch]$Tunnel,
-    [switch]$NoTunnel
+    [switch]$NoTunnel,
+    [switch]$Streamlit
 )
 
 $ErrorActionPreference = "Stop"
@@ -19,16 +20,19 @@ function Get-Setting($name, $default) {
 }
 
 $condaEnvs = Join-Path $env:USERPROFILE "anaconda3\envs"
-$StreamlitPython = Get-Setting "STREAMLIT_PYTHON" (Join-Path $condaEnvs "capstone\python.exe")
+# 앱 서버(React용 FastAPI 앱 서버 또는 Streamlit)를 실행할 Python입니다. 예전 이름 STREAMLIT_PYTHON도 계속 읽습니다.
+$AppPython = Get-Setting "APP_PYTHON" (Get-Setting "STREAMLIT_PYTHON" (Join-Path $condaEnvs "capstone\python.exe"))
 $ServerPython = Get-Setting "SERVER_PYTHON" (Join-Path $condaEnvs "video_summarization\python.exe")
 $ServerDir = Get-Setting "SERVER_DIR" (Join-Path (Split-Path $root -Parent) "Summarization")
 $ApiPort = [int](Get-Setting "API_PORT" "8000")
-$StreamlitPort = [int](Get-Setting "STREAMLIT_PORT" "8501")
+$AppPort = [int](Get-Setting "APP_PORT" (Get-Setting "STREAMLIT_PORT" "8501"))
+# 기본 화면은 React입니다. -Streamlit 또는 APP_UI=streamlit이면 기존 Streamlit 화면을 같은 포트로 띄웁니다.
+$UseStreamlit = $Streamlit -or ((Get-Setting "APP_UI" "react") -eq "streamlit")
 $ApiTimeout = [int](Get-Setting "API_START_TIMEOUT" "180")
-$EnableTunnel = ($Tunnel -or (Get-Setting "ENABLE_TUNNEL" "0") -in @("1", "true", "yes", "on")) -and -not $NoTunnel
+$EnableTunnel = ($Tunnel -or (Get-Setting "ENABLE_TUNNEL" "1") -in @("1", "true", "yes", "on")) -and -not $NoTunnel
 
 $ApiUrl = "http://127.0.0.1:$ApiPort"
-$StreamlitUrl = "http://127.0.0.1:$StreamlitPort"
+$AppUrl = "http://127.0.0.1:$AppPort"
 $logDir = Join-Path $root "logs\launcher"
 $pidDir = Join-Path $root "runs\pids"
 New-Item -ItemType Directory -Force -Path $logDir, $pidDir | Out-Null
@@ -52,9 +56,19 @@ function Test-Http($url) {
     }
 }
 
-function Wait-Http($url, $proc, [int]$timeout, $errLog) {
+function Test-HttpContains($url, $pattern) {
+    # Streamlit은 모든 경로에 200을 돌려주므로 React 앱 서버는 응답 본문까지 확인합니다.
+    try {
+        $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 5
+        return $response.StatusCode -eq 200 -and $response.Content -match $pattern
+    } catch {
+        return $false
+    }
+}
+
+function Wait-Http($url, $proc, [int]$timeout, $errLog, $pattern = ".") {
     for ($i = 0; $i -lt $timeout; $i++) {
-        if (Test-Http $url) { return $true }
+        if (Test-HttpContains $url $pattern) { return $true }
         if ($proc -and $proc.HasExited) {
             Write-Host "[ERROR] 프로세스가 종료되었습니다 (코드 $($proc.ExitCode)). 마지막 로그:" -ForegroundColor Red
             Get-Content $errLog -Tail 20 -ErrorAction SilentlyContinue
@@ -74,11 +88,12 @@ function Warn-IfPublicBind($listener, $name) {
 
 # ---------------------------------------------------------------------------
 Write-Step "1. 실행 환경 확인"
-if (-not (Test-Path $StreamlitPython)) { Fail "Streamlit용 Python을 찾을 수 없습니다: $StreamlitPython (STREAMLIT_PYTHON 환경변수로 지정)" }
+if (-not (Test-Path $AppPython)) { Fail "앱 서버용 Python을 찾을 수 없습니다: $AppPython (APP_PYTHON 환경변수로 지정)" }
 if (-not (Test-Path $ServerPython)) { Fail "FastAPI용 Python을 찾을 수 없습니다: $ServerPython (SERVER_PYTHON 환경변수로 지정)" }
 if (-not (Test-Path (Join-Path $ServerDir "app\server.py"))) { Fail "gpu-server 코드 폴더를 찾을 수 없습니다: $ServerDir (SERVER_DIR 환경변수로 지정)" }
 if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) { Write-Host "[WARN] PATH에서 ffmpeg를 찾지 못했습니다. 영상 전처리 단계가 실패할 수 있습니다." -ForegroundColor Yellow }
-Write-Host "Streamlit Python : $StreamlitPython"
+Write-Host "앱 서버 Python   : $AppPython"
+Write-Host ("앱 화면          : {0}" -f $(if ($UseStreamlit) { "Streamlit" } else { "React" }))
 Write-Host "FastAPI Python   : $ServerPython"
 Write-Host "gpu-server 폴더  : $ServerDir"
 $drive = (Get-Item $root).PSDrive
@@ -119,32 +134,60 @@ if ($apiListener) {
 }
 
 # ---------------------------------------------------------------------------
-Write-Step "4. Streamlit ($StreamlitUrl)"
 $env:GPU_SERVER_URL = $ApiUrl
-$stListener = Get-Listener $StreamlitPort
-if ($stListener) {
-    if (Test-Http "$StreamlitUrl/_stcore/health") {
-        Write-Host "이미 실행 중인 Streamlit을 재사용합니다 (PID $($stListener.OwningProcess))." -ForegroundColor Green
-        Warn-IfPublicBind $stListener "Streamlit"
+if ($UseStreamlit) {
+    Write-Step "4. Streamlit ($AppUrl)"
+    $healthPath = "/_stcore/health"
+    $healthPattern = "ok"
+    $appArgs = @("-m", "streamlit", "run", "app\main.py", "--server.address", "127.0.0.1",
+                 "--server.port", "$AppPort", "--server.headless", "true")
+} else {
+    Write-Step "4. React 앱 서버 ($AppUrl)"
+    $healthPath = "/api/session"
+    $healthPattern = '"authenticated"'
+    $dist = Join-Path $root "frontend\dist\index.html"
+    if (-not (Test-Path $dist)) {
+        # 빌드 결과가 없을 때만 빌드합니다. 화면 코드를 고쳤으면 frontend 폴더에서 npm run build를 다시 실행하세요.
+        $npm = Get-Command npm.cmd -ErrorAction SilentlyContinue
+        if (-not $npm -and (Test-Path "C:\Program Files
+odejs
+pm.cmd")) { $npm = Get-Item "C:\Program Files
+odejs
+pm.cmd" }
+        if (-not $npm) { Fail "React 빌드 결과(frontend\dist)가 없고 Node.js(npm)도 찾을 수 없습니다. Node.js LTS를 설치하세요." }
+        Write-Host "React 화면을 빌드합니다 (frontend\dist)..."
+        Push-Location (Join-Path $root "frontend")
+        try {
+            if (-not (Test-Path "node_modules")) { & $npm.Source ci; if ($LASTEXITCODE) { Fail "npm ci 실패" } }
+            & $npm.Source run build; if ($LASTEXITCODE) { Fail "npm run build 실패" }
+        } finally { Pop-Location }
+    }
+    $appArgs = @("-m", "uvicorn", "app.api.server:app", "--host", "127.0.0.1", "--port", "$AppPort", "--workers", "1")
+}
+
+$appListener = Get-Listener $AppPort
+if ($appListener) {
+    if (Test-HttpContains "$AppUrl$healthPath" $healthPattern) {
+        Write-Host "이미 실행 중인 앱 서버를 재사용합니다 (PID $($appListener.OwningProcess))." -ForegroundColor Green
+        Warn-IfPublicBind $appListener "앱 서버"
     } else {
-        Fail "포트 $StreamlitPort 을(를) 다른 프로그램(PID $($stListener.OwningProcess))이 사용 중입니다."
+        Fail "포트 $AppPort 을(를) 다른 프로그램(PID $($appListener.OwningProcess))이 사용 중입니다. Streamlit과 React 앱 서버는 같은 포트를 쓰므로 실행 중인 쪽을 stop_all.bat 등으로 먼저 종료하세요."
     }
 } else {
-    $stOut = Join-Path $logDir "streamlit.out.log"
-    $stErr = Join-Path $logDir "streamlit.err.log"
-    $stProc = Start-Process -FilePath $StreamlitPython -WorkingDirectory $root -WindowStyle Hidden -PassThru `
-        -ArgumentList @("-m", "streamlit", "run", "app\main.py", "--server.address", "127.0.0.1",
-                        "--server.port", "$StreamlitPort", "--server.headless", "true") `
-        -RedirectStandardOutput $stOut -RedirectStandardError $stErr
-    Set-Content -Path (Join-Path $pidDir "streamlit.pid") -Value $stProc.Id -Encoding ascii
-    Write-Host "Streamlit 시작 (PID $($stProc.Id))."
+    $appName = if ($UseStreamlit) { "streamlit" } else { "app" }
+    $appOut = Join-Path $logDir "$appName.out.log"
+    $appErr = Join-Path $logDir "$appName.err.log"
+    $appProc = Start-Process -FilePath $AppPython -WorkingDirectory $root -WindowStyle Hidden -PassThru `
+        -ArgumentList $appArgs -RedirectStandardOutput $appOut -RedirectStandardError $appErr
+    Set-Content -Path (Join-Path $pidDir "$appName.pid") -Value $appProc.Id -Encoding ascii
+    Write-Host "앱 서버 시작 (PID $($appProc.Id))."
 
     # ---------------------------------------------------------------------------
-    Write-Step "5. Streamlit 준비 상태 확인"
-    if (-not (Wait-Http "$StreamlitUrl/_stcore/health" $stProc 60 $stErr)) {
-        Fail "Streamlit이 60초 안에 준비되지 않았습니다. 로그: $stErr"
+    Write-Step "5. 앱 서버 준비 상태 확인"
+    if (-not (Wait-Http "$AppUrl$healthPath" $appProc 60 $appErr $healthPattern)) {
+        Fail "앱 서버가 60초 안에 준비되지 않았습니다. 로그: $appErr"
     }
-    Write-Host "Streamlit 준비 완료." -ForegroundColor Green
+    Write-Host "앱 서버 준비 완료." -ForegroundColor Green
 }
 
 # ---------------------------------------------------------------------------
@@ -152,12 +195,13 @@ Write-Step "6. Cloudflare Tunnel"
 $publicUrl = $null
 if ($EnableTunnel) {
     $secrets = Join-Path $root ".streamlit\secrets.toml"
-    $hasPassword = (Test-Path $secrets) -and (Select-String -Path $secrets -Pattern '^\s*APP_PASSWORD\s*=\s*"[^"]+"' -Quiet)
+    $hasPassword = (-not [string]::IsNullOrWhiteSpace($env:APP_PASSWORD)) -or
+        ((Test-Path $secrets) -and (Select-String -Path $secrets -Pattern '^\s*APP_PASSWORD\s*=\s*"[^"]+"' -Quiet))
     if (-not $hasPassword) {
-        Write-Host "[ERROR] .streamlit\secrets.toml에 APP_PASSWORD가 없어 외부 공개를 시작하지 않습니다." -ForegroundColor Red
-        Write-Host "        docs/single_server_deployment.md의 '외부 접속 비밀번호' 절차를 따른 뒤 Streamlit을 재시작하고 다시 실행하세요."
+        Write-Host "[ERROR] APP_PASSWORD(.streamlit\secrets.toml 또는 환경변수)가 없어 외부 공개를 시작하지 않습니다." -ForegroundColor Red
+        Write-Host "        docs/single_server_deployment.md의 '외부 접속 비밀번호' 절차를 따른 뒤 앱 서버를 재시작하고 다시 실행하세요."
     } else {
-        & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root "start_tunnel.ps1") -Port $StreamlitPort -Detach
+        & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root "start_tunnel.ps1") -Port $AppPort -Detach
         $urlFile = Join-Path $root "tunnel_url.txt"
         if (Test-Path $urlFile) { $publicUrl = (Get-Content $urlFile -Raw).Trim() }
     }
@@ -167,7 +211,7 @@ if ($EnableTunnel) {
 
 # ---------------------------------------------------------------------------
 Write-Step "7. 접속 안내"
-Write-Host "서버 PC 로컬 접속 : $StreamlitUrl" -ForegroundColor Green
+Write-Host "서버 PC 로컬 접속 : $AppUrl" -ForegroundColor Green
 if ($publicUrl) { Write-Host "외부 접속 주소    : $publicUrl" -ForegroundColor Green }
 Write-Host "FastAPI(내부 전용): $ApiUrl  (외부에 공개되지 않습니다)"
 Write-Host "실행 로그         : $logDir , $ServerDir\logs\server.log , $root\logs\client.log"

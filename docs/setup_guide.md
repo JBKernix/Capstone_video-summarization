@@ -11,7 +11,8 @@
 | 패키지 관리자 | conda 또는 venv + pip |
 | 외부 도구 | FFmpeg, FFprobe |
 | GPU | 선택 사항, Whisper/EasyOCR 속도 개선용 |
-| UI | Streamlit |
+| UI | React 화면 + FastAPI 앱 서버 (기본), Streamlit (예비) |
+| Node.js | LTS (React 화면 빌드용, `winget install OpenJS.NodeJS.LTS`) |
 
 ## Python 환경 생성
 
@@ -22,7 +23,15 @@ pip install -r requirements.txt
 ```
 
 `requirements.txt`에는 EasyOCR, OpenCV, PyTorch(cu130), Whisper(`openai-whisper`), requests, PyYAML 등이 포함되어 있습니다.
-현재 UI 실행을 위해 `streamlit==1.58.0`도 포함되어 있고, 유튜브 링크 다운로드를 위해 `yt-dlp`도 포함되어 있습니다.
+UI 실행을 위해 앱 서버용 `fastapi==0.118.0`·`uvicorn`·`python-multipart`와 예비 화면용 `streamlit==1.58.0`이 포함되어 있고, 유튜브 링크 다운로드를 위해 `yt-dlp`도 포함되어 있습니다. pydantic 2.14(FastAPI 의존성)가 요구하므로 `typing-extensions`는 4.16.0입니다.
+
+React 화면은 `frontend/`에서 한 번 빌드합니다(`start_all.bat`은 빌드 결과가 없으면 자동으로 빌드).
+
+```bash
+cd frontend
+npm ci
+npm run build
+```
 
 ## FFmpeg 확인
 
@@ -47,7 +56,7 @@ data/
 
 기본값으로 실행할 때는 `data/input/`에 MP4 파일을 하나만 두는 것이 안전합니다. 여러 파일이 있으면 `--video` 옵션으로 분석할 파일을 직접 지정하세요.
 
-Streamlit 앱에서는 파일 업로드 대신 유튜브 링크를 입력해 영상을 준비할 수도 있습니다. `modules/preprocess/youtube_downloader.py`의 `download_youtube_video()`가 `yt-dlp`로 다운로드해 `data/input/input.mp4`로 저장합니다. 업로드 용량 제한은 `.streamlit/config.toml`의 `maxUploadSize`(기본 500MB)로 설정되어 있습니다.
+앱에서는 파일 업로드 대신 유튜브 링크를 입력해 영상을 준비할 수도 있습니다. `modules/preprocess/youtube_downloader.py`의 `download_youtube_video()`가 `yt-dlp`로 다운로드해 `data/input/uploads/<업로드 ID>/input.mp4`로 저장합니다. 업로드 용량 제한은 React 화면은 `MAX_UPLOAD_MB`(기본 500MB), Streamlit은 `.streamlit/config.toml`의 `maxUploadSize`(기본 500MB)입니다. Cloudflare를 거친 외부 접속은 둘 다 `EXTERNAL_UPLOAD_LIMIT_MB`(기본 100MB)로 낮춥니다.
 
 ## STT 설정
 
@@ -63,27 +72,27 @@ beam_size:
 
 `device`가 비어 있으면 Whisper 기본 동작을 따릅니다. GPU를 명시하려면 실행 시 `--stt-device cuda` 또는 설정 파일 값을 사용합니다.
 
-`model_size`는 `--stt-model-size`를 지정하지 않으면 이 설정 파일 값보다 `--summary-level`(간단요약=`base`, 기본요약=`small`, 상세요약=`medium`)이 먼저 적용됩니다. 이 설정 파일의 `model_size`를 그대로 쓰려면 `--stt-model-size`를 함께 지정하세요.
+`model_size`는 `--stt-model-size`를 지정하지 않으면 이 설정 파일 값보다 `--summary-level`(간단=`small`, 기본=`medium`, 상세=`large`)이 먼저 적용됩니다. 이 설정 파일의 `model_size`를 그대로 쓰려면 `--stt-model-size`를 함께 지정하세요.
 
 ## 분석 방식 설정
 
-Streamlit에서 **로컬 모델 서버 / Claude API**를 선택합니다. 로컬 서버 모드는 Qwen LLM·VLM 서버가 필요하며, Claude API 모드는 같은 서버가 자신의 `ANTHROPIC_API_KEY` 환경변수로 Anthropic에 요청합니다. 앱에는 키 입력란이 없으며, 키는 앱에 전달되지 않습니다. Whisper와 OCR은 두 모드 모두 앱 실행 PC에서 처리합니다.
+앱의 업로드 화면에서 **로컬 모델 서버 / Claude API**를 선택합니다. 로컬 서버 모드는 Qwen LLM·VLM 서버가 필요하며, Claude API 모드는 같은 서버가 자신의 `ANTHROPIC_API_KEY` 환경변수로 Anthropic에 요청합니다. 앱에는 키 입력란이 없으며, 키는 앱에 전달되지 않습니다. Whisper와 OCR은 두 모드 모두 앱 실행 PC에서 처리합니다.
 
 서버 수정본 적용과 키 설정 방법은 [분석 방식 가이드](analysis_backends.md)를 참고하세요.
 
 ## 로그인 보호 (선택)
 
-앱을 로컬에서만 쓰면 필요 없습니다. `.streamlit/secrets.toml`에 아래처럼 `APP_PASSWORD`를 설정하면 모든 페이지 진입 전에 비밀번호 입력 화면이 표시됩니다(`app/auth.py`의 `require_login()`, 세 페이지 모두 호출).
+앱을 로컬에서만 쓰면 필요 없습니다. `.streamlit/secrets.toml`에 아래처럼 `APP_PASSWORD`를 설정하면 모든 화면 진입 전에 비밀번호 입력 화면이 표시됩니다(React: `app/api/auth.py`, Streamlit: `app/auth.py`의 `require_login()`). React 앱 서버는 `APP_PASSWORD` 환경변수가 있으면 그 값을 먼저 씁니다.
 
 ```toml
 APP_PASSWORD = "원하는 비밀번호"
 ```
 
-`APP_PASSWORD`가 없거나 `.streamlit/secrets.toml` 자체가 없으면 로그인 화면 없이 통과합니다. 이 파일은 `.gitignore`에 등록되어 있어 커밋되지 않습니다.
+`APP_PASSWORD`가 없거나 `.streamlit/secrets.toml` 자체가 없으면 로컬 접속은 로그인 화면 없이 통과하고, Cloudflare를 거친 외부 접속은 차단됩니다. 이 파일은 `.gitignore`에 등록되어 있어 커밋되지 않습니다.
 
 ## Cloudflare Tunnel로 외부 공개 (선택)
 
-로컬 Streamlit 앱(기본 포트 8501)을 외부에서 접속 가능한 URL로 공개하려면 `cloudflared`가 PATH에 설치되어 있어야 합니다.
+로컬 앱 서버(기본 포트 8501, React 또는 Streamlit)를 외부에서 접속 가능한 URL로 공개하려면 `cloudflared`가 PATH에 설치되어 있어야 합니다.
 
 ```bat
 start_tunnel.bat
@@ -93,7 +102,19 @@ start_tunnel.bat
 
 ## 전체 실행
 
-Streamlit 앱:
+서버 PC 통합 실행(추론 서버 + React 앱 서버, 권장): [단일 서버 운영 가이드](single_server_deployment.md)
+
+```bat
+start_all.bat
+```
+
+React 앱 서버만 직접 실행(`frontend/dist` 빌드 필요):
+
+```bash
+python -m uvicorn app.api.server:app --host 127.0.0.1 --port 8501
+```
+
+예비 Streamlit 앱:
 
 ```bat
 run_app.bat
@@ -133,7 +154,7 @@ python scripts/run_final_summary.py
 
 현재 `run_pipeline.py`는 최종 통합 요약까지 실행합니다. `run_final_summary.py`는 기존 STT/VLM 요약 파일을 바탕으로 최종 요약만 다시 생성할 때 사용합니다.
 
-`run_pipeline.py --summary-level simple|standard|detailed`는 Whisper base/small/medium만 선택합니다. 모든 선택에서 OCR·VLM을 실행합니다. 단독 요약 명령의 같은 옵션은 호환용이며 요약 정책은 동일합니다. 분석 방식은 모든 명령에서 `--analysis-backend local|claude`로 선택합니다.
+`run_pipeline.py --summary-level simple|standard|detailed`는 Whisper small/medium/large만 선택합니다. 모든 선택에서 OCR·VLM을 실행합니다. 단독 요약 명령의 같은 옵션은 호환용이며 요약 정책은 동일합니다. 분석 방식은 모든 명령에서 `--analysis-backend local|claude`로 선택합니다.
 
 ## 문제 해결
 
@@ -146,5 +167,9 @@ python scripts/run_final_summary.py
 | 프레임 이미지 파일을 찾지 못함 | `runs/metadata/frame_metadata.json`의 `image_path`와 실제 `runs/frames/` 확인 |
 | 앱에서 진행 상황이 보이지 않음 | `runs/history/<실행 ID>/process.log` 생성 여부와 로그 안 `##PROGRESS##` 마커, 파이프라인 프로세스 상태 |
 | 유튜브 영상 다운로드 실패 | 링크 형식(`is_youtube_url`), `yt-dlp` 설치 여부, 네트워크/영상 비공개 여부 |
-| 로그인 화면이 계속 나오거나 전혀 안 나옴 | `.streamlit/secrets.toml`의 `APP_PASSWORD` 값 확인 |
+| 로그인 화면이 계속 나오거나 전혀 안 나옴 | `APP_PASSWORD` 환경변수와 `.streamlit/secrets.toml`의 `APP_PASSWORD` 값 확인 (React는 환경변수 우선) |
+| React 화면 대신 "React 빌드 결과가 없습니다" 오류 | `frontend`에서 `npm ci`·`npm run build` 실행 후 새로고침 |
+| `start_all`이 "포트 8501을 다른 프로그램이 사용 중" | Streamlit과 React 앱 서버는 같은 포트를 씀. 실행 중인 쪽을 `stop_all.bat` 또는 해당 창을 닫아 종료 |
+| 화면 코드를 고쳤는데 반영되지 않음 | `frontend`에서 `npm run build` 다시 실행(앱 API 서버 재시작은 불필요) |
+| 결과 화면을 다시 열 수 없음 | 실행 산출물 보존 기간(`JOB_RETENTION_HOURS`, 72시간)이 지나 정리됨. 오래 볼 결과는 "영상과 요약 결과 저장" |
 | `start_tunnel.bat` 실행 후 URL을 못 찾음 | `cloudflared` PATH 설치 여부, `cloudflared.log` 내용 확인 |

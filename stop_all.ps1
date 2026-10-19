@@ -7,13 +7,14 @@ $pidDir = Join-Path $root "runs\pids"
 $expected = [ordered]@{
     "cloudflared" = "cloudflared"
     "streamlit"   = "streamlit"
+    "app"         = "app\.api\.server"
     "fastapi"     = "uvicorn"
 }
 if ($TunnelOnly) { $expected = [ordered]@{ "cloudflared" = "cloudflared" } }
 
 $active = Join-Path $root "runs\active_pipeline.json"
 if (-not $TunnelOnly -and (Test-Path $active)) {
-    Write-Host "[WARN] 진행 중일 수 있는 분석 작업이 있습니다. Streamlit 종료 시 함께 중단됩니다." -ForegroundColor Yellow
+    Write-Host "[WARN] 진행 중일 수 있는 분석 작업이 있습니다. 앱 서버(React/Streamlit) 종료 시 함께 중단됩니다." -ForegroundColor Yellow
 }
 
 foreach ($name in $expected.Keys) {

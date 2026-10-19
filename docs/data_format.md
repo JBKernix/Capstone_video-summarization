@@ -109,16 +109,16 @@ runs/llm/stt_summary_result.json
 | `image_caption` | string | OCR 텍스트 기반 간단 캡션 |
 | `importance_score` | number | 0.0에서 1.0 사이의 휴리스틱 중요도 |
 
-앱의 요약 화면(`app/summary_timeline.py`)은 이 중 `scene_type`이 `chart_or_table`인 프레임을 우선으로 찾아 "표/차트 기반 주요 정보" 구간의 스크린샷으로 사용합니다.
+앱의 요약 화면(해석: `app/summary_parse.py`, 표시: React `SummaryView`·Streamlit `app/summary_timeline.py`)은 이 중 `scene_type`이 `chart_or_table`인 프레임을 우선으로 찾아 "표/차트 기반 주요 정보" 구간의 스크린샷으로 사용합니다.
 
 ### 저장된 결과의 OCR 사본 (`data/saved/.../ocr_result.json`)
 
-"영상과 요약 결과 저장" 시 `app/result_export.py`가 `runs/ocr/ocr_result.json`이 있으면 함께 복사합니다. 원본과 두 가지가 다릅니다.
+"영상과 요약 결과 저장" 시 `app/result_export.py`가 실행 폴더의 `ocr/ocr_result.json`(앱 실행은 `runs/jobs/<실행 ID>/ocr/ocr_result.json`)이 있으면 함께 복사합니다. 원본과 두 가지가 다릅니다.
 
 - `image_path`가 절대경로가 아니라 저장 폴더 기준 상대경로 `frames/<파일명>`입니다.
 - 프레임 이미지 자체도 `data/saved/[영상 제목] - YYYYMMDD-HHMMSS/frames/`로 함께 복사됩니다.
 
-`runs/frames/`의 원본 이미지는 다음 분석 실행 때 덮어써질 수 있어, 저장 시점에 이미지를 별도로 복사해두지 않으면 나중에 저장 결과를 열었을 때 다른 영상의 프레임이 표시되는 문제가 있었습니다. 간단요약(`simple`) 프리셋으로 분석한 결과는 OCR 자체가 생성되지 않으므로 이 파일이 저장되지 않습니다.
+실행 폴더의 원본 이미지는 다음 실행에 덮어써지거나(CLI 기본 `runs/frames/`) 보존 기간이 지나 정리되므로(앱 `runs/jobs/`), 저장 시점에 이미지를 별도로 복사해두지 않으면 나중에 저장 결과를 열었을 때 프레임이 바뀌거나 사라집니다. `--skip-ocr`로 실행한 결과는 OCR 자체가 생성되지 않으므로 이 파일이 저장되지 않습니다.
 
 ## VLM 요약 결과
 
@@ -187,12 +187,12 @@ runs/final/final_summary_result.json
 ## 종합 결론
 ```
 
-앱(`app/summary_result.py`, `app/summary_timeline.py`)은 이 마크다운을 파싱해서 화면에 표시합니다.
+앱(`app/summary_result.py`, `app/summary_parse.py`)은 이 마크다운을 파싱해서 화면에 표시합니다. React 화면은 앱 API가 파싱 결과를 JSON 블록으로 넘겨받아 그립니다([app_api.md](explanation/app/app_api.md#요약-결과-형식)).
 
 - `app/summary_result.py`의 `get_summary_markdown()`이 `summary`/`final_summary` 중 있는 값을 마크다운 텍스트로 꺼냅니다.
 - `has_structured_summary()`는 `title`/`main_topic`/`topics`/`conclusion`/`keywords` 키가 있을 때만 참을 반환합니다. 이 키들은 **의도된/향후 지원용 구조화 스키마**일 뿐이며, 실제 GPU 서버 응답에서는 나타나지 않으므로 이 분기(`app/final_summary_view.py`의 `render_summary_data`에서 카드형 UI로 렌더링하는 경로)는 현재 사실상 사용되지 않습니다.
-- 실제로는 항상 마크다운 텍스트 경로를 타며, `app/summary_timeline.py`의 `render_summary_with_timeline()`이 `### N. 제목 (타임라인: 시작 ~ 끝)` 패턴을 찾아 구간별 카드로 렌더링하고, `(타임라인: ...)` 표기를 `분:초` 형식의 클릭 가능한 뱃지로 바꿔 보여줍니다. 클릭하면 `<video>` 엘리먼트의 `currentTime`을 이동시켜 해당 지점부터 재생합니다.
-- 제목에 "표"/"차트"가 포함된 섹션은 `runs/ocr/ocr_result.json`에서 해당 타임라인과 겹치고 `scene_type`이 `chart_or_table`인 프레임을 찾아 스크린샷도 함께 보여줍니다.
+- 실제로는 항상 마크다운 텍스트 경로를 타며, `app/summary_parse.py`의 `parse_summary_markdown()`(Streamlit은 이를 감싼 `app/summary_timeline.py`의 `render_summary_with_timeline()`)이 `### N. 제목 (타임라인: 시작 ~ 끝)` 패턴을 찾아 구간별 카드로 렌더링하고, `(타임라인: ...)` 표기를 `분:초` 형식의 클릭 가능한 뱃지로 바꿔 보여줍니다. 클릭하면 `<video>` 엘리먼트의 `currentTime`을 이동시켜 해당 지점부터 재생합니다.
+- 제목에 "표"/"차트"가 포함된 섹션은 실행 폴더의 `ocr/ocr_result.json`에서 해당 타임라인과 겹치고 `scene_type`이 `chart_or_table`인 프레임을 찾아 스크린샷도 함께 보여줍니다.
 
 최종 JSON은 GPU 서버 응답을 그대로 보존하므로 위 세 키 외에 서버 구현 변경에 따라 추가 필드가 포함될 수 있습니다.
 

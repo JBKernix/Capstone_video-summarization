@@ -62,7 +62,7 @@ class PipelineSttTests(unittest.TestCase):
 
             options = build_stt_options(args)
 
-        self.assertEqual(options["model_size"], "medium")
+        self.assertEqual(options["model_size"], "large")
         self.assertEqual(options["device"], "cpu")
         self.assertEqual(options["temperature"], 0.0)
         self.assertIsNone(options["beam_size"])
