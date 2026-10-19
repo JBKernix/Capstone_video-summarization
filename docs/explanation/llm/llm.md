@@ -38,15 +38,15 @@ GPU_SERVER_URL = "http://100.124.136.28:8000"
 
 | 값 | 라벨 | 설명 |
 | --- | --- | --- |
-| `simple` | 간단요약 | 핵심만 간략히, 속도 빠름 |
-| `standard` (기본값) | 기본요약 | 균형 잡힌 요약 |
-| `detailed` | 상세요약 | 자세히 요약, 속도 느림 |
+| `simple` | 간단 | Whisper small · 빠른 음성 인식 |
+| `standard` (기본값) | 기본 | Whisper medium · 속도와 정확도의 균형 |
+| `detailed` | 상세 | Whisper large · 가장 큰 음성 인식 모델, 처리 시간 증가 |
 
 > `SUMMARY_LEVELS`의 값은 GPU 서버(`gpu-server` 브랜치)의 `configs/inference_config.py::SUMMARY_LEVEL_PRESETS` 키와 반드시 동일해야 합니다. 실제 토큰 수/속도는 서버가 프리셋에 따라 결정하며, 클라이언트는 값만 전달합니다.
 >
-> `simple`은 `standard`/`detailed`와 달리 영상(VLM) 분석 자체를 생략합니다. `scripts/run_pipeline.py`가 `simple`일 때 프레임 추출/OCR/VLM 단계를 아예 건너뛰고 STT 요약만 최종 요약으로 사용하기 때문입니다(아래 "최종 요약" 및 `pipeline.md` 참고). `SUMMARY_LEVEL_CAPTIONS`(업로드 페이지 안내 문구)도 이를 반영해 "영상 분석 생략"을 명시합니다.
+> 현재 사용자가 고르는 간단·기본·상세는 **Whisper 크기만** 정합니다(`preset_semantics: "whisper_only_v1"`). `scripts/run_pipeline.py`는 세 설정 모두 프레임 추출·OCR·VLM을 실행하고, 서버의 STT 요약·VLM 요약·최종 요약 요청에는 항상 `DEFAULT_SUMMARY_LEVEL`(`standard`)을 보냅니다. 단독 요약 스크립트의 `--summary-level`은 호환용으로 남아 있습니다. `SUMMARY_LEVEL_CAPTIONS`(업로드 화면 안내 문구)도 이를 반영합니다.
 
-`summary_levels.py`에는 `SUMMARY_LEVEL_STT_MODELS`(`simple`=`base`, `standard`=`small`, `detailed`=`medium`)도 정의되어 있습니다. GPU 서버 요청과는 무관하며, `--stt-model-size`를 지정하지 않았을 때 `run_pipeline.py`가 STT 단계의 Whisper 모델 크기를 요약 프리셋에 맞춰 고르는 데 사용합니다(자세한 우선순위는 [`pipeline.md`](../pipeline/pipeline.md) 참고).
+`summary_levels.py`의 `SUMMARY_LEVEL_STT_MODELS`(`simple`=`small`, `standard`=`medium`, `detailed`=`large`)는 `--stt-model-size`를 지정하지 않았을 때 `run_pipeline.py`가 STT 단계의 Whisper 모델 크기를 고르는 데 사용합니다(자세한 우선순위는 [`pipeline.md`](../pipeline/pipeline.md) 참고).
 
 ## STT 요약
 
@@ -150,7 +150,7 @@ runs/final/final_summary_result.json
 
 ### VLM 요약이 없을 때 (`write_stt_only_final_summary_step`)
 
-`scripts/run_final_summary.py`에는 서버를 호출하지 않는 `write_stt_only_final_summary_step(stt_summary_json_path, output_path, output_json_path=None)`도 있습니다. `scripts/run_pipeline.py`는 VLM 요약이 없으면(`--summary-level simple`이라 VLM 단계를 건너뛰었거나 `--skip-vlm`을 지정한 경우) 이 함수로 최종 통합 요약 API 호출 없이 STT 요약을 그대로 최종 요약으로 사용합니다. 이 경우 결과 JSON은 일반 경로와 필드 구성이 다릅니다.
+`scripts/run_final_summary.py`에는 서버를 호출하지 않는 `write_stt_only_final_summary_step(stt_summary_json_path, output_path, output_json_path=None)`도 있습니다. `scripts/run_pipeline.py`는 VLM 요약이 없으면(`--skip-ocr`/`--skip-vlm`을 지정한 경우) 이 함수로 최종 통합 요약 API 호출 없이 STT 요약을 그대로 최종 요약으로 사용합니다. 이 경우 결과 JSON은 일반 경로와 필드 구성이 다릅니다.
 
 ```json
 {

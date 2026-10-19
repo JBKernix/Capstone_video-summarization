@@ -52,7 +52,7 @@ def test_pipeline_archives_metrics(video, tmp_path, level, skip_ocr, skip_vlm):
     assert record["input"]["width"] == 160
     assert record["input"]["duration_seconds"] == pytest.approx(2, abs=.1)
     assert record["counts"]["stt_segments"] == 1
-    assert record["settings"]["stt"]["model_size"] == {"simple": "base", "standard": "small", "detailed": "medium"}[level]
+    assert record["settings"]["stt"]["model_size"] == {"simple": "small", "standard": "medium", "detailed": "large"}[level]
     assert record["settings"]["preset_semantics"] == "whisper_only_v1"
     assert record["counts"]["frames_extracted"] == 2
     if not skip_ocr:

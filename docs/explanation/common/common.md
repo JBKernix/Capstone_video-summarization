@@ -80,7 +80,7 @@ def find_existing_path(
 
 ## `progress` — 파이프라인 진행 상황 보고
 
-`modules/common/progress.py`는 파이프라인 실행 로그에 진행 상황을 구조화된 형태로 남기고, `app/pages/1_upload.py`가 이 로그를 폴링/파싱해 UI에 단계별 진행률을 표시하는 데 사용합니다.
+`modules/common/progress.py`는 파이프라인 실행 로그에 진행 상황을 구조화된 형태로 남기고, `app/pipeline_log.py`가 이 로그를 파싱해 UI(React 화면은 앱 API를 통해, Streamlit은 `app/pages/1_upload.py`에서 직접)에 단계별 진행률을 표시하는 데 사용합니다.
 
 | 이름 | 값/설명 |
 | --- | --- |
@@ -126,7 +126,7 @@ def report_progress(step: int, message: str, percent: float | None = None) -> No
 | `modules/llm/final_summarizer_client.py` | `STEP_FINAL_SUMMARY` |
 | `modules/llm/gpu_job_client.py` | 하위 클래스가 설정한 `progress_step` (GPU 작업 폴링 중 상태 메시지 보고용 공통 믹스인) |
 
-`app/pages/1_upload.py`는 `PROGRESS_MARKER`, `STEP_LABELS`, `STEP_STT`, `TOTAL_STEPS`를 직접 import해서 로그 줄을 파싱하고, Whisper STT 자체 진행률 출력(`STEP_STT`)까지 포함해 전체 7단계 진행률 UI를 구성합니다.
+`app/pipeline_log.py`는 `PROGRESS_MARKER`, `STEP_STT`를 import해서 로그 줄을 파싱하고 Whisper STT 자체 진행률 출력(`STEP_STT`)까지 포함해 단계별 상태를 계산합니다. 화면(앱 API `app/api/server.py`, Streamlit `app/pages/1_upload.py`)은 `STEP_LABELS`, `TOTAL_STEPS`로 7단계 진행률 UI를 구성합니다.
 
 ## `__init__.py` 재노출 목록
 
