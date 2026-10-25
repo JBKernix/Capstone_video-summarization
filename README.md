@@ -42,6 +42,7 @@
 Capstone_video-summarization/
 ├── app/                  # 앱 서버(app/api, React용 FastAPI)와 예비 Streamlit UI
 ├── frontend/             # React 화면 (Vite + TypeScript)
+├── gpu-server/           # LLM/VLM 추론 서버 (예전 gpu-server 브랜치, 설명은 gpu-server/README.md)
 ├── configs/              # STT 등 설정 파일
 ├── data/input/           # 기본 입력 영상 위치
 ├── data/saved/           # 분석 결과 저장 위치 (영상 + 요약본)
@@ -50,6 +51,7 @@ Capstone_video-summarization/
 ├── runs/                 # 기본 실행 결과 출력 위치
 ├── scripts/              # CLI 실행 스크립트
 ├── tests/                # 테스트 코드
+├── pytest.ini            # 앱 테스트(tests/)만 실행. 서버 테스트는 gpu-server/에서 따로 실행
 ├── requirements.txt
 └── README.md
 ```
@@ -93,7 +95,7 @@ temperature: 0.0
 beam_size:
 ```
 
-LLM/VLM/최종 요약은 `--analysis-backend local|claude`로 선택합니다. 로컬 모드는 `gpu-server`의 Qwen 모델 서버를, API 모드는 같은 분석 서버를 거쳐 Claude Haiku를 사용합니다. 키는 서버 컴퓨터의 `ANTHROPIC_API_KEY` 환경변수에서만 읽습니다. 서버 업데이트 방법은 [분석 방식 설정](docs/analysis_backends.md)을 참고하세요.
+LLM/VLM/최종 요약은 `--analysis-backend local|claude`로 선택합니다. 로컬 모드는 `gpu-server/` 폴더의 Qwen 모델 서버를, API 모드는 같은 분석 서버를 거쳐 Claude Haiku를 사용합니다. 키는 서버 컴퓨터의 `ANTHROPIC_API_KEY` 환경변수에서만 읽습니다. 서버 업데이트 방법은 [분석 방식 설정](docs/analysis_backends.md)을 참고하세요.
 
 ## React 앱 실행 (기본)
 

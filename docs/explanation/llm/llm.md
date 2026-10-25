@@ -42,7 +42,7 @@ GPU_SERVER_URL = "http://100.124.136.28:8000"
 | `standard` (기본값) | 기본 | Whisper medium · 속도와 정확도의 균형 |
 | `detailed` | 상세 | Whisper large · 가장 큰 음성 인식 모델, 처리 시간 증가 |
 
-> `SUMMARY_LEVELS`의 값은 GPU 서버(`gpu-server` 브랜치)의 `configs/inference_config.py::SUMMARY_LEVEL_PRESETS` 키와 반드시 동일해야 합니다. 실제 토큰 수/속도는 서버가 프리셋에 따라 결정하며, 클라이언트는 값만 전달합니다.
+> `SUMMARY_LEVELS`의 값은 GPU 서버(`gpu-server/configs/inference_config.py`)의 `SUMMARY_LEVEL_PRESETS` 키와 반드시 동일해야 합니다. 실제 토큰 수/속도는 서버가 프리셋에 따라 결정하며, 클라이언트는 값만 전달합니다.
 >
 > 현재 사용자가 고르는 간단·기본·상세는 **Whisper 크기만** 정합니다(`preset_semantics: "whisper_only_v1"`). `scripts/run_pipeline.py`는 세 설정 모두 프레임 추출·OCR·VLM을 실행하고, 서버의 STT 요약·VLM 요약·최종 요약 요청에는 항상 `DEFAULT_SUMMARY_LEVEL`(`standard`)을 보냅니다. 단독 요약 스크립트의 `--summary-level`은 호환용으로 남아 있습니다. `SUMMARY_LEVEL_CAPTIONS`(업로드 화면 안내 문구)도 이를 반영합니다.
 

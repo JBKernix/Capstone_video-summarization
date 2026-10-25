@@ -23,7 +23,8 @@ $condaEnvs = Join-Path $env:USERPROFILE "anaconda3\envs"
 # 앱 서버(React용 FastAPI 앱 서버 또는 Streamlit)를 실행할 Python입니다. 예전 이름 STREAMLIT_PYTHON도 계속 읽습니다.
 $AppPython = Get-Setting "APP_PYTHON" (Get-Setting "STREAMLIT_PYTHON" (Join-Path $condaEnvs "capstone\python.exe"))
 $ServerPython = Get-Setting "SERVER_PYTHON" (Join-Path $condaEnvs "video_summarization\python.exe")
-$ServerDir = Get-Setting "SERVER_DIR" (Join-Path (Split-Path $root -Parent) "Summarization")
+# 추론 서버(gpu-server) 코드는 이 저장소의 gpu-server 폴더에 있습니다. 다른 위치의 체크아웃을 쓰려면 SERVER_DIR로 지정합니다.
+$ServerDir = Get-Setting "SERVER_DIR" (Join-Path $root "gpu-server")
 $ApiPort = [int](Get-Setting "API_PORT" "8000")
 $AppPort = [int](Get-Setting "APP_PORT" (Get-Setting "STREAMLIT_PORT" "8501"))
 # 기본 화면은 React입니다. -Streamlit 또는 APP_UI=streamlit이면 기존 Streamlit 화면을 같은 포트로 띄웁니다.

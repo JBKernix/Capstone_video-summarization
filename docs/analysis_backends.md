@@ -11,7 +11,7 @@ Whisper 음성 인식 모델 크기만 정합니다. 모든 프리셋에서 프�
 | 최종 통합 | 자가 운영 서버의 선택한 로컬 모델 | Anthropic API, `claude-haiku-4-5` |
 | API 키 | 불필요 | 분석 서버의 `ANTHROPIC_API_KEY` 환경변수 |
 
-로컬 모드는 기존 `gpu-server` 브랜치의 자체 모델 서버를 사용합니다. 같은 PC 또는
+로컬 모드는 이 저장소 `gpu-server/` 폴더의 자체 모델 서버를 사용합니다. 같은 PC 또는
 사용자가 운영하는 별도 GPU PC에서 실행할 수 있습니다. 새 서버는 `/models`에서 선택한 모델의 다운로드 완료 여부를 확인합니다.
 구버전 서버는 기존 Qwen 조합만 지원하며 `/health`에서 local 백엔드인지 확인합니다.
 API 모드도 지정한 분석 서버의 `/claude/messages` 경로를 사용합니다. 서버가 자기 환경변수의
@@ -48,7 +48,7 @@ API 오류가 나도 로컬로 자동 전환하지 않습니다. 반대 방향�
 
 ## 공통 분석 서버 준비
 
-같이 제공하는 `gpu-server/` 수정본을 기존 서버 환경에 적용하세요. 기존 모델 캐시는 재사용할 수 있습니다. 신규 로컬 모델은 GPU 서버의 `requirements-local.txt` 설치가 필요합니다. API 모드도 서버 수정본이 필요합니다.
+추론 서버 코드는 저장소의 `gpu-server/` 폴더에 함께 들어 있습니다(서버 PC 이전 방법은 [단일 서버 운영 가이드](single_server_deployment.md) 참고). 기존 모델 캐시는 재사용할 수 있습니다. 신규 로컬 모델은 GPU 서버의 `requirements-local.txt` 설치가 필요합니다. API 모드도 서버 수정본이 필요합니다.
 서버의 `requirements.txt` 의존성을 설치한 뒤 기존 `ANTHROPIC_API_KEY` 환경변수가
 전달되는 터미널/서비스에서 서버를 재시작하세요. 앱 PC에 키를 복사할 필요는 없습니다.
 두 모드를 함께 쓰려면 다음과 같이 로컬 모델 경로를 설정합니다.
@@ -115,7 +115,7 @@ Claude의 응답 usage에서 입력·출력 토큰과 완료 API 응답 횟수�
 Qwen3.5 9B, Qwen3-VL 8B, Gemma 4 12B, MiniCPM-V 4.5, InternVL3.5 8B, GLM-4.6V-Flash를 추가했습니다.
 GPU 서버에서 `python scripts/download_models.py --all`로 가중치를 미리 일괄 다운로드합니다.
 앱 업로드 화면의 **모델 설치 상태**에서는 설치 완료 여부를 확인합니다(React는 개발자 화면에서만 표시하며, 개발자 전용 앱 API `GET /api/models`가 추론 서버 `/models`를 대신 조회). 화면에 다운로드 버튼은 제공하지 않습니다.
-라이브러리 설치 및 전체 다운로드 명령은 제공된 `gpu-server/docs/local_models.md`를 참고하세요.
+라이브러리 설치 및 전체 다운로드 명령은 `gpu-server/docs/local_models.md`를 참고하세요.
 전체 가중치는 약 149 GB이며 ZIP에는 포함되지 않습니다. 4비트 변환은 GPU에 로딩할 때 수행합니다.
 MiniCPM은 `python scripts/setup_minicpm.py`로 전용 실행 환경을 설치해야 합니다.
 CLI에서는 `--local-model qwen3.5-9b`처럼 지정합니다. Claude 모드에서는 이 선택을 사용하지 않습니다.

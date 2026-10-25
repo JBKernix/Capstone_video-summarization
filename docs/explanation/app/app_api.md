@@ -2,7 +2,7 @@
 
 React 화면(`frontend/`)이 호출하는 FastAPI 서버입니다. 기존 Streamlit 페이지가 하던 일(업로드 저장, 파이프라인 실행·중지, 진행 상황 해석, 결과·저장본·실행 이력 조회)을 JSON API로 제공하고, React 빌드 결과(`frontend/dist`)도 같은 포트에서 내보냅니다.
 
-LLM/VLM 추론 서버(`gpu-server` 브랜치, `GPU_SERVER_URL`, 기본 `127.0.0.1:8000`)와는 **별개의 서버**입니다. 이 서버는 모델을 직접 실행하지 않고, 기존과 같이 `scripts/run_pipeline.py`를 자식 프로세스로 띄웁니다.
+LLM/VLM 추론 서버(이 저장소의 `gpu-server/` 폴더, `GPU_SERVER_URL`, 기본 `127.0.0.1:8000`)와는 **별개의 서버**입니다. 이 서버는 모델을 직접 실행하지 않고, 기존과 같이 `scripts/run_pipeline.py`를 자식 프로세스로 띄웁니다.
 
 ```text
 브라우저 ──> 앱 API 서버 127.0.0.1:8501 (app.api.server:app)

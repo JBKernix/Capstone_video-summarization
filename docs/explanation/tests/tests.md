@@ -2,6 +2,13 @@
 
 `tests/` 폴더는 주요 모듈과 앱 보조 로직을 검증하는 테스트를 담고 있습니다.
 
+저장소 루트의 `pytest.ini`는 `tests/`만 모으고 `gpu-server/`는 건너뜁니다. 추론 서버 테스트(`gpu-server/tests/`)는 같은 이름의 `app` 패키지를 써서 함께 실행하면 import가 충돌하므로, `gpu-server/` 폴더에서 따로 실행합니다(그 폴더의 `pytest.ini`가 기준이 됩니다).
+
+```bash
+python -m pytest              # 저장소 루트: 앱 테스트
+cd gpu-server && python -m pytest   # 추론 서버 테스트
+```
+
 ## 테스트 파일
 
 | 파일 | 대상 |

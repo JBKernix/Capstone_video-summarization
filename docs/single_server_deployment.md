@@ -10,14 +10,25 @@ GPU 서버 PC 한 대에서 업로드 수신부터 STT·OCR·LLM/VLM·최종 요
                                            │  React 화면 + 앱 API(app.api.server) — 또는 예비 Streamlit
                                            │  업로드 저장, run_pipeline.py 실행(FFmpeg·Whisper·EasyOCR)
                                            ▼
-                                         FastAPI   127.0.0.1:8000   (gpu-server 브랜치, C:\Summarization)
+                                         FastAPI   127.0.0.1:8000   (같은 저장소의 gpu-server\ 폴더)
                                              LLM/VLM 추론 (단일 작업 큐)
 ```
 
 - 외부에 공개되는 것은 8501의 앱 서버 하나뿐입니다. 추론용 FastAPI(8000)는 127.0.0.1에만 바인딩하고 터널에 연결하지 않습니다.
 - 앱 서버는 기본으로 React 화면과 그 API를 내보내는 FastAPI 앱 서버(`app/api/server.py`, [설명](explanation/app/app_api.md))입니다. 기존 Streamlit 화면은 `-Streamlit`으로 같은 포트에 띄울 수 있으며, 두 화면은 같은 실행 기록·저장 결과를 공유합니다.
 - cloudflared는 서버에서 Cloudflare로 나가는(outbound) 연결만 사용하므로 라우터 포트포워딩이 필요 없습니다.
-- `gpu-server` 브랜치 코드는 수정하지 않았습니다. 기존처럼 별도 폴더(기본 `C:\Summarization`)에 두고 `start_all`이 그 폴더에서 uvicorn을 `--host 127.0.0.1`로 실행합니다.
+- 추론 서버 코드는 이 저장소의 `gpu-server\` 폴더에 있습니다(예전 `gpu-server` 브랜치를 `git subtree`로 합침). `start_all`이 그 폴더에서 uvicorn을 `--host 127.0.0.1`로 실행합니다. 다른 위치의 체크아웃을 쓰려면 `SERVER_DIR`로 지정합니다.
+
+### 예전 `C:\Summarization` 폴더에서 옮겨 오기
+
+모델 가중치(`models\hf_cache`, 약 139GB)와 MiniCPM 전용 환경(`.venv-minicpm`)은 Git에 올라가지 않으므로 새 위치에 따로 준비해야 합니다. 기존 Qwen 로더는 경로가 `gpu-server\models\hf_cache`로 고정되어 있어 `LOCAL_MODEL_DIR`만으로는 바꿀 수 없습니다. 복사하지 않고 디렉터리 연결(junction)로 기존 파일을 그대로 쓸 수 있습니다.
+
+```bat
+mklink /J C:\capstone\gpu-server\models\hf_cache C:\Summarization\models\hf_cache
+mklink /J C:\capstone\gpu-server\.venv-minicpm C:\Summarization\.venv-minicpm
+```
+
+연결을 만든 뒤에는 `C:\Summarization` 폴더를 지우지 마세요(실제 파일이 그곳에 있습니다). 공간을 정리하려면 연결 대신 폴더를 `gpu-server\` 아래로 옮기면 됩니다.
 
 ## 1. 서버 PC 실행
 
@@ -46,7 +57,7 @@ stop_all.bat -TunnelOnly :: 터널만 종료 (외부 접속 차단, 서버는 �
 이미 실행 중인 서버를 종료하지 않습니다. 기존 창이 `0.0.0.0`에 바인딩되어 있으면 경고만 출력하므로,
 FastAPI를 외부와 완전히 분리하려면 기존 서버 창을 직접 닫고 `start_all.bat`을 다시 실행하세요.
 
-실행 로그: `logs\launcher\*.log`(시작 스크립트·앱 서버 `app.err.log`/Streamlit `streamlit.err.log`), `C:\Summarization\logs\server.log`(FastAPI),
+실행 로그: `logs\launcher\*.log`(시작 스크립트·앱 서버 `app.err.log`/Streamlit `streamlit.err.log`), `gpu-server\logs\server.log`(FastAPI),
 `logs\client.log`(Streamlit 접속 기록), `runs\history\<run_id>\`(실행별 파이프라인 로그·지표).
 
 화면 코드(`frontend/`)를 고친 뒤에는 `frontend`에서 `npm run build`만 다시 실행하면 새로고침으로 반영됩니다. `start_all`은 `frontend\dist`가 **없을 때만** 빌드합니다. 앱 API(`app/api/`)를 고쳤으면 앱 서버만 다시 시작하세요(추론 서버는 그대로 두어도 됩니다).
@@ -58,7 +69,7 @@ FastAPI를 외부와 완전히 분리하려면 기존 서버 창을 직접 닫�
 | `APP_PYTHON` (예전 이름 `STREAMLIT_PYTHON`도 인식) | `%USERPROFILE%\anaconda3\envs\capstone\python.exe` | 앱 서버(React용 API 또는 Streamlit)/파이프라인 Python |
 | `APP_UI` | `react` | `streamlit`이면 `-Streamlit`과 같음 |
 | `SERVER_PYTHON` | `%USERPROFILE%\anaconda3\envs\video_summarization\python.exe` | FastAPI Python |
-| `SERVER_DIR` | 이 폴더의 상위 폴더 `\Summarization` | gpu-server 브랜치 체크아웃 |
+| `SERVER_DIR` | 이 저장소의 `gpu-server` 폴더 | 추론 서버 코드 위치 |
 | `API_PORT` / `APP_PORT` (예전 이름 `STREAMLIT_PORT`) | `8000` / `8501` | 내부 포트 |
 | `GPU_SERVER_URL` | `http://127.0.0.1:8000` | 앱(파이프라인)이 호출하는 추론 서버 주소 |
 | `APP_PASSWORD` | 없음 | 입장 비밀번호(선택). 없으면 `.streamlit\secrets.toml` 값을 사용하고, 둘 다 없으면 로그인 없이 공개 |
@@ -76,7 +87,7 @@ LLM/VLM 서버 설정(`LLM_BACKEND`, `KEEP_LLM_LOADED`, `ANTHROPIC_API_KEY`, `HF
 
 ### 개별 실행 (기존 방식 유지)
 
-- FastAPI: `C:\Summarization\start_server.bat` (기존 스크립트는 `0.0.0.0` 바인딩 — 단일 서버 운영에서는 `start_all` 권장)
+- FastAPI: `gpu-server\start_server.bat` (기존 스크립트는 `0.0.0.0` 바인딩 — 단일 서버 운영에서는 `start_all` 권장)
 - React 앱 서버: `python -m uvicorn app.api.server:app --host 127.0.0.1 --port 8501` (`frontend\dist` 필요)
 - Streamlit: `run_app.bat`
 - 터널: `start_tunnel.bat`
