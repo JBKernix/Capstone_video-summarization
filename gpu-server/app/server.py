@@ -1,0 +1,343 @@
+import os
+import sys
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+
+# 모듈 또는 파일로 실행해도 프로젝트 패키지를 찾을 수 있게 합니다.
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, status
+
+from configs.inference_config import (
+    DEFAULT_SUMMARY_LEVEL,
+    VLM_INFERENCE_CONFIG,
+    get_summary_level_preset,
+)
+from app.api_models import (
+    JobStatusResponse,
+    JobSubmissionResponse,
+    SummaryRequest,
+)
+from app.inference_jobs import InferenceJobRunner
+from app.local_model_api import router as model_router
+from app.local_model_manager import LocalModelManager
+from configs.local_models import require_downloaded
+from app.job_store import JobStore
+from app.server_logging import configure_logging
+from app.claude_api import router as claude_router, claude_api_configured
+from scripts.vlm_upload import (
+    MAX_FRAME_BYTES,
+    MAX_OCR_JSON_BYTES,
+    read_upload_limited,
+    select_ocr_entries_for_frames,
+    validate_frame_filename,
+)
+from services.summary_service import SummaryService
+
+
+MAX_SUMMARY_FILE_BYTES = 10 * 1024 * 1024
+
+
+def env_flag(name: str) -> bool:
+    return os.getenv(name, "0").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def validate_summary_filename(filename: str, allowed_suffix: str) -> str:
+    safe_name = Path(filename).name
+    if not safe_name or Path(safe_name).suffix.lower() != allowed_suffix:
+        raise ValueError(f"{allowed_suffix} 파일만 업로드할 수 있습니다: {filename}")
+    return safe_name
+
+
+async def read_optional_summary_upload(
+    upload: UploadFile | None,
+    allowed_suffix: str,
+) -> bytes | None:
+    if upload is None:
+        return None
+    validate_summary_filename(upload.filename or "", allowed_suffix)
+    return await read_upload_limited(upload, MAX_SUMMARY_FILE_BYTES)
+
+
+logger = configure_logging(PROJECT_ROOT)
+app = FastAPI(
+    title="Video Summarization AI Server",
+    description="LLM/VLM 처리를 위한 FastAPI 서버",
+    version="0.1.0",
+)
+app.include_router(claude_router)
+app.include_router(model_router)
+
+summary_service = SummaryService()
+job_store = JobStore()
+job_runner = InferenceJobRunner(
+    summary_service=summary_service,
+    job_store=job_store,
+    logger=logger,
+    keep_llm_loaded=env_flag("KEEP_LLM_LOADED"),
+    keep_vlm_loaded=env_flag("KEEP_VLM_LOADED"),
+)
+model_manager = LocalModelManager(job_runner)
+
+def validate_local_model(model_id):
+    if model_id is not None:
+        try:
+            require_downloaded(model_id)
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from error
+
+job_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="summary-job")
+
+
+@app.get("/")
+def root():
+    return {"message": "FastAPI server is running"}
+
+
+@app.get("/health")
+def health_check():
+    llm = summary_service.llm_service.loader
+    vlm = summary_service.vlm_service.loader
+    # Expose actual instantiated backends, never credentials or full model paths.
+    llm_type = type(llm).__name__
+    vlm_type = type(vlm).__name__
+    return {
+        "status": "ok", "active_jobs": job_store.active_count(),
+        "local_model_selection": True,
+        "claude_api_proxy": True, "claude_api_configured": claude_api_configured(),
+        "llm_backend": "local" if llm_type == "LLMLoader" else "claude" if llm_type == "ClaudeLLMLoader" else "unknown",
+        "vlm_backend": "local" if vlm_type == "VLMLoader" else "unknown",
+        "llm_model": getattr(llm.config, "model", None) or Path(llm.config.model_path).name,
+        "vlm_model": Path(vlm.config.model_path).name,
+    }
+
+
+@app.post(
+    "/llm/summarize",
+    response_model=JobSubmissionResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def summarize(request: SummaryRequest):
+    validate_local_model(request.local_model)
+    stt_text = request.full_text.strip() or " ".join(
+        segment.text.strip()
+        for segment in request.segments
+        if segment.text.strip()
+    )
+    logger.info(
+        "STT 텍스트 길이: %d, 세그먼트 수: %d",
+        len(stt_text),
+        len(request.segments),
+    )
+    if not stt_text:
+        raise HTTPException(status_code=422, detail="STT 텍스트가 비어 있습니다.")
+
+    job_id = job_store.create_id("stt-summary")
+    job_store.create(job_id, "추론 대기열에 등록되었습니다.")
+    logger.info(
+        "job_id=%s | 작업 접수 | text_length=%d | segments=%d | "
+        "summary_level=%s",
+        job_id,
+        len(stt_text),
+        len(request.segments),
+        request.summary_level,
+    )
+    job_executor.submit(model_manager.run, request.local_model, "run_summary", job_id, request.model_dump())
+    return JobSubmissionResponse(
+        job_id=job_id,
+        status="queued",
+        message="요청을 접수했습니다. status_url을 조회해 진행 상태를 확인하세요.",
+        status_url=f"/llm/jobs/{job_id}",
+    )
+
+
+@app.post(
+    "/vlm/summarize",
+    response_model=JobSubmissionResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def summarize_frames(
+    ocr_result: UploadFile = File(...),
+    frames: list[UploadFile] = File(...),
+    summary_level: str = Form(default=DEFAULT_SUMMARY_LEVEL),
+    local_model: str | None = Form(default=None),
+):
+    validate_local_model(local_model)
+    if not frames:
+        raise HTTPException(status_code=422, detail="프레임 이미지가 필요합니다.")
+    if len(frames) > VLM_INFERENCE_CONFIG.max_frame_count:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"프레임은 최대 {VLM_INFERENCE_CONFIG.max_frame_count}장까지 "
+                "업로드할 수 있습니다."
+            ),
+        )
+    try:
+        preset = get_summary_level_preset(summary_level)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    max_new_tokens = preset.vlm_max_new_tokens
+
+    try:
+        ocr_bytes = await read_upload_limited(ocr_result, MAX_OCR_JSON_BYTES)
+        ocr_entries = summary_service.vlm_service.load_ocr_results(
+            ocr_bytes.decode("utf-8-sig")
+        )
+    except (UnicodeDecodeError, ValueError) as error:
+        raise HTTPException(
+            status_code=422,
+            detail=f"OCR JSON 형식이 올바르지 않습니다: {error}",
+        ) from error
+
+    frame_data = []
+    frame_names = []
+    seen_frame_names = set()
+    for frame in frames:
+        try:
+            filename = validate_frame_filename(frame.filename or "")
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+        normalized_name = filename.casefold()
+        if normalized_name in seen_frame_names:
+            raise HTTPException(
+                status_code=422,
+                detail=f"중복된 프레임 파일명입니다: {filename}",
+            )
+        seen_frame_names.add(normalized_name)
+        frame_data.append(await read_upload_limited(frame, MAX_FRAME_BYTES))
+        frame_names.append(filename)
+
+    try:
+        selected_entries = select_ocr_entries_for_frames(ocr_entries, frame_names)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+    job_id = job_store.create_id("vlm-summary")
+    job_store.create(job_id, "VLM 추론 대기열에 등록되었습니다.")
+    logger.info(
+        "job_id=%s | VLM 작업 접수 | ocr_entries=%d | frames=%d | "
+        "summary_level=%s | max_new_tokens=%d",
+        job_id,
+        len(ocr_entries),
+        len(frame_data),
+        summary_level,
+        max_new_tokens,
+    )
+    job_executor.submit(
+        model_manager.run, local_model, "run_vlm",
+        job_id,
+        selected_entries,
+        frame_data,
+        max_new_tokens,
+    )
+    return JobSubmissionResponse(
+        job_id=job_id,
+        status="queued",
+        message="요청을 접수했습니다. status_url을 조회해 진행 상태를 확인하세요.",
+        status_url=f"/vlm/jobs/{job_id}",
+    )
+
+
+@app.post(
+    "/llm/final-summary",
+    response_model=JobSubmissionResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def summarize_final(
+    stt_summary_result: UploadFile = File(...),
+    vlm_summary_result: UploadFile = File(...),
+    stt_summary: UploadFile | None = File(default=None),
+    vlm_summary: UploadFile | None = File(default=None),
+    summary_level: str = Form(default=DEFAULT_SUMMARY_LEVEL),
+    local_model: str | None = Form(default=None),
+):
+    validate_local_model(local_model)
+    try:
+        preset = get_summary_level_preset(summary_level)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    max_new_tokens = preset.final_max_new_tokens
+
+    try:
+        stt_summary_data = await read_optional_summary_upload(stt_summary, ".txt")
+        stt_summary_result_data = await read_optional_summary_upload(
+            stt_summary_result,
+            ".json",
+        )
+        vlm_summary_data = await read_optional_summary_upload(vlm_summary, ".txt")
+        vlm_summary_result_data = await read_optional_summary_upload(
+            vlm_summary_result,
+            ".json",
+        )
+    except UnicodeDecodeError as error:
+        raise HTTPException(
+            status_code=422,
+            detail="요약 파일은 UTF-8 텍스트여야 합니다.",
+        ) from error
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+    job_id = job_store.create_id("final-summary")
+    job_store.create(job_id, "최종 요약 대기열에 등록되었습니다.")
+    logger.info(
+        "job_id=%s | final summary job submitted | summary_level=%s | max_new_tokens=%d",
+        job_id,
+        summary_level,
+        max_new_tokens,
+    )
+    job_executor.submit(
+        model_manager.run, local_model, "run_final",
+        job_id,
+        stt_summary_data,
+        stt_summary_result_data,
+        vlm_summary_data,
+        vlm_summary_result_data,
+        max_new_tokens,
+    )
+    return JobSubmissionResponse(
+        job_id=job_id,
+        status="queued",
+        message="요청이 접수되었습니다. status_url로 진행 상태를 확인하세요.",
+        status_url=f"/llm/final-summary/jobs/{job_id}",
+    )
+
+
+def get_job(job_id: str) -> JobStatusResponse:
+    response_data = job_store.response_data(job_id)
+    if response_data is None:
+        raise HTTPException(status_code=404, detail="작업을 찾을 수 없습니다.")
+    return JobStatusResponse.model_validate(response_data)
+
+
+@app.get("/llm/jobs/{job_id}", response_model=JobStatusResponse)
+def get_summary_job(job_id: str):
+    return get_job(job_id)
+
+
+@app.get("/vlm/jobs/{job_id}", response_model=JobStatusResponse)
+def get_vlm_job(job_id: str):
+    return get_job(job_id)
+
+
+@app.get("/final/jobs/{job_id}", response_model=JobStatusResponse)
+def get_final_job(job_id: str):
+    return get_job(job_id)
+
+
+@app.get("/llm/final-summary/jobs/{job_id}", response_model=JobStatusResponse)
+def get_llm_final_summary_job(job_id: str):
+    return get_job(job_id)
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(
+        app,
+        host=os.getenv("SERVER_HOST", "0.0.0.0"),
+        port=int(os.getenv("SERVER_PORT", "8000")),
+    )
