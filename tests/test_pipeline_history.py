@@ -80,9 +80,12 @@ def test_claude_pipeline_archives_all_stage_outputs(video, tmp_path, monkeypatch
 
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-only-secret")
     run_dir = tmp_path / "runs"
-    responses = [reply({"summary": "음성 요약", "important_segment_ids": [0]}),
-                 reply({"results": [{"index": 0, "summary": "파란 화면"}]}),
-                 reply({"summary": "# 최종 요약\n영상의 음성과 화면을 통합했습니다."})]
+    note = {"title": "최종 요약", "key_points": ["음성과 화면 통합"], "terms": [],
+            "chapters": [{"title": "도입", "start": 0.0, "end": 1.5, "points": ["테스트"], "screen_notes": []}],
+            "visuals": [], "conclusion": ["정리"], "notices": []}
+    responses = [reply({"summary": "음성 요약", "important_segments": [{"index": 0, "topic": "도입", "reason": "시작"}]}),
+                 reply({"results": [{"index": 0, "screen_type": "슬라이드", "title": "", "content": "파란 화면", "formula": ""}]}),
+                 reply(note)]
     with (patch.object(sys, "argv", ["pipeline", "--video", str(video), "--run-dir", str(run_dir),
                                     "--analysis-backend", "claude"]),
           patch("modules.llm.backends.BackendOptions.validate", return_value={"analysis_backend": "claude", "analysis_model": "claude-haiku-4-5"}),
@@ -99,5 +102,7 @@ def test_claude_pipeline_archives_all_stage_outputs(video, tmp_path, monkeypatch
     assert record["counts"]["api_input_tokens"] == 300
     assert post.call_count == 3
     archive = run_dir / "history" / record["run_id"]
-    assert "최종 요약" in (archive / "final_summary_result.json").read_text()
+    final = json.loads((archive / "final_summary_result.json").read_text(encoding="utf-8"))
+    assert final["summary"].startswith("# 최종 요약")
+    assert final["lecture_note"]["chapters"][0]["title"] == "도입"
     assert "test-only-secret" not in (archive / "metrics.json").read_text()
