@@ -251,15 +251,22 @@ class InferenceJobRunner:
                 total_steps=1,
             )
             with self.log_stage(job_id, "final summary"):
-                final_summary = self.summary_service.summarize_final(
+                final_note = self.summary_service.summarize_final_note(
                     stt_text=stt_text,
                     stt_json=stt_json,
                     vlm_text=vlm_text,
                     vlm_json=vlm_json,
                     max_new_tokens=max_new_tokens,
                 )
+            for attempt in final_note["attempts"]:
+                if attempt["error"]:
+                    self.logger.warning("job_id=%s | 강의 노트 JSON 읽기 실패: %s", job_id, attempt["error"])
+            self.logger.info("job_id=%s | final summary format=%s", job_id, final_note["format"])
 
-            result = FinalSummaryResponse(final_summary=final_summary)
+            result = FinalSummaryResponse(
+                final_summary=final_note["markdown"],
+                lecture_note=final_note["lecture_note"],
+            )
             self.job_store.update(
                 job_id,
                 status="completed",

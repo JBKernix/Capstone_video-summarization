@@ -9,6 +9,10 @@ from models.claude_llm_loader import ClaudeLLMLoader, ClaudeLLMConfig
 
 ProgressCallback = Callable[[str, int, int], None]
 
+# 강의용 STT 요약은 개념·정의·강조 사항까지 담아 512토큰이면 뒷부분 주제가 잘립니다.
+# 서버에 반영할 때는 configs/inference_config.py의 standard 프리셋 stt_max_new_tokens도 함께 올립니다.
+LECTURE_STT_MAX_NEW_TOKENS = LLM_INFERENCE_CONFIG.max_new_tokens_limit
+
 
 def _build_loader():
     """LLM_BACKEND 환경변수로 로컬 모델과 Claude API 백엔드를 전환합니다."""
@@ -34,34 +38,40 @@ class LLMService:
     def summarize_stt(
         self,
         stt_text: str,
-        max_new_tokens: int = LLM_INFERENCE_CONFIG.default_max_new_tokens,
+        max_new_tokens: int = LECTURE_STT_MAX_NEW_TOKENS,
     ) -> str:
         prompt = f"""
-다음은 영상에서 추출한 STT 음성 인식 결과입니다.
+다음은 강의 영상에서 추출한 STT 음성 인식 결과입니다.
 
 [STT 결과]
 {stt_text}
 
-위 내용을 바탕으로 한국어로 요약해줘.
+위 강의 내용을 학습자가 복습할 수 있도록 한국어로 요약해줘.
 
 [요약 조건]
-1. 핵심 내용을 주제별로 정리
-2. 불필요한 반복 표현 제거
-3. STT 오류로 보이는 문장은 자연스럽게 보정
-4. 원문에 없는 내용은 추가하지 않기
-5. 영상의 흐름을 유지해서 정리
+1. 강의에서 다룬 개념을 강의 순서대로 정리
+2. 새로 등장한 용어는 '작은따옴표'로 표시하고 강사가 설명한 정의를 함께 적기
+3. 강사가 든 예시, 비유, 예제 풀이 과정은 핵심만 남기기
+4. "중요하다", "시험에 나온다", "꼭 기억하라" 등 강사가 강조한 내용은 빠뜨리지 않기
+5. 출석 확인, 잡담, 마이크·장비 점검, 반복 설명은 제거
+6. STT 오류로 보이는 전문 용어는 문맥상 명확할 때만 보정
+7. 원문에 없는 설명, 예시, 수치는 추가하지 않기
+8. 전체 1200자 이내로 작성하고, 강의가 길면 예시를 줄이더라도 다룬 주제는 끝까지 빠뜨리지 않기
 
 [출력 형식]
-## STT 요약
+## 강의 요약
 
-### 핵심 주제
-- 
-
-### 주요 내용
-- 
-
-### 전체 요약
+### 학습 주제
 -
+
+### 핵심 개념
+- '용어': 설명
+
+### 강의 흐름
+-
+
+### 강조 사항 및 공지
+- (과제·시험·다음 수업 공지가 없으면 "없음")
 """
 
         with self._generation_lock:
@@ -83,7 +93,7 @@ class LLMService:
             for segment in stt_segments
         )
         prompt = f"""
-다음은 영상의 타임스탬프가 포함된 STT 구간과 STT 요약입니다.
+다음은 강의 영상의 타임스탬프가 포함된 STT 구간과 STT 요약입니다.
 
 [STT 구간 형식: segment_id|start|end|text]
 {segments_text}
@@ -91,14 +101,14 @@ class LLMService:
 [STT 요약]
 {stt_summary}
 
-위 내용을 바탕으로 OCR/VLM 분석에 사용할 중요한 영상 구간을 추출해줘.
+위 내용을 바탕으로 강의 화면(슬라이드, 판서, 코드, 도표)을 함께 분석해야 할 중요 구간을 추출해줘.
 
 [추출 기준]
-1. 핵심 주제가 처음 등장하는 구간
-2. 설명이 집중되는 구간
-3. 발표 자료, 표, 화면 공유가 나올 가능성이 높은 구간
-4. 결론이나 중요한 의사결정이 나오는 구간
-5. 단순 잡담이나 반복 설명은 제외
+1. 새로운 개념이나 용어가 처음 정의되는 구간
+2. "여기 보시면", "이 그래프에서", "화면에", "이 식은"처럼 화면을 가리키는 말이 나오는 구간
+3. 수식 유도, 코드 설명, 예제 풀이가 진행되는 구간
+4. 강사가 중요하다고 강조하거나 내용을 정리·요약하는 구간
+5. 출석, 잡담, 장비 점검, 단순 반복 설명은 제외
 6. start와 end는 반드시 입력 구간에 존재하는 숫자 값을 사용
 7. 선택한 구간을 대표하는 segment_id 하나를 사용
 8. 각 입력 묶음에서 가장 중요한 구간을 최대 3개만 선택
@@ -108,7 +118,7 @@ class LLMService:
 segment_id|start|end|topic|reason
 
 예시:
-7|12.5|18.0|연구 결과|핵심 연구 결과가 설명되는 구간
+7|12.5|18.0|경사하강법 정의|슬라이드의 갱신식을 가리키며 개념을 정의하는 구간
 
 topic과 reason 안에는 | 문자를 사용하지 마.
 """
@@ -141,13 +151,46 @@ topic과 reason 안에는 | 문자를 사용하지 마.
             )
             try:
                 important_segments.extend(
-                    self._parse_important_segments(raw_result)
+                    self._align_to_input(self._parse_important_segments(raw_result), chunk)
                 )
             except ValueError as error:
                 # 형식 오류가 난 묶음은 건너뛰고 나머지 정상 결과를 반환합니다.
                 print(f"[중요 구간 파싱 실패] chunk={index}: {error}")
 
         return important_segments
+
+    @staticmethod
+    def _align_to_input(
+        parsed_segments: list[dict[str, Any]],
+        chunk: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """모델이 쓴 시간을 입력 구간 기준으로 바로잡습니다.
+
+        모델은 segment_id를 시간으로 착각하는 등 없는 시간을 쓰기도 합니다.
+        start·end가 모두 입력 구간의 경계값이고 대표 segment_id 구간을 포함하면 그 범위를 유지하고,
+        아니면 segment_id 구간의 실제 시간으로 바꿉니다. 묶음에 없는 segment_id는 버립니다.
+        """
+        by_id = {}
+        for segment in chunk:
+            try:
+                by_id[int(segment.get("segment_id"))] = segment
+            except (TypeError, ValueError):
+                continue
+        starts = {float(segment["start"]) for segment in by_id.values()}
+        ends = {float(segment["end"]) for segment in by_id.values()}
+
+        aligned = []
+        for item in parsed_segments:
+            source = by_id.get(item["segment_id"])
+            if source is None:
+                print(f"[중요 구간 제외] 입력에 없는 segment_id={item['segment_id']}")
+                continue
+            source_start, source_end = float(source["start"]), float(source["end"])
+            start, end = item["start"], item["end"]
+            if not (start in starts and end in ends and start <= source_start and source_end <= end):
+                start, end = source_start, source_end
+            aligned.append({**item, "start": start, "end": end})
+        return aligned
 
     @staticmethod
     def split_segments(

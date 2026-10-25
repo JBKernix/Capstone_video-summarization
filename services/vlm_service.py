@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from threading import Lock
@@ -14,6 +15,111 @@ from configs.inference_config import VLM_INFERENCE_CONFIG
 ImageInput: TypeAlias = str | Path | bytes | bytearray | BinaryIO | Image.Image
 OCRInput: TypeAlias = str | Path | list[dict[str, Any]] | dict[str, Any]
 ProgressCallback = Callable[[str, int, int], None]
+
+SCREEN_TYPES = ("슬라이드", "판서", "코드", "표", "그래프", "수식", "도식", "강사 화면", "기타")
+LECTURER_SCREEN = "강사 화면"
+# 공백·구분자를 지운 항목 이름 → 필드 이름입니다. 모델이 표기를 조금 바꿔도 읽을 수 있게 합니다.
+FIELD_LABELS = {
+    "화면유형": "screen_type",
+    "유형": "screen_type",
+    "제목": "title",
+    "핵심내용": "content",
+    "내용": "content",
+    "수식·코드·수치": "formula",
+    "수식·코드": "formula",
+    "수식": "formula",
+    "코드": "formula",
+    "수치": "formula",
+}
+MAX_LABEL_CHARS = 12
+NONE_VALUES = {"없음", "없음.", "없습니다", "없습니다.", "해당 없음", "해당없음", "-", "n/a", "none"}
+# (패턴, 화면 유형) 순서대로 값에서 가장 먼저 나오는 유형을 고릅니다.
+SCREEN_TYPE_PATTERNS = (
+    (re.compile(r"강사|인물|얼굴|사람"), "강사 화면"),
+    (re.compile(r"판서|칠판|화이트보드"), "판서"),
+    (re.compile(r"코드|프로그램|터미널|소스"), "코드"),
+    (re.compile(r"그래프|차트"), "그래프"),
+    (re.compile(r"도표|(?<![가-힣])표(?![가-힣])"), "표"),
+    (re.compile(r"수식|공식"), "수식"),
+    (re.compile(r"도식|다이어그램|흐름도|구조도"), "도식"),
+    (re.compile(r"슬라이드|ppt|발표\s*자료", re.IGNORECASE), "슬라이드"),
+    (re.compile(r"기타"), "기타"),
+)
+
+
+def normalize_screen_type(value: str) -> str:
+    matches = [
+        (match.start(), screen_type)
+        for pattern, screen_type in SCREEN_TYPE_PATTERNS
+        if (match := pattern.search(value))
+    ]
+    return min(matches)[1] if matches else "기타"
+
+
+def _split_label(line: str) -> tuple[str, str, str]:
+    """첫 콜론(``:`` 또는 ``：``)을 기준으로 (항목 이름, 구분자, 값)으로 나눕니다."""
+    match = re.search(r"[:：]", line)
+    if not match:
+        return line, "", ""
+    return line[: match.start()], match.group(), line[match.end():]
+
+
+def _field_name(label: str) -> str | None:
+    key = re.sub(r"[\s*#\-•]", "", label)
+    key = re.sub(r"[/,ㆍ・]", "·", key)
+    if not key or len(key) > MAX_LABEL_CHARS:
+        return None
+    return FIELD_LABELS.get(key)
+
+
+def parse_vlm_fields(text: str) -> dict[str, Any]:
+    """VLM의 ``항목 이름: 값`` 줄 출력을 필드로 나눕니다.
+
+    항목 이름이 없는 줄은 바로 앞 항목에 이어 붙입니다(여러 줄 코드·수식).
+    항목을 하나도 찾지 못하면 ``parsed=False``이고 원문 전체를 ``content``에 둡니다.
+    """
+    fields = {"screen_type": "", "title": "", "content": "", "formula": ""}
+    current = None
+    parsed = False
+
+    for raw_line in str(text).splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        label, separator, value = _split_label(line)
+        name = _field_name(label) if separator else None
+        if name:
+            parsed = True
+            current = name
+            value = value.strip()
+            fields[name] = f"{fields[name]}\n{value}".strip() if fields[name] else value
+        elif current:
+            fields[current] = f"{fields[current]}\n{line}".strip()
+
+    if not parsed:
+        content = str(text).strip()
+        return {
+            "screen_type": None,
+            "title": "",
+            "content": content,
+            "formula": "",
+            "has_content": bool(content),
+            "parsed": False,
+        }
+
+    for name in ("title", "content", "formula"):
+        if fields[name].strip().lower() in NONE_VALUES:
+            fields[name] = ""
+    raw_type = fields["screen_type"].strip()
+    screen_type = normalize_screen_type(raw_type) if raw_type.lower() not in NONE_VALUES else "기타"
+    return {
+        "screen_type": screen_type,
+        "title": fields["title"],
+        "content": fields["content"],
+        "formula": fields["formula"],
+        "has_content": screen_type != LECTURER_SCREEN and bool(fields["content"] or fields["formula"]),
+        "parsed": True,
+    }
 
 
 class VLMService:
@@ -46,13 +152,19 @@ class VLMService:
         pil_image = self._resize_for_vlm(self._load_image(image_path))
         metadata_text = self._format_metadata(frame_metadata)
 
-        prompt = f"""영상 프레임과 OCR을 한국어로 간단히 분석하세요.
+        prompt = f"""강의 영상의 한 프레임과 OCR 결과입니다.
 메타데이터: {metadata_text}
 OCR: {ocr_text.strip() or "없음"}
 
-장면:
-텍스트:
-요약 반영 정보:
+[규칙]
+- 화면과 OCR에서 확인되는 내용만 적으세요. 읽을 수 없는 글자나 수치는 "판독 불가"로 적으세요.
+- 아래 4줄만 출력하세요. 항목 이름과 순서를 바꾸지 말고 다른 설명은 쓰지 마세요.
+- 해당 내용이 없으면 "없음"이라고 적으세요.
+
+화면 유형: <슬라이드, 판서, 코드, 표, 그래프, 수식, 도식, 강사 화면, 기타 중 하나>
+제목: <화면에 보이는 제목>
+핵심 내용: <화면이 설명하는 내용, 한두 문장>
+수식·코드·수치: <화면의 식, 코드, 수치를 그대로>
 """
 
         try:
@@ -101,6 +213,7 @@ OCR: {ocr_text.strip() or "없음"}
             )
             result = dict(entry)
             result["vlm_summary"] = summary
+            result["vlm_fields"] = parse_vlm_fields(summary)
             results.append(result)
 
         return results

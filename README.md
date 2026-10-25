@@ -7,6 +7,7 @@
 - Qwen3-8B 기반 한국어 STT 요약
 - STT 타임스탬프 기반 중요 영상 구간 추출
 - Qwen2.5-VL-7B-Instruct 기반 프레임 및 OCR 분석
+- STT/VLM 요약을 종합한 강의 노트(JSON + 마크다운) 최종 요약
 - 작업 ID 기반 비동기 요청과 진행 상태 조회
 - 단일 작업 큐와 공용 lock을 통한 GPU 추론 직렬화
 - 작업 완료 후 LLM/VLM GPU 메모리 자동 해제
@@ -174,6 +175,31 @@ curl.exe -X POST "http://localhost:8000/vlm/summarize" `
 | `summary_level` | 문자열 | `simple` / `standard`(기본값) / `detailed` |
 | `local_model` | 문자열 (선택) | 이 요청에 사용할 로컬 모델 선택 ID. 생략 시 기본 서비스 사용 |
 
+VLM 결과 중 강사 화면처럼 강의 내용이 없는 프레임은 최종 요약 입력에서 제외되며, 남는 화면 자료가 없어도 오류 없이 STT 요약만으로 최종 요약을 만듭니다.
+
+완료된 작업의 `result`는 마크다운 최종 요약(`final_summary`)과 강의 노트 JSON(`lecture_note`)을 함께 담습니다. 모델 출력을 JSON으로 읽지 못하면 오류 내용을 덧붙여 한 번 더 요청하고, 그래도 실패하면 마크다운 프롬프트로 대체하며 이때 `lecture_note`는 `null`입니다. 타임라인은 HH:MM:SS가 아닌 초 단위 숫자입니다.
+
+```json
+{
+  "final_summary": "# 경사하강법\n\n## 핵심 주제\n- ...\n\n## 주요 내용\n\n### 1. 손실 함수 (타임라인: 12.5 ~ 180.0)\n- ...",
+  "lecture_note": {
+    "title": "경사하강법",
+    "key_points": ["..."],
+    "terms": [{"term": "학습률", "definition": "..."}],
+    "chapters": [
+      {"title": "손실 함수", "start": 12.5, "end": 180.0, "points": ["..."], "screen_notes": ["..."]}
+    ],
+    "visuals": [
+      {"type": "수식", "title": "갱신식", "start": 95.0, "end": null, "content": ["..."], "meaning": "..."}
+    ],
+    "conclusion": ["..."],
+    "notices": []
+  }
+}
+```
+
+`final_summary`의 섹션 구성은 `## 핵심 주제`, `## 주요 용어`, `## 주요 내용`, `## 표/차트 기반 주요 정보`, `## 종합 결론`, `## 공지 사항`이며 내용이 없는 섹션은 생략됩니다. 자세한 검증·정규화 규칙은 [`services/README.md`](services/README.md#최종-요약)를 참고하세요.
+
 ### 작업 상태 조회
 
 - LLM: `GET /llm/jobs/{job_id}`
@@ -322,8 +348,9 @@ Hugging Face 모델의 로딩, 추론과 GPU 메모리 해제를 담당합니다
 
 | 파일 | 역할 |
 | --- | --- |
-| `llm_service.py` | STT 요약 프롬프트, 중요 구간 추출, 세그먼트 분할과 결과 파싱 |
-| `vlm_service.py` | OCR 결과 파싱, 다중 프레임 매칭, 프레임별 VLM 프롬프트와 결과 구성 |
+| `llm_service.py` | 강의용 STT 요약 프롬프트, 중요 구간 추출, 세그먼트 분할과 결과 파싱(모델 시간을 입력 구간에 맞춰 보정) |
+| `vlm_service.py` | OCR 결과 파싱, 다중 프레임 매칭, 4줄 구조화 VLM 프롬프트와 `vlm_fields` 파싱 |
+| `final_service.py` | STT/VLM 요약을 종합한 강의 노트 JSON 생성·검증과 마크다운 변환(JSON 실패 시 재요청·마크다운 대체) |
 | `summary_service.py` | LLM/VLM 서비스 생성, 공용 GPU lock 공유, 상위 호출 인터페이스 제공. `local_model_manager.py`가 다른 로더를 주입할 수 있도록 생성자에서 `llm_loader`/`vlm_loader`를 선택적으로 받음 |
 
 ## GitHub 제외 항목

@@ -51,7 +51,8 @@ def test_runner_publishes_loads_before_terminal_response(kind):
     service = SimpleNamespace(
         summarize_stt=lambda **kwargs: load_result("요약"),
         summarize_frames=lambda **kwargs: load_result([{"vlm_summary": "화면"}]),
-        summarize_final=lambda **kwargs: load_result("통합"),
+        summarize_final_note=lambda **kwargs: load_result(
+            {"markdown": "통합", "lecture_note": None, "format": "json", "attempts": [], "warnings": []}),
         unload_llm=lambda: None, unload_vlm=lambda: None,
     )
     runner = InferenceJobRunner(service, store, logging.getLogger("test"))

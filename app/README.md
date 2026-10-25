@@ -113,6 +113,20 @@ POST /vlm/summarize
   -> completed 또는 failed 상태 저장
 ```
 
+### 최종 요약
+
+```text
+POST /llm/final-summary
+  -> STT/VLM 요약 파일 검증
+  -> JobStore에 queued 작업 생성
+  -> InferenceJobRunner.run_final 제출
+  -> SummaryService.summarize_final_note()
+  -> JSON 읽기 실패 시도는 warning, 최종 format(json/markdown_fallback)은 info 로그
+  -> FinalSummaryResponse(final_summary, lecture_note) 저장
+```
+
+`FinalSummaryResponse`의 `final_summary`는 마크다운 최종 요약이고, `lecture_note`는 강의 노트 JSON입니다. 모델 출력을 JSON으로 읽지 못해 마크다운 프롬프트로 대체한 경우 `lecture_note`는 `None`입니다. 강의 노트 구조와 대체 규칙은 [`services/README.md`](../services/README.md#최종-요약)를 참고하세요.
+
 ## 요약 레벨(summary_level)
 
 `server.py`의 세 라우트(`/llm/summarize`, `/vlm/summarize`, `/llm/final-summary`)는 더 이상 `max_new_tokens`를 직접 입력받지 않습니다. 대신 `summary_level`(`simple`/`standard`/`detailed`) 값을 `configs/inference_config.py`의 `get_summary_level_preset()`으로 조회해 단계별 `max_new_tokens`와 청크 크기를 한 번에 결정합니다. `simple` 프리셋은 `extract_important_segments=False`이므로 `run_summary`가 중요 구간 추출 단계 자체를 건너뜁니다.

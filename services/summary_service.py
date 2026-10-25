@@ -75,3 +75,6 @@ class SummaryService:
 
     def summarize_final(self, **kwargs) -> str:
         return self.final_service.summarize_final(**kwargs)
+
+    def summarize_final_note(self, **kwargs) -> dict[str, Any]:
+        return self.final_service.summarize_final_note(**kwargs)

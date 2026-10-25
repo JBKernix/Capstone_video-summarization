@@ -66,12 +66,14 @@ SUMMARY_LEVEL_PRESETS: dict[SummaryLevel, SummaryLevelPreset] = {
     ),
     "standard": SummaryLevelPreset(
         label="기본요약",
-        stt_max_new_tokens=LLM_INFERENCE_CONFIG.default_max_new_tokens,
+        # 강의용 STT 요약은 개념·정의·강조 사항까지 담아 512토큰이면 뒷부분 주제가 잘립니다.
+        stt_max_new_tokens=LLM_INFERENCE_CONFIG.max_new_tokens_limit,
         extract_important_segments=True,
         important_segments_max_new_tokens=256,
         segment_chunk_chars=LLM_INFERENCE_CONFIG.segment_chunk_chars,
         vlm_max_new_tokens=VLM_INFERENCE_CONFIG.default_max_new_tokens,
-        final_max_new_tokens=2048,
+        # 최종 요약은 강의 노트 JSON으로 출력해 마크다운보다 토큰이 더 듭니다(잘리면 JSON을 읽을 수 없음).
+        final_max_new_tokens=3072,
     ),
     "detailed": SummaryLevelPreset(
         label="상세요약",
