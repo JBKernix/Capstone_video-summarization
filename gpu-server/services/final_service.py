@@ -210,6 +210,7 @@ class FinalService:
         vlm_text: TextInput | None = None,
         vlm_json: JSONInput | None = None,
         max_new_tokens: int = DEFAULT_FINAL_MAX_NEW_TOKENS,
+        max_important_segments: int | None = None,
     ) -> dict[str, Any]:
         """STT 요약과 VLM 요약을 종합해 강의 노트 JSON과 마크다운을 만듭니다.
 
@@ -220,7 +221,9 @@ class FinalService:
             raise ValueError("VLM 요약 내용이 비어 있습니다.")
         stt_data = self._load_json(stt_json, "STT 요약 JSON") if stt_json is not None else None
         vlm_data = self._load_json(vlm_json, "VLM 요약 JSON") if vlm_json is not None else None
-        stt_section = self.build_stt_section(stt_text=stt_text, stt_json=stt_data)
+        stt_section = self.build_stt_section(
+            stt_text=stt_text, stt_json=stt_data, max_important_segments=max_important_segments,
+        )
         vlm_section = self.build_vlm_section(vlm_text=vlm_text, vlm_json=vlm_data)
         if not stt_section.strip():
             raise ValueError("STT 요약 내용이 비어 있습니다.")
@@ -276,6 +279,7 @@ class FinalService:
         self,
         stt_text: TextInput | None = None,
         stt_json: JSONInput | None = None,
+        max_important_segments: int | None = None,
     ) -> str:
         parts = []
         data = self._load_json(stt_json, "STT 요약 JSON") if stt_json is not None else None
@@ -294,7 +298,9 @@ class FinalService:
             if isinstance(important_segments, Sequence) and not isinstance(
                 important_segments, (str, bytes, bytearray)
             ):
-                normalized = self._format_important_segments(important_segments)
+                normalized = self._format_important_segments(
+                    important_segments, max_important_segments or MAX_IMPORTANT_SEGMENTS,
+                )
                 if normalized:
                     parts.append(f"[STT 주요 구간]\n{normalized}")
 
@@ -358,9 +364,11 @@ class FinalService:
         return value
 
     @staticmethod
-    def _format_important_segments(segments: Sequence[Any]) -> str:
+    def _format_important_segments(
+        segments: Sequence[Any], max_items: int = MAX_IMPORTANT_SEGMENTS,
+    ) -> str:
         lines = []
-        for segment in FinalService._sample_items(segments, MAX_IMPORTANT_SEGMENTS):
+        for segment in FinalService._sample_items(segments, max_items):
             if not isinstance(segment, Mapping):
                 continue
             topic = FinalService._limit_text(

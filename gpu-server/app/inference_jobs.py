@@ -144,6 +144,7 @@ class InferenceJobRunner:
                             stt_segments=segment_data,
                             stt_summary=summary,
                             max_new_tokens=preset.important_segments_max_new_tokens,
+                            max_segments=preset.important_segments_per_chunk,
                             max_chunk_chars=chunk_chars,
                             progress_callback=report_progress,
                         )
@@ -260,6 +261,7 @@ class InferenceJobRunner:
         vlm_text: bytes | None,
         vlm_json: bytes | None,
         max_new_tokens: int,
+        max_important_segments: int | None = None,
     ) -> None:
         try:
             self.job_store.update(
@@ -276,6 +278,7 @@ class InferenceJobRunner:
                     vlm_text=vlm_text,
                     vlm_json=vlm_json,
                     max_new_tokens=max_new_tokens,
+                    max_important_segments=max_important_segments,
                 )
             for attempt in final_note["attempts"]:
                 if attempt["error"]:

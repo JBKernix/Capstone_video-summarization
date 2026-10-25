@@ -429,6 +429,7 @@ class LLMService:
         stt_segments: list[dict[str, Any]],
         stt_summary: str = "",
         max_new_tokens: int = LLM_INFERENCE_CONFIG.default_max_new_tokens,
+        max_segments: int = 5,
     ) -> str:
         # JSON보다 짧은 행 형식으로 전달해 긴 프롬프트의 추론 비용을 줄입니다.
         segments_text = "\n".join(
@@ -455,7 +456,7 @@ class LLMService:
 5. 출석, 잡담, 장비 점검, 단순 반복 설명은 제외
 6. start와 end는 반드시 입력 구간에 존재하는 숫자 값을 사용
 7. 선택한 구간을 대표하는 segment_id 하나를 사용
-8. 각 입력 묶음에서 가장 중요한 구간을 최대 3개만 선택
+8. 각 입력 묶음에서 가장 중요한 구간을 최대 {max_segments}개만 선택
 
 [출력 형식]
 각 구간을 아래 형식의 한 줄로만 출력해줘. 설명, 번호, Markdown은 출력하지 마.
@@ -477,7 +478,8 @@ topic과 reason 안에는 | 문자를 사용하지 마.
         self,
         stt_segments: list[dict[str, Any]],
         stt_summary: str = "",
-        max_new_tokens: int = 256,
+        max_new_tokens: int = 384,
+        max_segments: int = 5,
         max_chunk_chars: int = LLM_INFERENCE_CONFIG.segment_chunk_chars,
         progress_callback: ProgressCallback | None = None,
     ) -> list[dict[str, Any]]:
@@ -492,11 +494,12 @@ topic과 reason 안에는 | 문자를 사용하지 마.
                 stt_segments=chunk,
                 stt_summary=stt_summary,
                 max_new_tokens=max_new_tokens,
+                max_segments=max_segments,
             )
             try:
-                important_segments.extend(
-                    self._align_to_input(self._parse_important_segments(raw_result), chunk)
-                )
+                # 모델이 지시보다 많이 고르면 앞쪽 max_segments개만 씁니다.
+                parsed = self._parse_important_segments(raw_result)[:max_segments]
+                important_segments.extend(self._align_to_input(parsed, chunk))
             except ValueError as error:
                 # 형식 오류가 난 묶음은 건너뛰고 나머지 정상 결과를 반환합니다.
                 print(f"[중요 구간 파싱 실패] chunk={index}: {error}")

@@ -43,11 +43,17 @@ class SummaryLevelPreset:
     # 클라이언트가 프레임/OCR/VLM 단계를 쓰지 않는 프리셋(예: 간단요약)에서는
     # 결과를 어차피 쓰지 않으므로 여러 번의 청크별 LLM 호출 자체를 생략합니다.
     extract_important_segments: bool
-    # 중요 구간 추출 생성 토큰 수 (짧은 구조화 출력이라 프리셋 간 차이를 작게 둡니다)
+    # 중요 구간 추출 시 청크(LLM 호출) 1회에서 고를 최대 구간 수
+    important_segments_per_chunk: int
+    # 중요 구간 추출 생성 토큰 수. 한 줄(segment_id|start|end|topic|reason)이 약 30~55토큰이라
+    # important_segments_per_chunk × 55에 여유를 더해 잡습니다.
     important_segments_max_new_tokens: int
     # 중요 구간 추출 시 STT 세그먼트를 묶는 청크 크기(문자 수).
     # 작을수록 청크(=LLM 호출) 수가 늘어나 더 꼼꼼하지만 느려집니다.
     segment_chunk_chars: int
+    # 최종 요약 입력에 넣을 중요 구간 최대 개수(많으면 시간순으로 고르게 추립니다).
+    # 1개당 입력 약 40~60토큰이 늘어 Qwen3-VL 8B처럼 입력 한도가 작은 모델에서는 여유를 확인해야 합니다.
+    final_important_segments: int
     # VLM 프레임 1장당 생성 토큰 수 (VLM_INFERENCE_CONFIG.max_new_tokens_limit 이하)
     vlm_max_new_tokens: int
     # 최종 통합 요약 생성 토큰 수 (services.final_service.MAX_FINAL_NEW_TOKENS_LIMIT 이하)
@@ -59,8 +65,10 @@ SUMMARY_LEVEL_PRESETS: dict[SummaryLevel, SummaryLevelPreset] = {
         label="간단요약",
         stt_max_new_tokens=256,
         extract_important_segments=False,
-        important_segments_max_new_tokens=160,
+        important_segments_per_chunk=3,
+        important_segments_max_new_tokens=256,
         segment_chunk_chars=20000,
+        final_important_segments=8,
         vlm_max_new_tokens=96,
         final_max_new_tokens=1024,
     ),
@@ -69,8 +77,10 @@ SUMMARY_LEVEL_PRESETS: dict[SummaryLevel, SummaryLevelPreset] = {
         # 강의용 STT 요약은 개념·정의·강조 사항까지 담아 512토큰이면 뒷부분 주제가 잘립니다.
         stt_max_new_tokens=LLM_INFERENCE_CONFIG.max_new_tokens_limit,
         extract_important_segments=True,
-        important_segments_max_new_tokens=256,
+        important_segments_per_chunk=5,
+        important_segments_max_new_tokens=384,
         segment_chunk_chars=LLM_INFERENCE_CONFIG.segment_chunk_chars,
+        final_important_segments=12,
         vlm_max_new_tokens=VLM_INFERENCE_CONFIG.default_max_new_tokens,
         # 최종 요약은 강의 노트 JSON으로 출력해 마크다운보다 토큰이 더 듭니다(잘리면 JSON을 읽을 수 없음).
         final_max_new_tokens=3072,
@@ -79,8 +89,10 @@ SUMMARY_LEVEL_PRESETS: dict[SummaryLevel, SummaryLevelPreset] = {
         label="상세요약",
         stt_max_new_tokens=LLM_INFERENCE_CONFIG.max_new_tokens_limit,
         extract_important_segments=True,
-        important_segments_max_new_tokens=256,
+        important_segments_per_chunk=7,
+        important_segments_max_new_tokens=512,
         segment_chunk_chars=8000,
+        final_important_segments=16,
         vlm_max_new_tokens=VLM_INFERENCE_CONFIG.max_new_tokens_limit,
         final_max_new_tokens=4096,
     ),

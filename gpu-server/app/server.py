@@ -284,10 +284,12 @@ async def summarize_final(
     job_id = job_store.create_id("final-summary")
     job_store.create(job_id, "최종 요약 대기열에 등록되었습니다.")
     logger.info(
-        "job_id=%s | final summary job submitted | summary_level=%s | max_new_tokens=%d",
+        "job_id=%s | final summary job submitted | summary_level=%s | max_new_tokens=%d | "
+        "important_segments=%d",
         job_id,
         summary_level,
         max_new_tokens,
+        preset.final_important_segments,
     )
     job_executor.submit(
         model_manager.run, local_model, "run_final",
@@ -297,6 +299,7 @@ async def summarize_final(
         vlm_summary_data,
         vlm_summary_result_data,
         max_new_tokens,
+        preset.final_important_segments,
     )
     return JobSubmissionResponse(
         job_id=job_id,
