@@ -12,7 +12,8 @@
     "frame_id": 0,
     "timestamp": 12.5,
     "image_path": "runs/frames/frame_000001.jpg",
-    "sampling_method": "interval"
+    "sampling_method": "representative",
+    "segment_id": 0
   }
 ]
 ```
@@ -22,7 +23,8 @@
 | `frame_id` | number | 추출 순서 |
 | `timestamp` | number | 영상 내 시점, 초 단위 |
 | `image_path` | string | 프레임 이미지 경로 |
-| `sampling_method` | string | `interval` 또는 `scene_change` |
+| `sampling_method` | string | `representative`(기본), `interval`, `scene_change` 중 하나 |
+| `segment_id` | number | representative 방식에서만 존재. 프레임이 속한 중요 구간 번호(정규화된 구간 순서, 0부터) |
 
 ## STT 결과
 
@@ -91,6 +93,7 @@ runs/llm/stt_summary_result.json
   {
     "frame_id": 0,
     "timestamp": 12.5,
+    "segment_id": 0,
     "image_path": "C:\\capstone\\Capstone_video-summarization\\runs\\frames\\frame_000001.jpg",
     "ocr_text": "화면에서 인식된 텍스트",
     "detected_language": "ko",
@@ -103,22 +106,23 @@ runs/llm/stt_summary_result.json
 
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |
+| `segment_id` | number 또는 null | 프레임 메타데이터의 `segment_id`를 그대로 옮긴 값(representative 방식이 아니면 `null`) |
 | `ocr_text` | string | EasyOCR가 추출한 텍스트 |
 | `detected_language` | string | `ko`, `en`, `mixed`, `unknown` |
 | `scene_type` | string | OCR 텍스트 기반 화면 유형. `generic_scene`(텍스트 없음), `chart_or_table`(표/그래프/성능 관련 키워드), `presentation_slide`(목차/개요/결론 등 발표 자료 키워드), `text_screen`(그 외 텍스트가 있는 화면) 중 하나 (`modules/ocr/image_caption.py`의 `classify_scene_type`) |
 | `image_caption` | string | OCR 텍스트 기반 간단 캡션 |
 | `importance_score` | number | 0.0에서 1.0 사이의 휴리스틱 중요도 |
 
-앱의 요약 화면(`app/summary_timeline.py`)은 이 중 `scene_type`이 `chart_or_table`인 프레임을 우선으로 찾아 "표/차트 기반 주요 정보" 구간의 스크린샷으로 사용합니다.
+앱의 요약 화면(해석: `app/summary_parse.py`, 표시: React `SummaryView`·Streamlit `app/summary_timeline.py`)은 타임라인 구간 안의 프레임을 찾아 스크린샷으로 사용합니다. 구간 안에 프레임이 없을 때만 앞뒤 1초까지 넓혀 찾습니다. "표/차트 기반 주요 정보" 구간은 `scene_type`이 `chart_or_table`인 프레임을 우선하고, 구간 안의 서로 다른 화면을 최대 4장(`MAX_FRAMES_PER_ITEM`)까지 시간순으로 함께 보여 줍니다.
 
 ### 저장된 결과의 OCR 사본 (`data/saved/.../ocr_result.json`)
 
-"영상과 요약 결과 저장" 시 `app/result_export.py`가 `runs/ocr/ocr_result.json`이 있으면 함께 복사합니다. 원본과 두 가지가 다릅니다.
+"영상과 요약 결과 저장" 시 `app/result_export.py`가 실행 폴더의 `ocr/ocr_result.json`(앱 실행은 `runs/jobs/<실행 ID>/ocr/ocr_result.json`)이 있으면 함께 복사합니다. 원본과 두 가지가 다릅니다.
 
 - `image_path`가 절대경로가 아니라 저장 폴더 기준 상대경로 `frames/<파일명>`입니다.
 - 프레임 이미지 자체도 `data/saved/[영상 제목] - YYYYMMDD-HHMMSS/frames/`로 함께 복사됩니다.
 
-`runs/frames/`의 원본 이미지는 다음 분석 실행 때 덮어써질 수 있어, 저장 시점에 이미지를 별도로 복사해두지 않으면 나중에 저장 결과를 열었을 때 다른 영상의 프레임이 표시되는 문제가 있었습니다. 간단요약(`simple`) 프리셋으로 분석한 결과는 OCR 자체가 생성되지 않으므로 이 파일이 저장되지 않습니다.
+실행 폴더의 원본 이미지는 다음 실행에 덮어써지거나(CLI 기본 `runs/frames/`) 보존 기간이 지나 정리되므로(앱 `runs/jobs/`), 저장 시점에 이미지를 별도로 복사해두지 않으면 나중에 저장 결과를 열었을 때 프레임이 바뀌거나 사라집니다. `--skip-ocr`로 실행한 결과는 OCR 자체가 생성되지 않으므로 이 파일이 저장되지 않습니다.
 
 ## VLM 요약 결과
 
@@ -156,7 +160,7 @@ runs/final/final_summary.txt
 runs/final/final_summary_result.json
 ```
 
-**중요: 아래는 실제로 GPU 서버가 반환하는 형태입니다.** 최상위 키는 `source`, `final_summary`, `summary` 세 개뿐이며, `title`/`topics`/`main_topic`/`conclusion`/`keywords` 같은 구조화된 필드는 **실제 응답에는 존재하지 않습니다**. 핵심 주제, 주제별 요약, 표/차트 정보, 종합 결론이 모두 `summary`(그리고 동일한 내용의 `final_summary`) 안에 하나의 마크다운 텍스트로 들어있습니다. 타임라인도 별도 필드가 아니라 문단 안에 `(타임라인: 66.0 ~ 813.0)`처럼 자유 텍스트로 박혀 있습니다.
+**중요: 아래는 실제로 GPU 서버가 반환하는 형태입니다.** 최상위 키는 `source`, `final_summary`, `summary`, `lecture_note`이며, 최상위에 `title`/`topics`/`main_topic`/`conclusion`/`keywords` 같은 구조화된 필드는 **존재하지 않습니다**. 핵심 주제, 주제별 요약, 표/차트 정보, 종합 결론이 모두 `summary`(그리고 동일한 내용의 `final_summary`) 안에 하나의 마크다운 텍스트로 들어있고, 타임라인도 문단 안에 `(타임라인: 66.0 ~ 813.0)`처럼 자유 텍스트로 박혀 있습니다. 같은 내용의 구조화된 형태는 `lecture_note` 안에만 있습니다(아래 설명).
 
 ```json
 {
@@ -165,7 +169,20 @@ runs/final/final_summary_result.json
     "vlm_summary_json_path": "runs/vlm/vlm_summary_result.json"
   },
   "final_summary": "# 제목\n\n## 핵심 주제\n- ...\n\n## 주요 내용\n\n### 1. 소제목 (타임라인: 0.0 ~ 3.5)\n- ...\n\n## 표/차트 기반 주요 정보\n\n### 1. 소제목 (타임라인: 1051.9 ~ 1066.9)\n- ...\n\n## 종합 결론\n- ...",
-  "summary": "# 제목\n\n## 핵심 주제\n- ...\n\n## 주요 내용\n\n### 1. 소제목 (타임라인: 0.0 ~ 3.5)\n- ...\n\n## 표/차트 기반 주요 정보\n\n### 1. 소제목 (타임라인: 1051.9 ~ 1066.9)\n- ...\n\n## 종합 결론\n- ..."
+  "summary": "# 제목\n\n## 핵심 주제\n- ...\n\n## 주요 내용\n\n### 1. 소제목 (타임라인: 0.0 ~ 3.5)\n- ...\n\n## 표/차트 기반 주요 정보\n\n### 1. 소제목 (타임라인: 1051.9 ~ 1066.9)\n- ...\n\n## 종합 결론\n- ...",
+  "lecture_note": {
+    "title": "제목",
+    "key_points": ["..."],
+    "terms": [{"term": "용어", "definition": "정의"}],
+    "chapters": [
+      {"title": "소제목", "start": 0.0, "end": 3.5, "points": ["..."], "screen_notes": ["..."]}
+    ],
+    "visuals": [
+      {"type": "표", "title": "...", "start": 1051.9, "end": 1066.9, "content": ["..."], "meaning": "..."}
+    ],
+    "conclusion": ["..."],
+    "notices": []
+  }
 }
 ```
 
@@ -174,6 +191,9 @@ runs/final/final_summary_result.json
 | `source` | object | 최종 요약 생성에 사용된 STT/VLM 요약 JSON 파일 경로 2개 (`scripts/run_final_summary.py`가 추가) |
 | `final_summary` | string | GPU 서버가 반환한 마크다운 텍스트 (`summary`와 동일한 내용) |
 | `summary` | string | 위와 동일한 마크다운 텍스트. `runs/final/final_summary.txt`에 그대로 저장됨 |
+| `lecture_note` | object 또는 null | GPU 서버가 만든 강의 노트 JSON. 서버가 모델 출력을 JSON으로 읽지 못해 마크다운 프롬프트로 대체했으면 `null`, 이전 서버 버전의 결과에는 키 자체가 없음 |
+
+`lecture_note`의 필드는 `title`, `key_points`(1~3개), `terms`(`{term, definition}`), `chapters`(`{title, start, end, points, screen_notes}`), `visuals`(`{type, title, start, end, content, meaning}`, `type`은 표·그래프·수식·코드·도식·기타), `conclusion`, `notices`(과제·시험·공지)입니다. `start`/`end`는 초 단위 숫자이며, 서버가 입력 자료의 시간 범위를 벗어난 값을 `null`로 바꿉니다. 마크다운(`summary`)은 서버가 이 JSON에서 만든 것으로 `## 주요 용어`, `## 공지 사항` 섹션이 더 있을 수 있습니다. 클라이언트(`modules/llm/final_summarizer_client.py`)는 응답 필드를 그대로 보존하므로 이 키도 결과 JSON에 저장됩니다.
 
 `summary` 마크다운은 보통 다음 순서의 `##` 섹션으로 구성됩니다(GPU 서버 프롬프트에 따라 달라질 수 있어 고정된 스키마는 아닙니다).
 
@@ -187,14 +207,15 @@ runs/final/final_summary_result.json
 ## 종합 결론
 ```
 
-앱(`app/summary_result.py`, `app/summary_timeline.py`)은 이 마크다운을 파싱해서 화면에 표시합니다.
+앱(`app/summary_result.py`, `app/summary_parse.py`)은 이 마크다운을 파싱해서 화면에 표시합니다. React 화면은 앱 API가 파싱 결과를 JSON 블록으로 넘겨받아 그립니다([app_api.md](explanation/app/app_api.md#요약-결과-형식)).
 
 - `app/summary_result.py`의 `get_summary_markdown()`이 `summary`/`final_summary` 중 있는 값을 마크다운 텍스트로 꺼냅니다.
+- 결과 JSON에 `lecture_note`(챕터가 있는 객체)가 있으면 앱 API는 사용자용 강의노트 화면 구조(`outline`)를 마크다운 대신 이 JSON으로 만듭니다(`app/api/summary.py`의 `_lecture_note_outline`). 블록 화면은 여전히 마크다운을 씁니다.
 - `has_structured_summary()`는 `title`/`main_topic`/`topics`/`conclusion`/`keywords` 키가 있을 때만 참을 반환합니다. 이 키들은 **의도된/향후 지원용 구조화 스키마**일 뿐이며, 실제 GPU 서버 응답에서는 나타나지 않으므로 이 분기(`app/final_summary_view.py`의 `render_summary_data`에서 카드형 UI로 렌더링하는 경로)는 현재 사실상 사용되지 않습니다.
-- 실제로는 항상 마크다운 텍스트 경로를 타며, `app/summary_timeline.py`의 `render_summary_with_timeline()`이 `### N. 제목 (타임라인: 시작 ~ 끝)` 패턴을 찾아 구간별 카드로 렌더링하고, `(타임라인: ...)` 표기를 `분:초` 형식의 클릭 가능한 뱃지로 바꿔 보여줍니다. 클릭하면 `<video>` 엘리먼트의 `currentTime`을 이동시켜 해당 지점부터 재생합니다.
-- 제목에 "표"/"차트"가 포함된 섹션은 `runs/ocr/ocr_result.json`에서 해당 타임라인과 겹치고 `scene_type`이 `chart_or_table`인 프레임을 찾아 스크린샷도 함께 보여줍니다.
+- 실제로는 항상 마크다운 텍스트 경로를 타며, `app/summary_parse.py`의 `parse_summary_markdown()`(Streamlit은 이를 감싼 `app/summary_timeline.py`의 `render_summary_with_timeline()`)이 `### N. 제목 (타임라인: 시작 ~ 끝)` 패턴을 찾아 구간별 카드로 렌더링하고, `(타임라인: ...)` 표기를 `분:초` 형식의 클릭 가능한 뱃지로 바꿔 보여줍니다. 클릭하면 `<video>` 엘리먼트의 `currentTime`을 이동시켜 해당 지점부터 재생합니다.
+- 제목에 "표"/"차트"가 포함된 섹션은 실행 폴더의 `ocr/ocr_result.json`에서 해당 타임라인 안의 프레임(없으면 앞뒤 1초)을 찾아 `scene_type`이 `chart_or_table`인 화면을 우선해 스크린샷으로 보여 주고, 서로 다른 화면이 여러 장이면 최대 4장까지 함께 보여 줍니다.
 
-최종 JSON은 GPU 서버 응답을 그대로 보존하므로 위 세 키 외에 서버 구현 변경에 따라 추가 필드가 포함될 수 있습니다.
+최종 JSON은 GPU 서버 응답을 그대로 보존하므로 위 키 외에 서버 구현 변경에 따라 추가 필드가 포함될 수 있습니다.
 
 ### VLM 요약이 없을 때 (`source.mode == "stt_only"`)
 

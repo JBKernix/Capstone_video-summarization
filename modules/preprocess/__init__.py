@@ -1,5 +1,6 @@
 from modules.preprocess.frame_sampler import (
     DEFAULT_INTERVAL_SECONDS,
+    DEFAULT_MAX_FRAMES_PER_SEGMENT,
     DEFAULT_SAMPLING_METHOD,
     DEFAULT_SCENE_MIN_GAP_SECONDS,
     DEFAULT_SCENE_THRESHOLD,
@@ -9,6 +10,7 @@ from modules.preprocess.frame_sampler import (
     load_important_time_ranges,
     sample_frames,
     sample_interval_frames,
+    sample_representative_frames,
     sample_scene_change_frames,
 )
 from modules.preprocess.audio_extractor import extract_audio
@@ -20,6 +22,7 @@ __all__ = [
     "ensure_mp4_video",
     "extract_audio",
     "DEFAULT_INTERVAL_SECONDS",
+    "DEFAULT_MAX_FRAMES_PER_SEGMENT",
     "DEFAULT_SAMPLING_METHOD",
     "DEFAULT_SCENE_MIN_GAP_SECONDS",
     "DEFAULT_SCENE_THRESHOLD",
@@ -33,5 +36,6 @@ __all__ = [
     "SAMPLING_METHOD_CHOICES",
     "sample_frames",
     "sample_interval_frames",
+    "sample_representative_frames",
     "sample_scene_change_frames",
 ]

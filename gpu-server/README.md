@@ -1,0 +1,417 @@
+# Video Summarization AI Server
+
+영상의 STT 결과를 요약하고 중요한 구간을 추출하며, 해당 구간의 프레임과 OCR 결과를 VLM으로 분석하는 FastAPI 서버입니다.
+
+## 주요 기능
+
+- Qwen3-8B 기반 한국어 STT 요약
+- STT 타임스탬프 기반 중요 영상 구간 추출
+- Qwen2.5-VL-7B-Instruct 기반 프레임 및 OCR 분석
+- STT/VLM 요약을 종합한 강의 노트(JSON + 마크다운) 최종 요약
+- 작업 ID 기반 비동기 요청과 진행 상태 조회
+- 단일 작업 큐와 공용 lock을 통한 GPU 추론 직렬화
+- 작업 완료 후 LLM/VLM GPU 메모리 자동 해제
+- 콘솔 및 회전 로그 파일 기록
+
+## 사용 모델
+
+| 용도 | Hugging Face 모델 | 로컬 저장 경로 |
+| --- | --- | --- |
+| STT 요약 및 중요 구간 추출 | `Qwen/Qwen3-8B` | `models/hf_cache/Qwen3-8B` |
+| 프레임 및 OCR 분석 | `Qwen/Qwen2.5-VL-7B-Instruct` | `models/hf_cache/Qwen2.5-VL-7B-Instruct` |
+
+모델 가중치와 Hugging Face 캐시는 용량이 크므로 GitHub에 포함되지 않습니다.
+
+## 요구 사항
+
+- Python 3.10 이상
+- CUDA를 지원하는 NVIDIA GPU
+- 설치된 CUDA 환경과 호환되는 PyTorch
+- 모델 저장 공간 약 35GB 이상
+
+기본 모델 설정은 `device="cuda"`, `torch_dtype="float16"`입니다.
+
+## 설치
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+CUDA 환경에 맞는 PyTorch가 별도로 필요하다면 [PyTorch 설치 안내](https://pytorch.org/get-started/locally/)에 따라 설치합니다.
+
+신규 로컬 모델(Qwen3.5, Qwen3-VL, Gemma4, MiniCPM-V, InternVL3.5, GLM-4.6V) 중 하나라도 쓰려면 `requirements-local.txt`를 추가로 설치합니다. MiniCPM은 Transformers 버전이 달라 별도 가상환경이 필요하며 자세한 내용은 [로컬 모델 가이드](docs/local_models.md)를 참고합니다.
+
+```powershell
+pip install -r requirements-local.txt
+```
+
+## 모델 다운로드
+
+```powershell
+python scripts\download_models.py --all
+```
+
+기존 Qwen 조합만 받으려면 `python scripts\download_models.py --model legacy-qwen`을 사용합니다. 모델별 선택 다운로드, 용량 미리보기(`--plan`), 목록 조회(`--list`)는 [로컬 모델 가이드](docs/local_models.md)를 참고합니다. 다운로드된 파일은 `models/hf_cache/`에 저장되며 `.gitignore`에 의해 Git에서 제외됩니다.
+
+## 서버 실행
+
+Windows에서는 배치 파일을 실행할 수 있습니다.
+
+```powershell
+.\start_server.bat
+```
+
+배치 파일은 기본적으로 다음 값을 사용합니다.
+
+- Conda 환경: `video_summarization`
+- 서버 주소: `0.0.0.0:8000`
+- Uvicorn worker: `1`
+
+환경 경로나 서버 주소가 다르면 `start_server.bat`의 `PYTHON_EXE`, `SERVER_HOST`, `SERVER_PORT`를 수정합니다.
+
+로컬 모델(Qwen)만 사용하도록 `LLM_BACKEND=local`을 고정해 실행하려면 `start_local_server.bat`를 대신 사용합니다. 내부적으로 `start_server.bat`를 호출합니다.
+
+```powershell
+.\start_local_server.bat
+```
+
+Python 또는 Uvicorn으로 직접 실행할 수도 있습니다.
+
+```powershell
+python -m app.server
+```
+
+```powershell
+python -m uvicorn app.server:app --host 0.0.0.0 --port 8000 --workers 1
+```
+
+GPU 모델과 작업 상태가 프로세스 메모리에 저장되므로 운영 환경에서는 `--workers 1`을 사용해야 합니다.
+
+## 환경 변수
+
+| 변수 | 기본값 | 설명 |
+| --- | --- | --- |
+| `SERVER_HOST` | `0.0.0.0` | `server.py` 직접 실행 시 호스트 주소 |
+| `SERVER_PORT` | `8000` | `server.py` 직접 실행 시 포트 |
+| `KEEP_LLM_LOADED` | `0` | `1`이면 LLM 작업 후 모델을 GPU에 유지 (로컬 백엔드에만 적용) |
+| `KEEP_VLM_LOADED` | `0` | `1`이면 VLM 작업 후 모델을 GPU에 유지 |
+| `NO_COLOR` | 미설정 | 설정하면 콘솔 컬러 로그 비활성화 |
+| `LLM_BACKEND` | `local` | `claude`로 설정하면 STT 요약/중요 구간 추출/최종 요약에 로컬 Qwen3-8B 대신 Claude API 사용 |
+| `ANTHROPIC_API_KEY` | 미설정 | `LLM_BACKEND=claude`일 때 필수인 Anthropic API 키 |
+| `CLAUDE_LLM_MODEL` | `claude-haiku-4-5` | `LLM_BACKEND=claude`일 때 사용할 Claude 모델 ID |
+
+기본 설정에서는 각 작업이 끝날 때 모델 참조와 CUDA 캐시를 해제합니다(`LLM_BACKEND=claude`인 경우 LLM 쪽은 해제할 GPU 자원이 없습니다).
+
+## API
+
+서버 실행 후 다음 문서를 사용할 수 있습니다.
+
+- Swagger UI: `http://localhost:8000/docs`
+- ReDoc: `http://localhost:8000/redoc`
+- 상태 확인: `GET /health`
+
+`GET /health`는 현재 로드된 LLM/VLM 백엔드 종류(`llm_backend`, `vlm_backend`: `local`/`claude`/`unknown`)와 모델명, Claude API 프록시 지원·설정 여부(`claude_api_proxy`, `claude_api_configured`), 로컬 모델 선택 기능 지원 여부(`local_model_selection`)를 함께 반환합니다.
+
+### STT 요약 요청
+
+`POST /llm/summarize`는 JSON 요청을 받고 `202 Accepted`와 작업 ID를 반환합니다.
+
+```json
+{
+  "language": "ko",
+  "segments": [
+    {
+      "segment_id": 0,
+      "start": 0.0,
+      "end": 3.4,
+      "text": "첫 번째 발화 내용입니다."
+    }
+  ],
+  "full_text": "첫 번째 발화 내용입니다.",
+  "summary_level": "standard"
+}
+```
+
+`full_text`가 비어 있으면 `segments[].text`를 연결하여 사용합니다. `summary_level`은 `simple`(간단요약) / `standard`(기본요약, 기본값) / `detailed`(상세요약) 중 하나이며, 실제 생성 토큰 수와 청크 크기는 `configs/inference_config.py`의 `SUMMARY_LEVEL_PRESETS`에서 정의합니다. `simple`은 프레임/OCR/VLM 단계를 쓰지 않는 클라이언트를 위한 프리셋이라 중요 구간 추출 자체를 건너뛰고 STT 전체 요약만 생성합니다.
+
+`local_model`(선택)에 [로컬 모델 가이드](docs/local_models.md)의 선택 ID(예: `qwen3.5-9b`)를 지정하면 해당 요청만 그 모델로 처리합니다. 생략하거나 `null`이면 기존 기본 서비스(`LLM_BACKEND`가 정한 로컬 Qwen 또는 Claude API)를 사용합니다. 지정한 모델이 다운로드되어 있지 않으면 `422`를 반환합니다.
+
+### VLM 프레임 분석 요청
+
+`POST /vlm/summarize`는 `multipart/form-data` 요청을 받습니다.
+
+| 필드 | 형식 | 설명 |
+| --- | --- | --- |
+| `ocr_result` | JSON 파일 1개 | 프레임별 OCR 결과 배열 |
+| `frames` | JPG 파일 여러 개 | OCR의 `image_path` 파일명과 매칭할 프레임 |
+| `summary_level` | 문자열 | `simple` / `standard`(기본값) / `detailed` |
+| `local_model` | 문자열 (선택) | 이 요청에 사용할 로컬 모델 선택 ID. 생략 시 기본 서비스 사용 |
+
+PowerShell 요청 예시:
+
+```powershell
+curl.exe -X POST "http://localhost:8000/vlm/summarize" `
+  -F "ocr_result=@C:\path\to\ocr_result.json;type=application/json" `
+  -F "frames=@C:\path\to\frame_000001.jpg;type=image/jpeg" `
+  -F "frames=@C:\path\to\frame_000002.jpg;type=image/jpeg" `
+  -F "summary_level=standard"
+```
+
+프레임은 최대 8장, 파일당 최대 20MB까지 받을 수 있습니다. OCR JSON은 최대 10MB입니다.
+
+### 최종 요약 요청
+
+`POST /llm/final-summary`는 STT 요약과 VLM 요약 파일을 합쳐 최종 요약을 생성합니다.
+
+| 필드 | 형식 | 설명 |
+| --- | --- | --- |
+| `stt_summary_result` | JSON 파일 1개 (필수) | STT 중요 구간 추출 결과 |
+| `vlm_summary_result` | JSON 파일 1개 (필수) | VLM 프레임별 요약 결과 |
+| `stt_summary` | TXT 파일 1개 (선택) | STT 전체 요약 텍스트. 생략하면 `stt_summary_result`의 `summary` 필드를 대신 사용 |
+| `vlm_summary` | TXT 파일 1개 (선택) | VLM 전체 요약 텍스트 |
+| `summary_level` | 문자열 | `simple` / `standard`(기본값) / `detailed` |
+| `local_model` | 문자열 (선택) | 이 요청에 사용할 로컬 모델 선택 ID. 생략 시 기본 서비스 사용 |
+
+VLM 결과 중 강사 화면처럼 강의 내용이 없는 프레임은 최종 요약 입력에서 제외되며, 남는 화면 자료가 없어도 오류 없이 STT 요약만으로 최종 요약을 만듭니다.
+
+완료된 작업의 `result`는 마크다운 최종 요약(`final_summary`)과 강의 노트 JSON(`lecture_note`)을 함께 담습니다. 모델 출력을 JSON으로 읽지 못하면 오류 내용을 덧붙여 한 번 더 요청하고, 그래도 실패하면 마크다운 프롬프트로 대체하며 이때 `lecture_note`는 `null`입니다. 타임라인은 HH:MM:SS가 아닌 초 단위 숫자입니다.
+
+```json
+{
+  "final_summary": "# 경사하강법\n\n## 핵심 주제\n- ...\n\n## 주요 내용\n\n### 1. 손실 함수 (타임라인: 12.5 ~ 180.0)\n- ...",
+  "lecture_note": {
+    "title": "경사하강법",
+    "key_points": ["..."],
+    "terms": [{"term": "학습률", "definition": "..."}],
+    "chapters": [
+      {"title": "손실 함수", "start": 12.5, "end": 180.0, "points": ["..."], "screen_notes": ["..."]}
+    ],
+    "visuals": [
+      {"type": "수식", "title": "갱신식", "start": 95.0, "end": null, "content": ["..."], "meaning": "..."}
+    ],
+    "conclusion": ["..."],
+    "notices": []
+  }
+}
+```
+
+`final_summary`의 섹션 구성은 `## 핵심 주제`, `## 주요 용어`, `## 주요 내용`, `## 표/차트 기반 주요 정보`, `## 종합 결론`, `## 공지 사항`이며 내용이 없는 섹션은 생략됩니다. 자세한 검증·정규화 규칙은 [`services/README.md`](services/README.md#최종-요약)를 참고하세요.
+
+### 작업 상태 조회
+
+- LLM: `GET /llm/jobs/{job_id}`
+- VLM: `GET /vlm/jobs/{job_id}`
+- 최종 요약: `GET /llm/final-summary/jobs/{job_id}`
+
+작업 상태는 `queued`, `running`, `completed`, `failed` 중 하나입니다.
+
+```json
+{
+  "job_id": "vlm-summary-a1b2c3d4e5f6",
+  "status": "running",
+  "message": "프레임을 분석하고 있습니다. (1/3)",
+  "current_step": 1,
+  "total_steps": 3,
+  "result": null,
+  "error": null,
+  "created_at": "2026-06-14T00:00:00+00:00",
+  "updated_at": "2026-06-14T00:00:05+00:00",
+  "elapsed_seconds": 5.0
+}
+```
+
+작업과 결과는 서버 메모리에만 저장되므로 서버를 재시작하면 사라집니다.
+
+작업 상태 응답의 `model_loads` 배열에는 해당 작업에서 실제로 발생한 모델 로딩/재사용/실패 이벤트가 종류·모델명·상태·소요 시간과 함께 기록됩니다(자세한 내용은 [모델 로딩 계측](#모델-로딩-계측) 참고).
+
+### 로컬 모델 목록/다운로드 요청
+
+- `GET /models`: [로컬 모델 가이드](docs/local_models.md)의 선택 가능한 모델 목록과 각 모델의 준비 상태(다운로드 완료 여부, precision, commit revision, 다운로드 진행 상태)를 반환합니다.
+- `POST /models/{model_id}/download`: 해당 모델의 다운로드를 백그라운드 큐에 접수하고 `202`를 반환합니다. 실제 진행 상태는 `GET /models`로 조회합니다.
+
+### Claude API 프록시 요청
+
+`POST /claude/messages`는 서버의 `ANTHROPIC_API_KEY` 환경변수로 인증해 Anthropic Messages API를 대신 호출합니다. 클라이언트는 API 키를 직접 다루지 않고 이 엔드포인트를 통해서만 Claude를 호출합니다. `model`, `max_tokens`(1~8192), `system`, `messages`(정확히 1개), `tools`(정확히 1개), `tool_choice`가 필수이며 그 외 필드는 거부됩니다(`extra="forbid"`). 키가 설정되어 있지 않으면 `503`을 반환합니다. 이 경로는 `LLM_BACKEND` 설정과 무관하게 항상 사용할 수 있습니다.
+
+## 프로젝트 구조
+
+아래 구조는 `.gitignore`에 의해 제외되는 모델 가중치, 입력·출력 데이터, 실행 결과, 로그 및 격리된 로컬 모델 가상환경(`.venv-minicpm/` 등)을 제외한 GitHub 업로드 대상입니다. 임시 스크래치용 `/test/`(단수)만 제외되며, 자동화 테스트가 있는 `tests/`(복수)는 저장소에 포함됩니다.
+
+```text
+.
+|-- app/
+|   |-- __init__.py
+|   |-- api_models.py
+|   |-- claude_api.py
+|   |-- inference_jobs.py
+|   |-- job_store.py
+|   |-- local_model_api.py
+|   |-- local_model_manager.py
+|   |-- model_load_metrics.py
+|   |-- server.py
+|   `-- server_logging.py
+|-- configs/
+|   |-- __init__.py
+|   |-- inference_config.py
+|   `-- local_models.py
+|-- docs/
+|   `-- local_models.md
+|-- models/
+|   |-- __init__.py
+|   |-- claude_llm_loader.py
+|   |-- llm_loader.py
+|   |-- minicpm_loader.py
+|   |-- multimodal_loader.py
+|   `-- vlm_loader.py
+|-- scripts/
+|   |-- check_local_models.py
+|   |-- download_models.py
+|   |-- minicpm_worker.py
+|   |-- setup_minicpm.py
+|   `-- vlm_upload.py
+|-- services/
+|   |-- __init__.py
+|   |-- final_service.py
+|   |-- llm_service.py
+|   |-- summary_service.py
+|   `-- vlm_service.py
+|-- tests/
+|   |-- test_backend_health.py
+|   |-- test_claude_api.py
+|   |-- test_local_models.py
+|   `-- test_model_load_metrics.py
+|-- .gitignore
+|-- README.md
+|-- requirements-local.txt
+|-- requirements-minicpm.txt
+|-- requirements.txt
+|-- start_local_server.bat
+`-- start_server.bat
+```
+
+## App 폴더
+
+FastAPI 서버 실행, HTTP 요청 처리, 비동기 작업 관리와 운영 설정을 담당합니다.
+
+상세 설명: [`app/README.md`](app/README.md)
+
+| 파일 | 역할 |
+| --- | --- |
+| `server.py` | FastAPI 앱 생성, LLM/VLM 라우트 등록, 서비스와 작업 실행기 조립 |
+| `api_models.py` | STT 요청, 작업 접수, 작업 상태와 결과에 사용하는 Pydantic 모델 정의 |
+| `inference_jobs.py` | LLM/VLM 백그라운드 추론, 진행률 갱신, 오류 처리, GPU 모델 해제 |
+| `job_store.py` | 작업 ID 생성과 인메모리 작업 상태 저장 및 조회 |
+| `server_logging.py` | 콘솔 컬러 로그와 회전 파일 로그 설정 |
+| `local_model_manager.py` | 요청의 `local_model`에 맞춰 추론 실행기를 전환·재사용하고, 전환 시 이전 모델을 해제 |
+| `local_model_api.py` | `GET /models`, `POST /models/{model_id}/download` — 로컬 모델 카탈로그 조회와 다운로드 접수 |
+| `claude_api.py` | 서버의 `ANTHROPIC_API_KEY`로 `POST /claude/messages`를 대신 호출하는 프록시 라우터 |
+| `model_load_metrics.py` | 모델 로드/재사용/실패를 작업 단위로 계측해 작업 상태의 `model_loads`에 기록 |
+
+## Scripts 폴더
+
+서버 실행과 모델 다운로드에 필요한 유틸리티만 둡니다.
+
+| 파일 | 역할 |
+| --- | --- |
+| `vlm_upload.py` | OCR JSON과 JPG 업로드 크기 검증, 파일명 기반 OCR-프레임 매칭 |
+| `download_models.py` | 선택 ID(`configs/local_models.py`)로 Hugging Face 모델을 재개 가능한 방식으로 로컬 캐시에 다운로드 |
+| `check_local_models.py` | 다운로드된 로컬 모델에 텍스트/이미지 입력을 넣어 로딩·생성 가능 여부를 점검 |
+| `setup_minicpm.py` | MiniCPM 전용 가상환경(`.venv-minicpm`)을 만들고 `requirements-minicpm.txt`를 설치 |
+| `minicpm_worker.py` | `.venv-minicpm`에서 실행되는 MiniCPM 추론 서브프로세스 (stdin/stdout JSON 프로토콜) |
+
+루트의 `start_server.bat`는 Windows Conda 환경에서 Uvicorn 서버를 실행하며, `start_local_server.bat`는 `LLM_BACKEND=local`을 고정해 같은 배치를 호출합니다.
+
+## Models 폴더
+
+Hugging Face 모델의 로딩, 추론과 GPU 메모리 해제를 담당합니다. Python 로더 코드는 GitHub에 포함되지만 `models/hf_cache/`의 실제 모델 파일은 제외됩니다.
+
+상세 설명: [`models/README.md`](models/README.md)
+
+| 파일 | 역할 |
+| --- | --- |
+| `llm_loader.py` | Qwen3-8B 토크나이저와 모델 로드, 텍스트 생성, 모델 해제 |
+| `vlm_loader.py` | Qwen2.5-VL 모델과 프로세서 로드, 이미지 분석, 모델 해제 |
+| `claude_llm_loader.py` | Anthropic API 기반 LLM 로더. `llm_loader.py`와 동일한 인터페이스 제공 |
+| `multimodal_loader.py` | 신규 로컬 멀티모달 모델(Qwen3.5, Qwen3-VL, Gemma4, InternVL3.5, GLM-4.6V) 공용 로더. 4비트 양자화된 단일 체크포인트를 텍스트/이미지 단계에 함께 사용 |
+| `minicpm_loader.py` | MiniCPM-V 4.5 전용 로더. 서버와 다른 Transformers 버전이 필요해 별도 서브프로세스(worker)로 격리 실행 |
+
+이 로더들은 모두 모델을 지연 로딩하며, `unload()` 호출 시 참조 제거와 CUDA 캐시 정리를 수행합니다.
+
+## Services 폴더
+
+모델 로더와 API 계층 사이의 비즈니스 로직을 담당합니다.
+
+상세 설명: [`services/README.md`](services/README.md)
+
+| 파일 | 역할 |
+| --- | --- |
+| `llm_service.py` | 강의용 STT 요약 프롬프트, 중요 구간 추출, 세그먼트 분할과 결과 파싱(모델 시간을 입력 구간에 맞춰 보정) |
+| `vlm_service.py` | OCR 결과 파싱, 다중 프레임 매칭, 4줄 구조화 VLM 프롬프트와 `vlm_fields` 파싱 |
+| `final_service.py` | STT/VLM 요약을 종합한 강의 노트 JSON 생성·검증과 마크다운 변환(JSON 실패 시 재요청·마크다운 대체) |
+| `summary_service.py` | LLM/VLM 서비스 생성, 공용 GPU lock 공유, 상위 호출 인터페이스 제공. `local_model_manager.py`가 다른 로더를 주입할 수 있도록 생성자에서 `llm_loader`/`vlm_loader`를 선택적으로 받음 |
+
+## GitHub 제외 항목
+
+`.gitignore`에 따라 다음 내용은 저장소에 포함되지 않습니다.
+
+| 경로 또는 패턴 | 내용 |
+| --- | --- |
+| `models/hf_cache/` | 다운로드된 모델 설정과 가중치 |
+| `*.pt`, `*.pth`, `*.bin`, `*.safetensors` | 모델 및 체크포인트 파일 |
+| `data/input/`, `data/output/` | 입력 및 출력 데이터 |
+| `runs/` | 프레임 추출 등 실행 결과 |
+| `logs/` | 서버 실행 로그 |
+| `/test/` | 로컬 스크래치용 테스트 코드와 샘플 데이터(단수, `tests/`와는 별개) |
+| `.env` | 환경 변수와 비밀 설정 |
+| `__pycache__/` | Python 바이트코드 캐시 |
+| `.venv*/` | MiniCPM 등 격리된 로컬 모델 가상환경 (예: `.venv-minicpm/`) |
+| `.pytest_cache/` | pytest 실행 캐시 |
+
+## 처리 흐름
+
+1. `app/server.py`가 요청을 검증하고(`local_model`이 있으면 다운로드 완료 여부 확인) 작업을 생성합니다.
+2. `JobStore`가 작업 상태와 진행률을 메모리에 저장합니다.
+3. 단일 `ThreadPoolExecutor`가 `LocalModelManager.run()`을 통해 GPU 추론 작업을 순서대로 실행합니다. `local_model`이 지정되면 해당 모델 전용 `InferenceJobRunner`로 전환(필요 시 이전 모델 해제)하고, 없으면 기본 `InferenceJobRunner`를 사용합니다.
+4. `InferenceJobRunner`가 `SummaryService`를 통해 LLM 또는 VLM 서비스를 호출합니다.
+5. 서비스가 입력을 정규화하고 프롬프트를 구성한 뒤 모델 로더에 전달합니다. 로더의 `load()` 호출은 `model_load_metrics.py`가 계측해 작업 상태의 `model_loads`에 기록합니다.
+6. 작업 완료 후 결과를 저장하고 기본 설정에서는 GPU 모델을 해제합니다.
+
+## 주의 사항
+
+- 첫 요청에서는 로컬 모델을 GPU에 로드하므로 응답 시간이 오래 걸릴 수 있습니다.
+- `/health`는 서버 프로세스 상태만 확인하며 CUDA와 모델 로딩까지 검사하지 않습니다.
+- 작업 취소, 결과 영속화, 만료 작업 정리 기능은 현재 제공하지 않습니다.
+- `KEEP_LLM_LOADED=1` 또는 `KEEP_VLM_LOADED=1`은 재로딩 시간을 줄이지만 GPU 메모리를 계속 점유합니다.
+- LLM 입력 토큰이 `configs/inference_config.py`의 `LLM_INFERENCE_CONFIG.max_input_tokens`(기본 16000)를 초과하면 추론을 시작하지 않고 오류를 반환합니다.
+- LLM/VLM 추론 중 GPU 메모리가 부족(CUDA OOM)하면 캐시를 비우고 사용자에게 안내 메시지를 반환합니다. 이때 작업 상태의 `message`에는 일반 실패 메시지 대신 실제 오류 내용이 표시됩니다.
+
+## 클라이언트 분석 방식 분리
+
+### 모델 로딩 계측
+
+로컬 `LLMLoader.load()` / `VLMLoader.load()`의 시간과 재사용 여부를 작업별로 기록합니다.
+GPU 전송은 CUDA 동기화까지 기다린 뒤 측정을 마칩니다. 작업 상태 API의 `model_loads`에
+종류·모델명·시작 시각·상태(`loaded`, `reused`, `failed`)·초 단위 소요 시간을 반환하며,
+실패한 작업에도 해당 시점까지의 로딩 이벤트를 유지합니다. 서버 로그에도 `model_load`로 기록합니다.
+클라이언트 수정본이 이를 실행 이력 JSON·CSV 및 Streamlit 화면에 저장/표시합니다.
+`reused`는 실제 로딩이 없으므로 0초이며, API 백엔드의 원격 모델 로딩과 Whisper/OCR은 계측하지 않습니다.
+
+### 분석 경로
+
+새 클라이언트의 로컬 모드는 `/health`의 `llm_backend`, `vlm_backend`가 모두 `local`인지 확인합니다. 로컬 모드용 서버는 `LLM_BACKEND=local`로 실행하거나 `start_local_server.bat`를 사용하세요. 클라이언트의 Claude API 모드는 `/claude/messages`를 통해 이 서버를 경유합니다. 서버만 `ANTHROPIC_API_KEY` 환경변수를 읽고, 앱에는 키를 전달하지 않습니다. `/health`의 `claude_api_proxy`, `claude_api_configured`는 지원 및 설정 여부만 알립니다. 이 경로는 `LLM_BACKEND`와 독립적이므로 `LLM_BACKEND=local` 상태에서도 Claude API를 사용할 수 있습니다. 기존 키 환경변수가 전달되는 터미널/서비스에서 서버를 재시작하세요. 새 클라이언트는 Whisper 프리셋과 무관하게 서버 생성 프리셋에 `standard`를 전달합니다.
+
+## 로컬 모델 선택·다운로드
+
+신규 6개 모델과 기존 Qwen 조합을 선택할 수 있습니다. 설치와 검증은 [로컬 모델 가이드](docs/local_models.md)를 참고하세요.
+
+## 테스트
+
+`tests/`에는 GPU나 실제 모델 없이 동작하는 단위 테스트가 있습니다(`/health` 응답 형태, Claude 프록시 검증, 로컬 모델 카탈로그, 모델 로딩 계측). `pytest`는 `requirements.txt`에 포함되어 있지 않으므로 별도로 설치합니다.
+
+```powershell
+pip install pytest
+pytest tests/
+```

@@ -1,0 +1,23 @@
+# model files
+models/hf_cache/
+*.pt
+*.pth
+*.bin
+*.safetensors
+
+# runtime data
+data/input/*
+data/output/*
+runs/*
+logs/*
+
+# test files
+/test/
+
+# env
+.env
+__pycache__/
+
+# isolated local-model environments
+.venv*/
+.pytest_cache/

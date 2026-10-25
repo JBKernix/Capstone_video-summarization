@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Literal, Optional, Sequence, Tuple
+from typing import Dict, List, Literal, Optional, Sequence, Tuple, TypeVar
 
 from modules.common import DEFAULT_FRAME_METADATA_RELATIVE_PATH, load_json, run_path, save_json
 from modules.common.progress import STEP_FRAME_EXTRACTION, report_progress
@@ -17,13 +17,19 @@ from modules.preprocess.ffmpeg_utils import (
 )
 from modules.preprocess.video_info import get_video_info
 
-SamplingMethod = Literal["interval", "scene_change"]
+SamplingMethod = Literal["representative", "interval", "scene_change"]
 TimeRange = Tuple[float, float]
-SAMPLING_METHOD_CHOICES: tuple[SamplingMethod, ...] = ("interval", "scene_change")
-DEFAULT_SAMPLING_METHOD: SamplingMethod = "interval"
+T = TypeVar("T")
+SAMPLING_METHOD_CHOICES: tuple[SamplingMethod, ...] = ("representative", "interval", "scene_change")
+DEFAULT_SAMPLING_METHOD: SamplingMethod = "representative"
 DEFAULT_INTERVAL_SECONDS = 5.0
 DEFAULT_SCENE_THRESHOLD = 0.5
 DEFAULT_SCENE_MIN_GAP_SECONDS = 1.0
+# representative 방식: 구간 안에서 이 간격으로 후보를 뽑고, 같은 화면이 이어지는 후보는 첫 장만 남깁니다.
+DEFAULT_CANDIDATE_INTERVAL_SECONDS = 2.0
+DEFAULT_MAX_FRAMES_PER_SEGMENT = 4
+# 중요 구간 없이 영상 전체를 다룰 때는 이 길이로 나눈 구간마다 대표 프레임을 고릅니다.
+FULL_VIDEO_WINDOW_SECONDS = 60.0
 
 
 @dataclass(frozen=True)
@@ -34,15 +40,20 @@ class FrameMetadata:
     timestamp: float
     image_path: str
     sampling_method: SamplingMethod
+    # representative 방식에서 프레임이 속한 중요 구간 번호입니다(정규화된 구간 순서 기준).
+    segment_id: Optional[int] = None
 
     def to_dict(self) -> Dict[str, object]:
         """프레임 메타데이터를 JSON 저장 가능한 딕셔너리로 변환합니다."""
-        return {
+        data: Dict[str, object] = {
             "frame_id": self.frame_id,
             "timestamp": self.timestamp,
             "image_path": self.image_path,
             "sampling_method": self.sampling_method,
         }
+        if self.segment_id is not None:
+            data["segment_id"] = self.segment_id
+        return data
 
 
 def _project_relative(path: Path, project_root: Path) -> str:
@@ -305,7 +316,7 @@ def sample_scene_change_frames(
             str(video_path),
             "-vf",
             f"select={select_filter},showinfo",
-            "-vsync",
+            "-fps_mode",
             "vfr",
             "-q:v",
             "2",
@@ -339,6 +350,188 @@ def sample_scene_change_frames(
     return metadata
 
 
+def _select_evenly(items: Sequence[T], limit: int) -> List[T]:
+    """``limit``개를 넘으면 처음과 끝을 포함해 시간상 고르게 퍼진 항목만 남깁니다."""
+    if len(items) <= limit:
+        return list(items)
+    if limit == 1:
+        return [items[0]]
+    step = (len(items) - 1) / (limit - 1)
+    return [items[round(position * step)] for position in range(limit)]
+
+
+def _full_video_ranges(duration: float) -> List[TimeRange]:
+    """영상 전체를 ``FULL_VIDEO_WINDOW_SECONDS`` 길이의 구간으로 나눕니다."""
+    ranges: List[TimeRange] = []
+    start = 0.0
+    while start < duration:
+        ranges.append((start, min(start + FULL_VIDEO_WINDOW_SECONDS, duration)))
+        start += FULL_VIDEO_WINDOW_SECONDS
+    return ranges
+
+
+def _segment_candidates(
+    video_path: Path,
+    frames_dir: Path,
+    segment_id: int,
+    time_range: TimeRange,
+    candidate_interval_seconds: float,
+) -> List[Tuple[Path, float]]:
+    """한 구간에서 후보 프레임을 뽑되, 직전에 남긴 후보와 거의 같은 화면(mpdecimate)은 버립니다.
+
+    입력 위치 탐색(``-ss``)을 쓰므로 showinfo 시각은 구간 시작 기준이라 구간 시작 시각을 더합니다.
+    mpdecimate는 직전에 남긴 프레임과만 비교하므로 A→B→A처럼 돌아온 화면은 다시 남습니다.
+    """
+    start, end = time_range
+    prefix = f"_candidate_{segment_id:04d}_"
+    remove_files(frames_dir.glob(f"{prefix}*.jpg"))
+    result = run_ffmpeg(
+        [
+            "-y",
+            "-ss",
+            f"{start:.3f}",
+            # 입력 옵션으로 둬야 필터가 구간 밖 프레임을 보지 않습니다(출력 옵션이면 끝에서 후보가 더 생깁니다).
+            "-t",
+            f"{end - start:.3f}",
+            "-i",
+            str(video_path),
+            "-an",
+            "-sn",
+            "-vf",
+            f"fps={1.0 / candidate_interval_seconds},mpdecimate,showinfo",
+            "-fps_mode",
+            "vfr",
+            "-q:v",
+            "2",
+            str(frames_dir / f"{prefix}%04d.jpg"),
+        ]
+    )
+    timestamps = parse_showinfo_timestamps(result.stderr)
+    image_paths = sorted(frames_dir.glob(f"{prefix}*.jpg"))
+    if len(timestamps) != len(image_paths):
+        remove_files(image_paths)
+        raise RuntimeError(
+            "대표 프레임 후보 수와 timestamp 수가 일치하지 않습니다: "
+            f"images={len(image_paths)}, timestamps={len(timestamps)}"
+        )
+    return [(path, round(start + timestamp, 3)) for path, timestamp in zip(image_paths, timestamps)]
+
+
+def _extract_single_frame(video_path: Path, output_path: Path, timestamp: float) -> bool:
+    """``timestamp`` 시점의 프레임 한 장을 저장하고, 실제로 파일이 생겼는지 돌려줍니다."""
+    run_ffmpeg(
+        [
+            "-y",
+            "-ss",
+            f"{timestamp:.3f}",
+            "-i",
+            str(video_path),
+            "-frames:v",
+            "1",
+            "-q:v",
+            "2",
+            "-update",
+            "1",
+            str(output_path),
+        ]
+    )
+    return output_path.exists()
+
+
+def sample_representative_frames(
+    video_path: str | Path,
+    frames_dir: str | Path,
+    metadata_path: str | Path,
+    candidate_interval_seconds: float = DEFAULT_CANDIDATE_INTERVAL_SECONDS,
+    max_frames_per_segment: int = DEFAULT_MAX_FRAMES_PER_SEGMENT,
+    project_root: Optional[str | Path] = None,
+    image_prefix: str = "frame",
+    time_ranges: Optional[Sequence[TimeRange]] = None,
+) -> List[FrameMetadata]:
+    """구간마다 화면이 바뀐 만큼만 대표 프레임을 추출합니다.
+
+    구간 안에서 ``candidate_interval_seconds`` 간격으로 후보를 뽑고, 같은 화면이 이어지는 후보는 첫 장만
+    남깁니다. 그래서 화면이 그대로인 구간은 1장, 슬라이드가 여러 번 바뀐 구간은 여러 장이 됩니다.
+    구간당 ``max_frames_per_segment``장을 넘으면 시간상 고르게 골라 줄이고, 후보가 하나도 없으면
+    구간 가운데 시점의 한 장을 씁니다. ``time_ranges``가 없으면 영상 전체를 일정 길이로 나눠 처리합니다.
+    """
+    if candidate_interval_seconds <= 0:
+        raise ValueError("후보 프레임 간격은 0보다 커야 합니다.")
+    if max_frames_per_segment < 1:
+        raise ValueError("구간당 최대 프레임 수는 1 이상이어야 합니다.")
+
+    video_path = Path(video_path)
+    frames_dir = Path(frames_dir)
+    project_root = Path(project_root) if project_root else Path.cwd()
+
+    if not video_path.exists():
+        raise FileNotFoundError(f"영상 파일이 존재하지 않습니다: {video_path}")
+
+    frames_dir.mkdir(parents=True, exist_ok=True)
+    remove_files(frames_dir.glob(f"{image_prefix}_*.jpg"))
+
+    try:
+        duration = get_video_info(video_path).duration
+    except (RuntimeError, ValueError):
+        duration = 0.0
+
+    if time_ranges is None:
+        if duration <= 0:
+            return sample_interval_frames(
+                video_path=video_path,
+                frames_dir=frames_dir,
+                metadata_path=metadata_path,
+                project_root=project_root,
+                image_prefix=image_prefix,
+            )
+        time_ranges = _full_video_ranges(duration)
+    elif duration > 0:
+        # LLM이 준 구간이 영상 길이를 넘으면 FFmpeg가 빈 출력으로 실패하므로 영상 안으로 자릅니다.
+        time_ranges = [(start, min(end, duration)) for start, end in time_ranges]
+
+    ranges = _normalize_time_ranges(time_ranges)
+    metadata: List[FrameMetadata] = []
+
+    def _add(timestamp: float, output_path: Path, segment_id: int) -> None:
+        metadata.append(
+            FrameMetadata(
+                frame_id=len(metadata),
+                timestamp=timestamp,
+                image_path=_project_relative(output_path, project_root),
+                sampling_method="representative",
+                segment_id=segment_id,
+            )
+        )
+
+    for segment_id, time_range in enumerate(ranges):
+        candidates = _segment_candidates(
+            video_path, frames_dir, segment_id, time_range, candidate_interval_seconds
+        )
+        chosen = _select_evenly(candidates, max_frames_per_segment)
+        for path, timestamp in chosen:
+            output_path = frames_dir / f"{image_prefix}_{len(metadata) + 1:06d}.jpg"
+            path.replace(output_path)
+            _add(timestamp, output_path, segment_id)
+        remove_files(path for path, _ in candidates if path.exists())
+
+        if not chosen:
+            # 구간이 영상 끝을 넘는 등 후보가 없을 때의 대비입니다. 가운데 시점도 없으면 구간을 건너뜁니다.
+            middle = round(sum(time_range) / 2, 3)
+            output_path = frames_dir / f"{image_prefix}_{len(metadata) + 1:06d}.jpg"
+            if _extract_single_frame(video_path, output_path, middle):
+                _add(middle, output_path, segment_id)
+
+        report_progress(
+            STEP_FRAME_EXTRACTION,
+            f"대표 프레임 추출 중 ({segment_id + 1}/{len(ranges)} 구간)",
+            (segment_id + 1) / len(ranges) * 100,
+        )
+
+    _write_metadata(metadata, metadata_path)
+    print(f"대표 프레임 추출 완료. 구간 수: {len(ranges)}, 추출 프레임 수: {len(metadata)}")
+    return metadata
+
+
 def sample_frames(
     video_path: str | Path,
     run_dir: str | Path,
@@ -349,6 +542,7 @@ def sample_frames(
     project_root: Optional[str | Path] = None,
     time_ranges: Optional[Sequence[TimeRange]] = None,
     important_segments_path: Optional[str | Path] = None,
+    max_frames_per_segment: int = DEFAULT_MAX_FRAMES_PER_SEGMENT,
 ) -> List[FrameMetadata]:
     """선택한 방식으로 run 디렉터리에 프레임과 메타데이터를 생성합니다."""
     run_dir = Path(run_dir)
@@ -365,6 +559,8 @@ def sample_frames(
         "time_ranges": time_ranges,
     }
 
+    if method == "representative":
+        return sample_representative_frames(max_frames_per_segment=max_frames_per_segment, **common_args)
     if method == "interval":
         return sample_interval_frames(interval_seconds=interval_seconds, **common_args)
     if method == "scene_change":

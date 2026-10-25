@@ -24,3 +24,15 @@ Thumbs.db
 
 cloudflared.log
 tunnel_url.txt
+# single-server runtime files (logs, uploads, per-run outputs, launcher PIDs, tunnel logs)
+logs/
+*.log
+*.log.out
+data/input/
+runs/
+.cloudflared/
+*.pem
+.env
+
+# 발표용 자료(패널 PPT, 미리보기 이미지)는 저장소에 넣지 않습니다.
+panel/

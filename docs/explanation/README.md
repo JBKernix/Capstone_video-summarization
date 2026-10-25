@@ -6,11 +6,13 @@
 
 | 영역 | 문서 | 관련 코드 | 설명 |
 | --- | --- | --- | --- |
-| App | `app/app.md` | `app/` | Streamlit UI 구조와 실행 흐름 |
+| App | `app/app.md` | `app/` | 앱 공통 모듈(업로드·실행·로그 해석·결과 저장)과 예비 Streamlit UI 구조 |
+| App API | `app/app_api.md` | `app/api/` | React 화면용 FastAPI 앱 서버: 엔드포인트, 요약 결과 형식, 로그인·보안, 환경변수 |
+| Frontend | `frontend/frontend.md` | `frontend/` | React 화면 구조, 화면별 동작, 개발·빌드 방법 |
 | Configs | `configs/configs.md` | `configs/` | STT 설정과 비어 있는 설정 파일 상태 |
 | Scripts | `scripts/scripts.md` | `scripts/` | CLI 실행 스크립트별 역할 |
 | 전체 파이프라인 | `pipeline/pipeline.md` | `scripts/run_pipeline.py` | 오디오 추출, STT, LLM 요약, 프레임 추출, OCR, VLM 요약 순서 |
-| 전처리 | `preprocess/frame_sampling.md` | `modules/preprocess/frame_sampler.py` | interval/scene 기반 프레임 샘플링과 메타데이터 생성 |
+| 전처리 | `preprocess/frame_sampling.md` | `modules/preprocess/frame_sampler.py` | representative(기본)/interval/scene_change 프레임 샘플링과 메타데이터 생성 |
 | 전처리 | `preprocess/audio_extraction.md` | `modules/preprocess/audio_extractor.py` | 영상에서 WAV 오디오 추출 |
 | 전처리 | `preprocess/video_info.md` | `modules/preprocess/video_info.py` | FFprobe 기반 영상 길이, 해상도, FPS 조회 |
 | 전처리 | `preprocess/ffmpeg_utils.md` | `modules/preprocess/ffmpeg_utils.py` | FFmpeg/FFprobe 실행 유틸리티와 MP4 보장 로직 |
@@ -39,14 +41,15 @@
 | 영역 | 상태 | 비고 |
 | --- | --- | --- |
 | 영상 전처리 | 구현됨 | FFmpeg/FFprobe 필요 |
-| 프레임 추출 | 구현됨 | `interval`, `scene` 방식 지원 |
+| 프레임 추출 | 구현됨 | `representative`(기본), `interval`, `scene_change` 방식 지원 |
 | 오디오 추출 | 구현됨 | 기본 출력은 `runs/audio/audio.wav` |
 | STT | 구현됨 | Whisper 사용, 설정은 `configs/stt_config.yaml` |
 | OCR | 구현됨 | EasyOCR 사용 |
 | STT 요약 | 구현됨 | 외부 GPU LLM 서버 필요 |
 | VLM 프레임 요약 | 구현됨 | 외부 GPU VLM 서버 필요, JPG 프레임만 전송 |
 | 최종 요약 | 구현됨 | STT/VLM 요약 파일 필요 |
-| Streamlit UI | 구현됨 | 파일 업로드/유튜브 링크 업로드, 요약 옵션(간단/기본/상세) 선택, 단계별 진행률/오류 표시, 최종 요약 결과 확인, 결과 저장(`data/saved/`), 저장된 요약 다시보기, 선택적 로그인 게이트(`app/auth.py`) |
+| React UI + 앱 API 서버 | 구현됨 (기본) | Streamlit UI와 같은 기능 + "분석 결과" 탭(완료된 분석 다시 열기), 업로드 진행률 표시, 실행 이력에서 결과 화면 이동. `start_all.bat`이 8501에서 실행 |
+| Streamlit UI | 구현됨 (예비) | 파일 업로드/유튜브 링크 업로드, 분석 방식·Whisper 설정(간단/기본/상세) 선택, 단계별 진행률/오류 표시, 최종 요약 결과 확인, 결과 저장(`data/saved/`), 저장된 요약 다시보기, 실행 이력, 선택적 로그인 게이트(`app/auth.py`). `start_all.bat -Streamlit` |
 
 ## 기본 경로
 
