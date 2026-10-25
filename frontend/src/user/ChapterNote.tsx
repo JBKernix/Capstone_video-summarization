@@ -79,6 +79,17 @@ export function ChapterNote({ outline, videoUrl }: { outline: NoteOutline; video
         </section>
       )}
 
+      {outline.emphasis.length > 0 && (
+        <section className="u-cn-emphasis" aria-label="강사가 강조한 내용">
+          <p className="u-cn-label">⭐ 강사가 강조한 내용</p>
+          <ul>
+            {outline.emphasis.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <div className="u-cn-grid">
         <aside className="u-cn-player">
           {videoUrl ? (

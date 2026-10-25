@@ -28,6 +28,7 @@ from modules.llm.lecture_note import (
     format_vlm_entries,
     normalize_lecture_note,
     render_note_markdown,
+    strip_char_count,
     vlm_fields,
     vlm_summary_text,
 )
@@ -55,7 +56,9 @@ STT_CHUNK_PROMPT = """다음은 강의 영상에서 추출한 STT 구간입니�
 5. 출석 확인, 잡담, 마이크·장비 점검, 반복 설명은 제거
 6. STT 오류로 보이는 전문 용어는 문맥상 명확할 때만 보정
 7. 원문에 없는 설명, 예시, 수치는 추가하지 않기
-8. 전체 1200자 이내로 작성하고, 예시를 줄이더라도 다룬 주제는 끝까지 빠뜨리지 않기
+8. 전체 1200자 이내로 작성하고, 예시를 줄이더라도 다룬 주제는 끝까지 빠뜨리지 않기 (글자 수는 출력하지 않기)
+9. 강조 사항과 공지를 구분하기: 공지는 과제 제출, 시험 일정, 다음 수업 안내 같은 일정·행정 안내만 해당하고,
+   "시험에 나온다", "중요하다"처럼 내용을 강조한 말은 강조 사항에 적기
 
 [summary 형식]
 ## 강의 요약
@@ -65,8 +68,10 @@ STT_CHUNK_PROMPT = """다음은 강의 영상에서 추출한 STT 구간입니�
 - '용어': 설명
 ### 강의 흐름
 -
-### 강조 사항 및 공지
-- (과제·시험·다음 수업 공지가 없으면 "없음")
+### 강조 사항
+- (강사가 강조한 내용이 없으면 "없음")
+### 공지
+- (과제 제출·시험 일정·다음 수업 안내가 없으면 "없음")
 
 [중요 구간 기준]
 1. 새로운 개념이나 용어가 처음 정의되는 구간
@@ -102,10 +107,11 @@ FINAL_PROMPT = """강의 영상을 학습용 강의 노트로 정리하세요.
 - terms: 핵심 용어와 강의에서 설명한 정의
 - chapters: points에는 그 구간에서 설명한 개념, 설명 흐름, 예시를 2~4개,
   screen_notes에는 슬라이드·판서·코드에서 확인된 내용을 쓰세요(없으면 빈 배열).
-- visuals: 표, 그래프, 수식, 코드, 도식만 넣으세요. content에는 입력 자료에 있는 항목·수치·식·코드 동작을,
-  meaning에는 그 자료가 설명하는 개념을 쓰세요(근거가 없으면 빈 문자열).
+- visuals: 표, 그래프, 수식, 코드, 도식, 판서 자료만 넣으세요(일반 화면·강사 화면 제외).
+  content에는 입력 자료에 있는 항목·수치·식·코드 동작을, meaning에는 그 자료가 설명하는 개념을 쓰세요(근거가 없으면 빈 문자열).
 - conclusion: 복습할 때 꼭 기억할 내용 2~4개
-- notices: 과제·시험·다음 수업 공지(없으면 빈 배열)
+- emphasis: 강사가 "중요하다", "시험에 나온다", "꼭 기억하라" 등으로 강조한 내용(없으면 빈 배열)
+- notices: 과제 제출, 시험 일정, 다음 수업 안내 같은 일정·행정 공지만(없으면 빈 배열). 강조한 내용은 넣지 마세요.
 - 각 문자열은 한 문장으로 짧게 쓰세요.
 
 [STT 요약 자료]
@@ -136,9 +142,10 @@ LECTURE_NOTE_SCHEMA = {
                            "start": TIME, "end": TIME, "content": STRINGS, "meaning": {"type": "string"}},
             "required": ["type", "title", "start", "end", "content", "meaning"]}},
         "conclusion": STRINGS,
+        "emphasis": STRINGS,
         "notices": STRINGS,
     },
-    "required": ["title", "key_points", "terms", "chapters", "visuals", "conclusion", "notices"],
+    "required": ["title", "key_points", "terms", "chapters", "visuals", "conclusion", "emphasis", "notices"],
 }
 
 
@@ -259,7 +266,7 @@ class ClaudeSTTClient(GPULLMClient):
                       "topic": str(chosen[i].get("topic", "")).strip() or "주요 구간",
                       "reason": str(chosen[i].get("reason", "")).strip(), "text": segments[i].get("text", "")}
                      for i in sorted(chosen)]
-        return {"summary": self.api.merge(summaries), "important_segments": important}
+        return {"summary": strip_char_count(self.api.merge(summaries)), "important_segments": important}
 
 
 class ClaudeVLMClient(GPUVLMClient):

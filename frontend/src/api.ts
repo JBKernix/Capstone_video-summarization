@@ -209,6 +209,8 @@ export interface NoteOutline {
   conclusion: string[]
   /** 핵심 용어와 정의(강의 노트 JSON 결과에만 있음) */
   terms: NoteTerm[]
+  /** 강사가 "시험에 나온다", "중요하다" 등으로 강조한 내용(강의 노트 JSON 결과에만 있음) */
+  emphasis: string[]
   /** 과제·시험·다음 수업 공지(강의 노트 JSON 결과에만 있음) */
   notices: string[]
   /** 위 분류에 들지 않은 마크다운 */

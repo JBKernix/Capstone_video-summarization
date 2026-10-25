@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from threading import Lock
 from typing import Any, Callable
 
@@ -12,6 +13,12 @@ ProgressCallback = Callable[[str, int, int], None]
 # 강의용 STT 요약은 개념·정의·강조 사항까지 담아 512토큰이면 뒷부분 주제가 잘립니다.
 # 서버에 반영할 때는 configs/inference_config.py의 standard 프리셋 stt_max_new_tokens도 함께 올립니다.
 LECTURE_STT_MAX_NEW_TOKENS = LLM_INFERENCE_CONFIG.max_new_tokens_limit
+# 분량 규칙("1200자 이내")을 의식한 모델이 끝에 덧붙이는 "(총 1198자)" 같은 줄입니다.
+CHAR_COUNT_LINE = re.compile(r"^\s*[(\[（]?\s*(?:총|전체)?\s*(?:글자\s*수\s*[:：]?\s*)?\d[\d,]*\s*자\s*[)\]）]?\s*$")
+
+
+def strip_char_count(text: str) -> str:
+    return "\n".join(line for line in str(text).splitlines() if not CHAR_COUNT_LINE.match(line)).strip()
 
 
 def _build_loader():
@@ -56,7 +63,9 @@ class LLMService:
 5. 출석 확인, 잡담, 마이크·장비 점검, 반복 설명은 제거
 6. STT 오류로 보이는 전문 용어는 문맥상 명확할 때만 보정
 7. 원문에 없는 설명, 예시, 수치는 추가하지 않기
-8. 전체 1200자 이내로 작성하고, 강의가 길면 예시를 줄이더라도 다룬 주제는 끝까지 빠뜨리지 않기
+8. 전체 1200자 이내로 작성하고, 강의가 길면 예시를 줄이더라도 다룬 주제는 끝까지 빠뜨리지 않기 (글자 수는 출력하지 않기)
+9. 강조 사항과 공지를 구분하기: 공지는 과제 제출, 시험 일정, 다음 수업 안내 같은 일정·행정 안내만 해당하고,
+   "시험에 나온다", "중요하다"처럼 내용을 강조한 말은 강조 사항에 적기
 
 [출력 형식]
 ## 강의 요약
@@ -70,15 +79,19 @@ class LLMService:
 ### 강의 흐름
 -
 
-### 강조 사항 및 공지
-- (과제·시험·다음 수업 공지가 없으면 "없음")
+### 강조 사항
+- (강사가 강조한 내용이 없으면 "없음")
+
+### 공지
+- (과제 제출·시험 일정·다음 수업 안내가 없으면 "없음")
 """
 
         with self._generation_lock:
-            return self.loader.generate(
+            summary = self.loader.generate(
                 prompt=prompt,
                 max_new_tokens=self._validate_max_new_tokens(max_new_tokens),
             )
+        return strip_char_count(summary)
 
     def extract_important_segments(
         self,

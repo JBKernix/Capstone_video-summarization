@@ -171,7 +171,7 @@ def test_final_returns_lecture_note_and_compatible_markdown(tmp_path, monkeypatc
     note = {"title": "경사하강법", "key_points": ["갱신"], "terms": [{"term": "학습률", "definition": "보폭"}],
             "chapters": [{"title": "갱신식", "start": 10.0, "end": 9999, "points": ["설명"], "screen_notes": ["식"]}],
             "visuals": [{"type": "수식", "title": "갱신식", "start": 12.0, "end": None, "content": ["w-ηg"], "meaning": ""}],
-            "conclusion": ["정리"], "notices": []}
+            "conclusion": ["정리"], "emphasis": ["꼭 기억: 학습률"], "notices": ["시험에 나온다: 갱신식"]}
     with patch("requests.post", return_value=reply(note)) as post:
         result = ClaudeFinalClient("haiku").summarize_files_result(stt, vlm)
     sent = post.call_args.kwargs["json"]
@@ -183,6 +183,9 @@ def test_final_returns_lecture_note_and_compatible_markdown(tmp_path, monkeypatc
     assert (result["lecture_note"]["chapters"][0]["start"], result["lecture_note"]["chapters"][0]["end"]) == (10.0, None)
     assert "### 1. 갱신식 (타임라인: 10.0)" in result["summary"]
     assert "- '학습률': 보폭" in result["summary"]
+    assert "emphasis" in sent["tools"][0]["input_schema"]["required"]
+    assert result["lecture_note"]["emphasis"] == ["꼭 기억: 학습률", "시험에 나온다: 갱신식"]
+    assert result["lecture_note"]["notices"] == []
 
 
 def test_final_retries_then_fails_without_chapters(tmp_path, monkeypatch):

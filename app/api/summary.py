@@ -15,6 +15,7 @@ from app.summary_parse import (
 )
 from app.summary_result import get_summary_markdown, has_structured_summary, load_final_summary
 from modules.common import find_existing_path, load_json
+from modules.llm.lecture_note import EMPHASIS_IN_NOTICE
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 STRUCTURED_KEYS = ("title", "main_topic", "keywords", "topics", "conclusion")
@@ -198,6 +199,7 @@ def _outline(
         "conclusion": conclusion,
         # 마크다운 요약에는 용어 정의·공지 구분이 없습니다(강의 노트 JSON에만 있음).
         "terms": [],
+        "emphasis": [],
         "notices": [],
         "extras": extras,
     }
@@ -300,11 +302,13 @@ def _lecture_note_outline(
         text = "\n".join(f"- {line}" for line in content)
         if meaning:
             text += f"\n\n**강의에서의 의미** {meaning}"
-        visual_type = _note_text(item.get("type")) or "자료"
+        # 자료 유형을 알 수 없으면(이전 결과의 "기타") 유형 표시 없이 보여 줍니다.
+        visual_type = _note_text(item.get("type"))
+        visual_type = "" if visual_type == "기타" else visual_type
         visuals.append({
             "type": "item",
             "index": len(visuals) + 1,
-            "title": title or visual_type,
+            "title": title or visual_type or "화면 자료",
             "start": start,
             "end": end,
             "label": label,
@@ -327,6 +331,14 @@ def _lecture_note_outline(
             keywords.append(word)
 
     conclusion = _note_texts(note.get("conclusion"))
+    # 강조 사항을 따로 받기 전에 저장된 결과는 "시험에 나온다" 같은 강조가 공지에 섞여 있어 여기서 나눕니다.
+    emphasis = _note_texts(note.get("emphasis"))
+    notices = []
+    for notice in _note_texts(note.get("notices")):
+        if EMPHASIS_IN_NOTICE.search(notice):
+            emphasis += [notice] if notice not in emphasis else []
+        else:
+            notices.append(notice)
     return {
         "title": _note_text(note.get("title")) or None,
         "key_points": _note_texts(note.get("key_points")) or conclusion[:3],
@@ -335,7 +347,8 @@ def _lecture_note_outline(
         "chapters": chapters,
         "visuals": visuals,
         "conclusion": conclusion,
-        "notices": _note_texts(note.get("notices")),
+        "emphasis": emphasis,
+        "notices": notices,
         "extras": [],
     }
 

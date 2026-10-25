@@ -26,7 +26,8 @@ MAX_FINAL_NEW_TOKENS_LIMIT = 4096
 # 모델이 쓴 시간이 입력 자료의 마지막 시간보다 이만큼(초) 넘으면 잘못된 값으로 봅니다.
 TIME_TOLERANCE_SEC = 5.0
 
-VISUAL_TYPES = ("표", "그래프", "수식", "코드", "도식")
+# 판서 위주 강의에서는 판서의 식·그림이 핵심 자료이므로 함께 허용합니다. 그 밖의 유형(기타 등)은 버립니다.
+VISUAL_TYPES = ("표", "그래프", "수식", "코드", "도식", "판서")
 # 최종 요약 입력에 넣을 화면을 고를 때의 우선순위입니다. 값이 클수록 먼저 고릅니다.
 SCREEN_PRIORITY = {"수식": 3, "코드": 3, "표": 3, "그래프": 3, "도식": 3, "슬라이드": 2, "판서": 2}
 NOTE_LIMITS = {
@@ -38,8 +39,11 @@ NOTE_LIMITS = {
     "visuals": 10,
     "content": 6,
     "conclusion": 5,
+    "emphasis": 6,
     "notices": 5,
 }
+# 공지(notices)에 잘못 들어온 강조 표현입니다. "시험 범위는 3장까지" 같은 일정 공지는 해당하지 않습니다.
+EMPHASIS_IN_NOTICE = re.compile(r"시험에\s*(?:나온|나와|나올|출제)|꼭\s*(?:기억|알아)|중요(?:하|한|합)")
 SCREEN_NOTE_PREFIX = re.compile(r"^VLM\s*요약\s*자료(?:에서는|에서|에는|에)\s*,?\s*")
 PLACEHOLDER_PATTERN = re.compile(r"^<[^<>]*>$")
 NO_VLM_CONTENT = "(화면 자료에서 확인된 강의 내용이 없습니다.)"
@@ -55,6 +59,9 @@ NOTE_PROMPT = """
 - start와 end는 입력 자료에 있는 초 단위 숫자를 그대로 쓰세요. HH:MM:SS로 바꾸지 마세요.
   시간을 알 수 없으면 null을 쓰세요.
 - VLM 자료의 [시작 ~ 끝]은 해당 화면이 보인 시간(초)입니다.
+- emphasis에는 강사가 "중요하다", "시험에 나온다", "꼭 기억하라" 등으로 강조한 내용을 쓰세요.
+- notices에는 과제 제출, 시험 일정, 다음 수업 안내 같은 일정·행정 공지만 쓰세요. 강조한 내용은 넣지 마세요.
+- visuals에는 표, 그래프, 수식, 코드, 도식, 판서 자료만 넣으세요. 일반 화면이나 강사 화면은 넣지 마세요.
 
 [STT 요약 자료]
 {stt_section}
@@ -85,7 +92,7 @@ NOTE_PROMPT = """
   ],
   "visuals": [
     {
-      "type": "<표 | 그래프 | 수식 | 코드 | 도식 중 하나>",
+      "type": "<표 | 그래프 | 수식 | 코드 | 도식 | 판서 중 하나>",
       "title": "<자료 제목 또는 핵심 내용>",
       "start": <시작 초 숫자 또는 null>,
       "end": <끝 초 숫자 또는 null>,
@@ -94,7 +101,8 @@ NOTE_PROMPT = """
     }
   ],
   "conclusion": ["<복습할 때 꼭 기억할 내용, 2~4개>"],
-  "notices": ["<과제·시험·다음 수업 공지, 없으면 빈 배열>"]
+  "emphasis": ["<강사가 강조한 내용, 없으면 빈 배열>"],
+  "notices": ["<과제 제출·시험 일정·다음 수업 안내, 없으면 빈 배열>"]
 }
 """
 
@@ -150,15 +158,15 @@ STT 요약과 VLM 요약에서 중복되는 내용은 하나로 통합하세요.
 ## 표/차트 기반 주요 정보
 
 ### 1. {표·그래프·수식·코드·도식 제목} (타임라인: 시작초 ~ 끝초)
-- 자료 유형: 표 / 그래프 / 수식 / 코드 / 도식
+- 자료 유형: 표 / 그래프 / 수식 / 코드 / 도식 / 판서
 - 확인된 내용: 입력 자료에 있는 항목, 수치, 식, 코드 동작만 정리
 - 강의에서의 의미: 이 자료가 설명하는 개념 (입력 자료에 근거가 있을 때만)
 
-※ VLM 요약 자료에 표, 그래프, 수식, 코드, 도식이 없으면 이 섹션은 생략하세요.
+※ VLM 요약 자료에 표, 그래프, 수식, 코드, 도식, 판서 자료가 없으면 이 섹션은 생략하세요.
 
 ## 종합 결론
 - 복습할 때 꼭 기억해야 할 내용을 2~4개의 bullet point로 정리하세요.
-- 과제·시험·다음 수업 공지가 입력 자료에 있으면 마지막 bullet에 "공지:"로 적으세요.
+- 강사가 강조한 내용은 "강조:"로, 과제 제출·시험 일정·다음 수업 안내는 "공지:"로 시작하는 bullet로 적으세요.
 """
 
 
@@ -654,8 +662,10 @@ def normalize_lecture_note(
             continue
         visual_type = _clean_text(item.get("type"))
         if visual_type not in VISUAL_TYPES:
-            normalized = normalize_screen_type(visual_type)
-            visual_type = normalized if normalized in VISUAL_TYPES else "기타"
+            visual_type = normalize_screen_type(visual_type)
+        if visual_type not in VISUAL_TYPES:
+            warnings.append(f"visuals[{index}]: 자료 유형이 아니어서({item.get('type')!r}) 제외")
+            continue
         start, end = time_range(item, f"visuals[{index}]")
         visuals.append({
             "type": visual_type,
@@ -665,6 +675,17 @@ def normalize_lecture_note(
             "content": content,
             "meaning": _clean_text(item.get("meaning")),
         })
+
+    # 모델이 강조 표현을 공지로 분류해도 화면에 "공지"로 뜨지 않게 강조 사항으로 옮깁니다.
+    emphasis = texts(data.get("emphasis"), "emphasis")
+    notices = []
+    for notice in texts(data.get("notices"), "notices"):
+        if EMPHASIS_IN_NOTICE.search(notice):
+            warnings.append(f"notices: 강조 표현이라 emphasis로 옮김 ({notice[:30]})")
+            if notice not in emphasis:
+                emphasis.append(notice)
+        else:
+            notices.append(notice)
 
     title = _clean_text(data.get("title"))
     if not title:
@@ -676,7 +697,8 @@ def normalize_lecture_note(
         "chapters": chapters,
         "visuals": visuals,
         "conclusion": texts(data.get("conclusion"), "conclusion"),
-        "notices": texts(data.get("notices"), "notices"),
+        "emphasis": emphasis[: NOTE_LIMITS["emphasis"]],
+        "notices": notices,
     }
     return note, warnings
 
@@ -720,5 +742,6 @@ def render_note_markdown(note: Mapping[str, Any]) -> str:
     section("표/차트 기반 주요 정보", visual_lines)
 
     section("종합 결론", [f"- {point}" for point in note.get("conclusion", [])])
+    section("강조 사항", [f"- {point}" for point in note.get("emphasis", [])])
     section("공지 사항", [f"- {notice}" for notice in note.get("notices", [])])
     return "\n".join(lines).strip() + "\n"

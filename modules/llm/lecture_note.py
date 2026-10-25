@@ -13,7 +13,8 @@ from typing import Any
 
 SCREEN_TYPES = ("슬라이드", "판서", "코드", "표", "그래프", "수식", "도식", "강사 화면", "기타")
 LECTURER_SCREEN = "강사 화면"
-VISUAL_TYPES = ("표", "그래프", "수식", "코드", "도식")
+# 판서 위주 강의에서는 판서의 식·그림이 핵심 자료이므로 함께 허용합니다. 그 밖의 유형(기타 등)은 버립니다.
+VISUAL_TYPES = ("표", "그래프", "수식", "코드", "도식", "판서")
 # 최종 요약 입력에 넣을 화면을 고를 때의 우선순위입니다. 값이 클수록 먼저 고릅니다.
 SCREEN_PRIORITY = {"수식": 3, "코드": 3, "표": 3, "그래프": 3, "도식": 3, "슬라이드": 2, "판서": 2}
 NOTE_LIMITS = {
@@ -25,8 +26,13 @@ NOTE_LIMITS = {
     "visuals": 10,
     "content": 6,
     "conclusion": 5,
+    "emphasis": 6,
     "notices": 5,
 }
+# 공지(notices)에 잘못 들어온 강조 표현입니다. "시험 범위는 3장까지" 같은 일정 공지는 해당하지 않습니다.
+EMPHASIS_IN_NOTICE = re.compile(r"시험에\s*(?:나온|나와|나올|출제)|꼭\s*(?:기억|알아)|중요(?:하|한|합)")
+# 분량 규칙("1200자 이내")을 의식한 모델이 끝에 덧붙이는 "(총 1198자)" 같은 줄입니다.
+CHAR_COUNT_LINE = re.compile(r"^\s*[(\[（]?\s*(?:총|전체)?\s*(?:글자\s*수\s*[:：]?\s*)?\d[\d,]*\s*자\s*[)\]）]?\s*$")
 # 모델이 쓴 시간이 입력 자료의 마지막 시간보다 이만큼(초) 넘으면 잘못된 값으로 봅니다.
 TIME_TOLERANCE_SEC = 5.0
 SCREEN_NOTE_PREFIX = re.compile(r"^VLM\s*요약\s*자료(?:에서는|에서|에는|에)\s*,?\s*")
@@ -43,6 +49,10 @@ SCREEN_TYPE_PATTERNS = (
     (re.compile(r"슬라이드|ppt|발표\s*자료", re.IGNORECASE), "슬라이드"),
     (re.compile(r"기타"), "기타"),
 )
+
+
+def strip_char_count(text: str) -> str:
+    return "\n".join(line for line in str(text).splitlines() if not CHAR_COUNT_LINE.match(line)).strip()
 
 
 def normalize_screen_type(value: str) -> str:
@@ -298,8 +308,10 @@ def normalize_lecture_note(
             continue
         visual_type = clean_text(item.get("type"))
         if visual_type not in VISUAL_TYPES:
-            normalized = normalize_screen_type(visual_type)
-            visual_type = normalized if normalized in VISUAL_TYPES else "기타"
+            visual_type = normalize_screen_type(visual_type)
+        if visual_type not in VISUAL_TYPES:
+            warnings.append(f"visuals[{index}]: 자료 유형이 아니어서({item.get('type')!r}) 제외")
+            continue
         start, end = time_range(item, f"visuals[{index}]")
         visuals.append({
             "type": visual_type,
@@ -309,6 +321,17 @@ def normalize_lecture_note(
             "content": content,
             "meaning": clean_text(item.get("meaning")),
         })
+
+    # 모델이 강조 표현을 공지로 분류해도 화면에 "공지"로 뜨지 않게 강조 사항으로 옮깁니다.
+    emphasis = texts(data.get("emphasis"), "emphasis")
+    notices = []
+    for notice in texts(data.get("notices"), "notices"):
+        if EMPHASIS_IN_NOTICE.search(notice):
+            warnings.append(f"notices: 강조 표현이라 emphasis로 옮김 ({notice[:30]})")
+            if notice not in emphasis:
+                emphasis.append(notice)
+        else:
+            notices.append(notice)
 
     title = clean_text(data.get("title"))
     if not title:
@@ -320,7 +343,8 @@ def normalize_lecture_note(
         "chapters": chapters,
         "visuals": visuals,
         "conclusion": texts(data.get("conclusion"), "conclusion"),
-        "notices": texts(data.get("notices"), "notices"),
+        "emphasis": emphasis[: NOTE_LIMITS["emphasis"]],
+        "notices": notices,
     }
     return note, warnings
 
@@ -362,5 +386,6 @@ def render_note_markdown(note: Mapping[str, Any]) -> str:
     section("표/차트 기반 주요 정보", visual_lines)
 
     section("종합 결론", [f"- {point}" for point in note.get("conclusion", [])])
+    section("강조 사항", [f"- {point}" for point in note.get("emphasis", [])])
     section("공지 사항", [f"- {notice}" for notice in note.get("notices", [])])
     return "\n".join(lines).strip() + "\n"

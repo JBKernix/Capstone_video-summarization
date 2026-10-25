@@ -466,9 +466,12 @@ def test_result_outline_from_lecture_note_json(client, tmp_path):
             {"title": "", "points": []},
         ],
         "visuals": [{"type": "수식", "title": "갱신식", "start": 15, "end": None,
-                     "content": ["w ← w − η∇L"], "meaning": "갱신 규칙"}],
+                     "content": ["w ← w − η∇L"], "meaning": "갱신 규칙"},
+                    {"type": "기타", "title": "판서 식", "start": None, "end": None, "content": ["Q = W + ΔU"], "meaning": ""}],
         "conclusion": ["학습률이 중요"],
-        "notices": ["다음 주 퀴즈"],
+        "emphasis": ["학습률 선택이 핵심"],
+        # 강조 사항을 따로 받기 전 결과처럼 강조 표현이 공지에 섞여 있습니다.
+        "notices": ["다음 주 퀴즈", "시험에 나온다: 부호 규칙"],
     }
     (run_dir / "final").mkdir(parents=True)
     # 마크다운은 일부러 다른 내용으로 둡니다. 화면 구조는 lecture_note에서만 만들어야 합니다.
@@ -489,6 +492,7 @@ def test_result_outline_from_lecture_note_json(client, tmp_path):
     assert outline["keywords"][0] == "학습률"
     assert outline["terms"] == [{"term": "학습률", "definition": "이동 크기"}]
     assert outline["notices"] == ["다음 주 퀴즈"]
+    assert outline["emphasis"] == ["학습률 선택이 핵심", "시험에 나온다: 부호 규칙"]
     first, second = outline["chapters"]
     assert (first["index"], first["label"], first["screen_notes"]) == (1, "0:10 ~ 0:20", ["식이 보인다"])
     assert client.get(first["thumb_url"]).content == b"jpg"
@@ -497,4 +501,6 @@ def test_result_outline_from_lecture_note_json(client, tmp_path):
     assert (visual["kind"], visual["label"], visual["start"]) == ("수식", "0:15", 15.0)
     assert visual["text"] == "- w ← w − η∇L\n\n**강의에서의 의미** 갱신 규칙"
     assert client.get(visual["image_url"]).content == b"jpg"
+    # 유형을 알 수 없는 이전 결과의 "기타" 자료는 유형 표시 없이 보여 줍니다.
+    assert (outline["visuals"][1]["kind"], outline["visuals"][1]["title"]) == ("", "판서 식")
     assert outline["conclusion"] == ["학습률이 중요"]
