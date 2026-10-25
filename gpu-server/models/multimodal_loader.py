@@ -79,8 +79,10 @@ class MultimodalLoader:
             if self.profile.id == "glm4.6v-flash":
                 inputs.pop("token_type_ids", None)
             input_length = inputs["input_ids"].shape[-1]
-            if input_length > 16384:
-                raise ValueError(f"입력이 너무 깁니다: {input_length} tokens (최대 16384).")
+            limit = self.profile.max_input_tokens
+            if input_length > limit:
+                raise ValueError(f"입력이 너무 깁니다: {input_length} tokens ({self.profile.label} 최대 {limit}). "
+                                 "더 짧은 영상으로 실행하세요.")
             result = model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False, num_beams=1, use_cache=True)
             if self.profile.id == "gemma4-12b":
                 raw = processor.decode(result[0][input_length:], skip_special_tokens=False)

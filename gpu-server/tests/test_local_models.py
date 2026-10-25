@@ -65,9 +65,9 @@ def test_manager_keeps_one_profile_and_unloads_before_switch(monkeypatch):
     original = SimpleNamespace(summary_service=Mock(), job_store=Mock(), logger=Mock())
     monkeypatch.setattr("app.local_model_manager.require_downloaded", lambda _: {})
     services = []
-    def service(llm, vlm):
+    def service(llm, vlm, **limits):
         assert llm is vlm
-        value = Mock(llm_service=SimpleNamespace(loader=llm))
+        value = Mock(llm_service=SimpleNamespace(loader=llm), limits=limits)
         services.append(value)
         return value
     monkeypatch.setitem(sys.modules, "services.summary_service", SimpleNamespace(SummaryService=service))
@@ -81,6 +81,10 @@ def test_manager_keeps_one_profile_and_unloads_before_switch(monkeypatch):
     first.summary_service.unload_llm.assert_called_once()
     first.summary_service.unload_vlm.assert_called_once()
     assert second.keep_llm_loaded and second.keep_vlm_loaded
+    # Qwen3-VL 8B만 측정한 GPU 메모리 한도에 맞춘 입력 제한을 받습니다.
+    assert services[0].limits == {"max_stt_chars": None, "max_vlm_chars": None}
+    assert services[1].limits == {"max_stt_chars": 4000, "max_vlm_chars": 4000}
+    assert (first.segment_chunk_chars, second.segment_chunk_chars) == (None, 6000)
 
 def test_profile_setup_failure_marks_job_failed(monkeypatch):
     original = SimpleNamespace(summary_service=Mock(), job_store=Mock(), logger=Mock())

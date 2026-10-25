@@ -163,11 +163,20 @@ STT 요약과 VLM 요약에서 중복되는 내용은 하나로 통합하세요.
 
 
 class FinalService:
-    def __init__(self, generation_lock=None, llm_service: LLMService | None = None):
+    def __init__(
+        self,
+        generation_lock=None,
+        llm_service: LLMService | None = None,
+        max_stt_chars: int | None = None,
+        max_vlm_chars: int | None = None,
+    ):
         self.llm_service = llm_service or LLMService(
             generation_lock=generation_lock or Lock()
         )
         self._generation_lock = self.llm_service._generation_lock
+        # 모델 프로필이 입력 토큰 한도에 맞춰 더 작게 지정할 수 있습니다.
+        self.max_stt_chars = max_stt_chars or MAX_STT_TEXT_CHARS
+        self.max_vlm_chars = max_vlm_chars or MAX_VLM_TEXT_CHARS
 
     def summarize_final(
         self,
@@ -269,7 +278,7 @@ class FinalService:
             # stt_json의 summary 필드를 STT 요약 텍스트로 사용합니다.
             text = str(data.get("summary", "")).strip()
         if text:
-            text = self._limit_text(text, MAX_STT_TEXT_CHARS)
+            text = self._limit_text(text, self.max_stt_chars)
             parts.append(f"[STT 요약 텍스트]\n{text}")
 
         if isinstance(data, Mapping):
@@ -291,12 +300,12 @@ class FinalService:
         parts = []
         text = self._read_text(vlm_text).strip() if vlm_text is not None else ""
         if text:
-            text = self._limit_text(text, MAX_VLM_TEXT_CHARS)
+            text = self._limit_text(text, self.max_vlm_chars)
             parts.append(f"[VLM 요약 텍스트]\n{text}")
 
         if vlm_json is not None:
             data = self._load_json(vlm_json, "VLM 요약 JSON")
-            normalized = self._format_vlm_json(data)
+            normalized = self._format_vlm_json(data, self.max_vlm_chars)
             if normalized:
                 parts.append(f"[VLM 화면별 요약]\n{normalized}")
 
@@ -369,7 +378,7 @@ class FinalService:
         return [entry for entry in data if isinstance(entry, Mapping)]
 
     @staticmethod
-    def _format_vlm_json(data: Any) -> str:
+    def _format_vlm_json(data: Any, max_chars: int = MAX_VLM_TEXT_CHARS) -> str:
         """강의 내용이 있는 화면만 골라 시간순 목록으로 만듭니다.
 
         1. 강사 화면처럼 내용이 없는 프레임을 뺍니다.
@@ -400,7 +409,7 @@ class FinalService:
             if len(block) > MAX_VLM_ITEM_TEXT_CHARS:
                 block = block[:MAX_VLM_ITEM_TEXT_CHARS].rstrip() + "…"
             blocks.append(block)
-        return FinalService._limit_text("\n".join(blocks), MAX_VLM_TEXT_CHARS)
+        return FinalService._limit_text("\n".join(blocks), max_chars)
 
     @staticmethod
     def _vlm_item(entry: Mapping[str, Any]) -> dict[str, Any] | None:

@@ -31,9 +31,11 @@ class LocalModelManager:
             else:
                 from models.multimodal_loader import MultimodalLoader
                 loader = MultimodalLoader(model_id)
-            service = SummaryService(loader, loader)
+            service = SummaryService(loader, loader, max_stt_chars=profile.final_stt_chars,
+                                     max_vlm_chars=profile.final_vlm_chars)
         self.active_runner = InferenceJobRunner(service, self.original.job_store, self.original.logger,
-            keep_llm_loaded=model_id != "legacy-qwen", keep_vlm_loaded=model_id != "legacy-qwen")
+            keep_llm_loaded=model_id != "legacy-qwen", keep_vlm_loaded=model_id != "legacy-qwen",
+            segment_chunk_chars=profile.segment_chunk_chars)
         self.active_id = model_id
         return self.active_runner
 

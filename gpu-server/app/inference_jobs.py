@@ -20,12 +20,15 @@ class InferenceJobRunner:
         logger: logging.Logger,
         keep_llm_loaded: bool = False,
         keep_vlm_loaded: bool = False,
+        segment_chunk_chars: int | None = None,
     ):
         self.summary_service = summary_service
         self.job_store = job_store
         self.logger = logger
         self.keep_llm_loaded = keep_llm_loaded
         self.keep_vlm_loaded = keep_vlm_loaded
+        # 모델 프로필의 입력 한도에 맞춰 중요 구간 묶음을 프리셋보다 작게 할 때 씁니다.
+        self.segment_chunk_chars = segment_chunk_chars
 
     @contextmanager
     def log_stage(self, job_id: str, stage: str):
@@ -76,6 +79,7 @@ class InferenceJobRunner:
             segment_data = [segment.model_dump() for segment in request.segments]
 
             run_important_segments = preset.extract_important_segments and bool(segment_data)
+            chunk_chars = min(preset.segment_chunk_chars, self.segment_chunk_chars or preset.segment_chunk_chars)
 
             self.job_store.update(
                 job_id,
@@ -94,7 +98,7 @@ class InferenceJobRunner:
             if run_important_segments:
                 chunks = self.summary_service.llm_service.split_segments(
                     segment_data,
-                    max_chunk_chars=preset.segment_chunk_chars,
+                    max_chunk_chars=chunk_chars,
                 )
 
                 def report_progress(_task: str, index: int, total: int) -> None:
@@ -125,7 +129,7 @@ class InferenceJobRunner:
                             stt_segments=segment_data,
                             stt_summary=summary,
                             max_new_tokens=preset.important_segments_max_new_tokens,
-                            max_chunk_chars=preset.segment_chunk_chars,
+                            max_chunk_chars=chunk_chars,
                             progress_callback=report_progress,
                         )
                     )

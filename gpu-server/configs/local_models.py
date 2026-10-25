@@ -16,12 +16,21 @@ class ModelProfile:
     architecture: str = ""
     precision: str = "nf4"
     runtime: str = "transformers"
+    # 모델 로더가 확인하는 입력 토큰 상한입니다(transformers 런타임).
+    max_input_tokens: int = 16384
+    # 프로필별로 더 줄일 입력 크기입니다. None이면 요약 수준 프리셋·서비스 기본값을 씁니다.
+    segment_chunk_chars: int | None = None
+    final_stt_chars: int | None = None
+    final_vlm_chars: int | None = None
 
 PROFILES = {
     p.id: p for p in (
         ModelProfile("legacy-qwen", "기존 Qwen3 8B + Qwen2.5-VL 7B", ("Qwen/Qwen3-8B", "Qwen/Qwen2.5-VL-7B-Instruct"), precision="fp16"),
         ModelProfile("qwen3.5-9b", "Qwen3.5 9B", ("Qwen/Qwen3.5-9B",), "Qwen3_5ForConditionalGeneration"),
-        ModelProfile("qwen3-vl-8b", "Qwen3-VL 8B Instruct", ("Qwen/Qwen3-VL-8B-Instruct",), "Qwen3VLForConditionalGeneration"),
+        # RTX 4090 24GB 측정: 입력 4천 토큰 11.3GB/2초, 8천 토큰 25.4GB(VRAM 초과·시스템 메모리 사용)/66초,
+        # 1.6만 토큰 79.6GB/971초. 메모리가 입력 길이의 제곱에 비례해 늘어 VRAM 안에 드는 약 7천 토큰으로 제한합니다.
+        ModelProfile("qwen3-vl-8b", "Qwen3-VL 8B Instruct", ("Qwen/Qwen3-VL-8B-Instruct",), "Qwen3VLForConditionalGeneration",
+                     max_input_tokens=7000, segment_chunk_chars=6000, final_stt_chars=4000, final_vlm_chars=4000),
         ModelProfile("gemma4-12b", "Gemma 4 12B IT", ("google/gemma-4-12B-it",), "Gemma4UnifiedForConditionalGeneration"),
         ModelProfile("minicpm-v4.5", "MiniCPM-V 4.5", ("openbmb/MiniCPM-V-4_5",), runtime="minicpm"),
         ModelProfile("internvl3.5-8b", "InternVL3.5 8B", ("OpenGVLab/InternVL3_5-8B-HF",), "InternVLForConditionalGeneration"),
