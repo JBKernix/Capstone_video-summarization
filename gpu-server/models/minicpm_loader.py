@@ -42,6 +42,10 @@ class MiniCPMLoader(MultimodalLoader):
         self.model = self.processor = True
         return self.model, self.processor
 
+    def count_prompt_tokens(self, prompt):
+        # 토크나이저가 별도 worker 프로세스에 있어 셀 수 없습니다. LLMService가 글자 수로 어림합니다.
+        return None
+
     def _receive(self, timeout=1800):
         output = queue.Queue()
         pipe = self.process.stdout

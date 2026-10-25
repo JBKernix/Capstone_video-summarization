@@ -88,10 +88,25 @@ class InferenceJobRunner:
                 current_step=1,
                 total_steps=2 if run_important_segments else 1,
             )
+            def report_stt_progress(task: str, index: int, total: int) -> None:
+                # 입력이 상한을 넘어 구간별로 요약할 때만 호출됩니다(마지막 단계가 통합).
+                message = (
+                    f"긴 강의를 구간별로 요약하고 있습니다. ({index}/{total - 1})"
+                    if task == "stt_sections"
+                    else "구간별 요약을 하나로 통합하고 있습니다."
+                )
+                self.job_store.update(job_id, message=message, current_step=index, total_steps=total)
+                self.logger.info(
+                    "job_id=%s | STT 구간 요약 | %s %d/%d | total_elapsed=%.1fs",
+                    job_id, task, index, total, self.job_store.elapsed(job_id),
+                )
+
             with self.log_stage(job_id, "STT 전체 요약"):
                 summary = self.summary_service.summarize_stt(
                     stt_text=stt_text,
                     max_new_tokens=preset.stt_max_new_tokens,
+                    segments=segment_data,
+                    progress_callback=report_stt_progress,
                 )
 
             important_segments = []

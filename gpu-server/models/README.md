@@ -91,7 +91,9 @@ Qwen3의 긴 내부 추론 출력을 줄이기 위해 채팅 템플릿에서 `en
 
 - 모델 클래스는 `configs/local_models.py`의 `ModelProfile.architecture`(예: `Qwen3VLForConditionalGeneration`)로 `transformers`에서 동적으로 조회합니다. 설치된 Transformers 버전에 해당 클래스가 없으면 즉시 `RuntimeError`를 발생시킵니다.
 - `BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4", ...)`로 로딩 시점에 4비트 양자화하며, `trust_remote_code=False`로 고정되어 있습니다(공식 저장소의 커스텀 코드를 실행하지 않음).
-- 입력 토큰이 16384개를 넘으면 `LLMLoader`의 `max_input_tokens`와 별개로 자체 `ValueError`를 발생시킵니다. `torch.OutOfMemoryError`는 별도로 잡지 않으므로, `LLMLoader`/`VLMLoader`와 달리 CUDA OOM이 사용자 메시지로 변환되지 않고 그대로 전파됩니다.
+- 입력 토큰이 프로필의 `max_input_tokens`(기본 16384)를 넘으면 `LLMLoader`의 상한과 별개로 자체 `ValueError`를 발생시킵니다. `count_prompt_tokens()`로 같은 chat template 기준의 토큰 수를 미리 셀 수 있어, `LLMService`가 긴 STT를 구간 요약으로 나눌지 판단할 때 씁니다. CUDA OOM은 캐시를 비운 뒤 `ValueError`로 바꿔 작업 상태에 노출합니다.
+- attention 구현은 프로필의 `attn_implementation`을 따릅니다. `qwen3-vl-8b`는 `attention.py`의 `sdpa_no_gqa`를 씁니다. Windows용 PyTorch는 Flash 커널 없이 빌드되어 있고 mem-efficient 커널은 GQA(`enable_gqa`)를 지원하지 않아, 기본 `sdpa`는 Math 커널로 떨어져 메모리가 입력 길이의 제곱으로 늘었습니다(RTX 4090에서 7천 토큰 21.0GB, 8천 토큰 OOM). `sdpa_no_gqa`는 K/V를 query head 수만큼 복제한 뒤 호출해 mem-efficient 커널을 쓰며, 7천 토큰 7.6GB, 1.6만 토큰 9.8GB입니다. 근거와 재현 방법은 `benchmarks/qwen3vl_context_bench.py`에 있습니다.
+- 문제가 생기면 서버를 `LOCAL_MODEL_ATTENTION=sdpa`로 실행해 기본 SDPA와 이전 입력 상한(`sdpa_max_input_tokens`, Qwen3-VL은 7000)으로 되돌릴 수 있습니다.
 - `gemma4-12b`는 `processor.parse_response()`로 응답을 파싱하고, 그 외 모델은 `<think>...</think>` 블록(비활성화한 thinking 모드가 완료된 채 출력된 경우)을 제거한 뒤 빈 응답이면 `ValueError`를 발생시킵니다.
 
 ## MiniCPM 서브프로세스 격리 (MiniCPMLoader)

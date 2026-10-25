@@ -1,9 +1,13 @@
 """A single resident 4-bit checkpoint shared by text and image stages."""
 import gc
+import os
 import re
 from types import SimpleNamespace
 from app.model_load_metrics import measure_model_load
 from configs.local_models import get_profile, repo_path, require_downloaded
+
+# "sdpa"로 지정하면 프로필의 최적화 attention 대신 기본 SDPA와 그에 맞는 입력 상한으로 되돌립니다.
+ATTENTION_OVERRIDE_ENV = "LOCAL_MODEL_ATTENTION"
 
 class MultimodalLoader:
     def __init__(self, model_id):
@@ -11,6 +15,25 @@ class MultimodalLoader:
         self.config = SimpleNamespace(model_path=str(repo_path(self.profile.repos[0])))
         self.model = None
         self.processor = None
+
+    @property
+    def attn_implementation(self):
+        override = os.environ.get(ATTENTION_OVERRIDE_ENV, "").strip()
+        return "sdpa" if override == "sdpa" else self.profile.attn_implementation
+
+    @property
+    def max_input_tokens(self):
+        if self.attn_implementation == "sdpa" and self.profile.sdpa_max_input_tokens:
+            return self.profile.sdpa_max_input_tokens
+        return self.profile.max_input_tokens
+
+    def count_prompt_tokens(self, prompt):
+        """텍스트 프롬프트가 generate에서 차지할 입력 토큰 수입니다(_generate와 같은 chat template)."""
+        processor = self.processor if self.processor is not None else self.load_text()[1]
+        inputs = processor.apply_chat_template(
+            [{"role": "user", "content": [{"type": "text", "text": prompt}]}], tokenize=True,
+            add_generation_prompt=True, enable_thinking=False, return_dict=True, return_tensors="pt")
+        return int(inputs["input_ids"].shape[-1])
 
     @measure_model_load("llm", "processor")
     def load_text(self):
@@ -32,11 +55,15 @@ class MultimodalLoader:
         cls = getattr(transformers, self.profile.architecture, None)
         if cls is None:
             raise RuntimeError(f"{self.profile.label} 로더가 없습니다. requirements-local.txt를 설치하세요.")
+        attn_implementation = self.attn_implementation
+        if attn_implementation != "sdpa":
+            from models.attention import register
+            register()
         try:
             processor = AutoProcessor.from_pretrained(self.config.model_path, local_files_only=True, trust_remote_code=False)
             model = cls.from_pretrained(
                 self.config.model_path, local_files_only=True, trust_remote_code=False,
-                dtype=torch.bfloat16, device_map={"": 0}, attn_implementation="sdpa",
+                dtype=torch.bfloat16, device_map={"": 0}, attn_implementation=attn_implementation,
                 quantization_config=BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4",
                     bnb_4bit_compute_dtype=torch.bfloat16, bnb_4bit_use_double_quant=True))
             model.eval()
@@ -79,11 +106,17 @@ class MultimodalLoader:
             if self.profile.id == "glm4.6v-flash":
                 inputs.pop("token_type_ids", None)
             input_length = inputs["input_ids"].shape[-1]
-            limit = self.profile.max_input_tokens
+            limit = self.max_input_tokens
             if input_length > limit:
                 raise ValueError(f"입력이 너무 깁니다: {input_length} tokens ({self.profile.label} 최대 {limit}). "
                                  "더 짧은 영상으로 실행하세요.")
-            result = model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False, num_beams=1, use_cache=True)
+            try:
+                result = model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False, num_beams=1, use_cache=True)
+            except torch.OutOfMemoryError as error:
+                del inputs
+                torch.cuda.empty_cache()
+                raise ValueError(f"GPU 메모리가 부족합니다 (입력 토큰 {input_length}개). "
+                                 f"{ATTENTION_OVERRIDE_ENV} 설정과 입력 상한을 확인하세요.") from error
             if self.profile.id == "gemma4-12b":
                 raw = processor.decode(result[0][input_length:], skip_special_tokens=False)
                 parsed = processor.parse_response(raw, prefix=inputs["input_ids"][0])

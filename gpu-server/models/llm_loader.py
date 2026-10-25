@@ -113,14 +113,17 @@ class LLMLoader:
             torch.cuda.empty_cache()
             torch.cuda.ipc_collect()
     
-    @torch.inference_mode()
-    def generate(
-        self,
-        prompt: str,
-        max_new_tokens: int = LLM_INFERENCE_CONFIG.default_max_new_tokens,
-    ) -> str:
-        model, tokenizer = self.load()
+    @property
+    def max_input_tokens(self) -> int:
+        return LLM_INFERENCE_CONFIG.max_input_tokens
 
+    def count_prompt_tokens(self, prompt: str) -> int:
+        """generate와 같은 chat template을 적용했을 때의 입력 토큰 수입니다."""
+        tokenizer = self.tokenizer if self.tokenizer is not None else self.load()[1]
+        return len(tokenizer(self._chat_text(tokenizer, prompt))["input_ids"])
+
+    @staticmethod
+    def _chat_text(tokenizer, prompt: str) -> str:
         messages = [
             {
                 "role": "system",
@@ -133,15 +136,23 @@ class LLMLoader:
         ]
 
         if hasattr(tokenizer, "apply_chat_template"):
-            text = tokenizer.apply_chat_template(
+            return tokenizer.apply_chat_template(
                 messages,
                 tokenize=False,
                 add_generation_prompt=True,
                 # Qwen3의 긴 추론 출력을 끄고 최종 답변 생성에 집중합니다.
                 enable_thinking=False,
             )
-        else:
-            text = prompt
+        return prompt
+
+    @torch.inference_mode()
+    def generate(
+        self,
+        prompt: str,
+        max_new_tokens: int = LLM_INFERENCE_CONFIG.default_max_new_tokens,
+    ) -> str:
+        model, tokenizer = self.load()
+        text = self._chat_text(tokenizer, prompt)
 
         inputs = tokenizer(
             text,
