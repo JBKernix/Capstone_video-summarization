@@ -11,6 +11,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from app.auth import require_login
 from app.analysis_options import render_analysis_options
 from modules.llm import GPU_SERVER_URL
+from modules.llm.local_models import DEFAULT_LOCAL_MODEL
 from app.pipeline_process import launch_pipeline, stop_pipeline
 from app.run_registry import (
     EXTERNAL_UPLOAD_LIMIT_MB,
@@ -133,7 +134,7 @@ def start_analysis_process(video_path: str, summary_level: str) -> None:
         st.session_state.get("video_title") or st.session_state.get("uploaded_filename") or Path(video_path).name,
         analysis_backend=st.session_state.get("analysis_backend", "local"),
         local_server_url=GPU_SERVER_URL,
-        local_model=st.session_state.get("local_model", "legacy-qwen"),
+        local_model=st.session_state.get("local_model", DEFAULT_LOCAL_MODEL),
         job_info={
             "uploaded_filename": st.session_state.get("uploaded_filename"),
             "uploaded_file_key": st.session_state.get("uploaded_file_key"),
