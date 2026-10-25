@@ -78,6 +78,8 @@ runs/
 
 앱에서 실행한 분석은 실행마다 `runs/jobs/<실행 ID>/` 아래에 같은 구조(audio, stt, llm, frames, ocr, vlm, final)로 저장되고, 보존 기간(`JOB_RETENTION_HOURS`, 기본 72시간)이 지나면 정리됩니다. 실행 이력은 `runs/history/<실행 ID>/`에 계속 남습니다.
 
+개발자 화면에서 사용자 화면용 분석 방식을 지정하면 `runs/user_defaults.json`에 저장됩니다.
+
 앱에서 "영상과 요약 결과 저장" 버튼을 누르면 `data/saved/[영상 제목] - 년월일시분초/` 폴더에 원본 영상과 실행 폴더 `final/`의 요약 파일이 복사되어 남습니다. OCR 결과(`ocr/ocr_result.json`)가 있으면(`--skip-ocr`로 실행하지 않았으면) 표/차트 스크린샷 복원을 위해 프레임 이미지(`frames/`)와 OCR 결과 사본도 함께 저장됩니다. (`app/result_export.py`)
 
 ## 현재 상태
@@ -88,9 +90,9 @@ runs/
 | 전처리/STT/OCR | 구현됨 |
 | LLM/VLM 서버 클라이언트 | 구현됨 |
 | 유튜브 링크 다운로드 | 구현됨 (`yt-dlp`) |
-| React UI + 앱 API 서버 | 구현됨, 기본 UI (업로드, 분석 설정, 진행률/오류 표시, 결과 확인/저장/다시 열기, 저장된 요약, 실행 이력) |
+| React UI + 앱 API 서버 | 구현됨, 기본 UI. 사용자용 화면(링크·파일 입력, 요약 방식 선택, 진행 상황, 챕터별 강의노트, 저장한 노트 목록)과 개발자용 화면(`/dev`: 분석 설정, 진행률/로그, 결과 확인/저장, 저장된 요약, 실행 이력) |
 | Streamlit UI | 구현됨, 예비 (같은 기능, `start_all.bat -Streamlit`) |
-| 로그인 보호 | 구현됨, 선택 사항 (`APP_PASSWORD` 설정 시 동작. 미설정 시 Cloudflare 경유 외부 접속은 차단) |
+| 로그인 보호 | 구현됨, 선택 사항 (`APP_PASSWORD` 설정 시 동작. 미설정 시 React 화면은 외부 접속도 로그인 없이 허용, 예비 Streamlit 화면은 외부 접속 차단). 개발자 화면은 항상 `DEV_PASSWORD`(기본 `admin`) 필요 |
 | 외부 공개 | 구현됨, 선택 사항 (`start_all.bat -Tunnel` 또는 `start_tunnel.bat`/`.ps1`로 Cloudflare Tunnel 실행) |
 | 설정 파일 | `stt_config.yaml`만 값이 있음, 나머지(`app_config.yaml`, `ffmpeg_config.yaml`, `llm_config.yaml`)는 비어 있음 |
 

@@ -3,6 +3,8 @@
     python -m uvicorn app.api.server:app --host 127.0.0.1 --port 8501
 
 - /api/... : 로그인, 영상 업로드, 분석 실행/진행 상황, 결과, 저장된 요약, 실행 이력
+- 실행 이력·모델 상태·분석 로그·분석 방식 선택은 개발자 모드(/api/dev/login)에서만 쓸 수 있습니다.
+  사용자용 화면의 분석은 개발자가 지정한 분석 방식(USER_DEFAULTS_PATH)을 따릅니다.
 - 그 외 경로: frontend/dist(React 빌드 결과)를 제공합니다.
 
 LLM/VLM 추론 서버(GPU_SERVER_URL, 기본 127.0.0.1:8000)와는 별개의 서버입니다.
@@ -42,7 +44,13 @@ from app.run_registry import (
     new_upload_dir,
     remove_upload_dir,
 )
-from app.saved_results import SAVE_ROOT, find_saved_video, list_saved_items, saved_folder
+from app.saved_results import (
+    SAVE_ROOT,
+    find_saved_video,
+    list_saved_items,
+    parse_saved_folder_name,
+    saved_folder,
+)
 from modules.common.progress import STEP_LABELS, TOTAL_STEPS
 from modules.common.run_history import (
     DEFAULT_HISTORY_DIR,
@@ -77,6 +85,7 @@ LOG_TAIL_BYTES = 100_000
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 CSRF_HEADER = "x-requested-with"
 CSRF_VALUE = "XMLHttpRequest"
+USER_DEFAULTS_PATH = PROJECT_ROOT / "runs" / "user_defaults.json"
 
 
 @asynccontextmanager
@@ -87,6 +96,7 @@ async def _lifespan(_app: FastAPI):
 
 app = FastAPI(title="영상 요약 앱 API", docs_url=None, redoc_url=None, openapi_url=None, lifespan=_lifespan)
 protected = [Depends(auth.require_auth)]
+developer_only = [Depends(auth.require_developer)]
 
 
 @app.middleware("http")
@@ -134,6 +144,18 @@ def logout(response: Response) -> dict:
     return {"authenticated": False}
 
 
+@app.post("/api/dev/login")
+def dev_login(body: LoginBody, request: Request, response: Response) -> dict:
+    auth.dev_login(request, response, body.password)
+    return {"developer": True}
+
+
+@app.post("/api/dev/logout")
+def dev_logout(response: Response) -> dict:
+    auth.dev_logout(response)
+    return {"developer": False}
+
+
 # ---------------------------------------------------------------------------
 # 분석 설정
 # ---------------------------------------------------------------------------
@@ -149,6 +171,7 @@ def options(request: Request) -> dict:
         "backends": [{"id": key, "label": label} for key, label in BACKEND_LABELS.items()],
         "local_models": [{"id": key, "label": label} for key, label in LOCAL_MODEL_LABELS.items()],
         "default_local_model": DEFAULT_LOCAL_MODEL,
+        "user_defaults": _user_defaults(),
         "claude_model": DEFAULT_CLAUDE_MODEL,
         "backend_ready": bool(GPU_SERVER_URL.strip()),
         "upload_limit_mb": _upload_limit_mb(request),
@@ -159,7 +182,44 @@ def options(request: Request) -> dict:
     }
 
 
-@app.get("/api/models", dependencies=protected)
+# ---------------------------------------------------------------------------
+# 사용자용 화면의 분석 방식 (개발자가 지정)
+# ---------------------------------------------------------------------------
+class UserDefaultsBody(BaseModel):
+    analysis_backend: str
+    local_model: str
+
+
+def _check_backend(analysis_backend: str, local_model: str) -> None:
+    if analysis_backend not in BACKEND_LABELS:
+        raise HTTPException(400, "분석 방식은 local 또는 claude여야 합니다.")
+    if local_model not in LOCAL_MODEL_LABELS:
+        raise HTTPException(400, "지원하지 않는 로컬 모델입니다.")
+
+
+def _user_defaults() -> dict:
+    """사용자용 화면에서 시작한 분석에 쓰는 분석 방식입니다. 지정 전이면 로컬 기본 모델을 씁니다."""
+    defaults = {"analysis_backend": "local", "local_model": DEFAULT_LOCAL_MODEL}
+    try:
+        stored = json.loads(USER_DEFAULTS_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return defaults
+    if stored.get("analysis_backend") in BACKEND_LABELS:
+        defaults["analysis_backend"] = stored["analysis_backend"]
+    if stored.get("local_model") in LOCAL_MODEL_LABELS:
+        defaults["local_model"] = stored["local_model"]
+    return defaults
+
+
+@app.put("/api/dev/user-defaults", dependencies=developer_only)
+def set_user_defaults(body: UserDefaultsBody) -> dict:
+    _check_backend(body.analysis_backend, body.local_model)
+    USER_DEFAULTS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    USER_DEFAULTS_PATH.write_text(json.dumps(body.model_dump(), ensure_ascii=False), encoding="utf-8")
+    return _user_defaults()
+
+
+@app.get("/api/models", dependencies=developer_only)
 def models() -> dict:
     """GPU 서버에 미리 내려받은 로컬 모델의 설치 상태입니다."""
     try:
@@ -298,13 +358,15 @@ def running_job() -> dict:
 
 
 @app.post("/api/runs", dependencies=protected)
-def start_run(body: RunBody) -> dict:
+def start_run(body: RunBody, request: Request) -> dict:
     if body.summary_level not in SUMMARY_LEVELS:
         raise HTTPException(400, "지원하지 않는 Whisper 설정입니다.")
-    if body.analysis_backend not in BACKEND_LABELS:
-        raise HTTPException(400, "분석 방식은 local 또는 claude여야 합니다.")
-    if body.local_model not in LOCAL_MODEL_LABELS:
-        raise HTTPException(400, "지원하지 않는 로컬 모델입니다.")
+    if auth.is_developer(request):
+        _check_backend(body.analysis_backend, body.local_model)
+    else:
+        # 일반 사용자는 분석 방식(유료 API 사용 여부 등)을 고를 수 없고 개발자가 지정한 값을 씁니다.
+        defaults = _user_defaults()
+        body.analysis_backend, body.local_model = defaults["analysis_backend"], defaults["local_model"]
 
     upload_dir = _upload_dir(body.upload_id)
     video_path = _upload_video(upload_dir)
@@ -335,7 +397,7 @@ def start_run(body: RunBody) -> dict:
 
 
 @app.get("/api/runs/{run_id}", dependencies=protected)
-def run_status(run_id: str) -> dict:
+def run_status(run_id: str, request: Request) -> dict:
     """분석 진행 상황입니다. 화면은 실행 중인 동안 1초마다 이 API를 호출합니다."""
     job = _job(run_id)
     returncode = handle_for(job).poll()
@@ -373,7 +435,8 @@ def run_status(run_id: str) -> dict:
         "upload_id": job.get("upload_id"),
         "steps": steps,
         "current": {"step": current, "title": STEP_LABELS[current][0], **progress[current]} if current else None,
-        "logs": read_pipeline_logs(raw_lines),
+        # 분석 로그는 개발자 화면에서만 보여 줍니다.
+        "logs": read_pipeline_logs(raw_lines) if auth.is_developer(request) else [],
     }
 
 
@@ -391,7 +454,7 @@ def run_result(run_id: str) -> dict:
     run_dir = Path(job["run_dir"])
     try:
         summary = summary_payload(run_dir / "final", run_dir / "ocr" / "ocr_result.json",
-                                  f"/api/runs/{run_id}/frames")
+                                  f"/api/runs/{run_id}/frames", run_dir / "llm" / "stt_summary_result.json")
     except (FileNotFoundError, OSError, ValueError):
         raise HTTPException(404, "요약 결과 파일을 찾거나 읽을 수 없습니다. "
                                  "분석이 완료되지 않았거나 보존 기간이 지나 정리되었을 수 있습니다.")
@@ -466,8 +529,11 @@ def saved_detail(name: str) -> dict:
         summary = summary_payload(folder, folder / "ocr_result.json", f"/api/saved/{quote(name, safe='')}/frames")
     except (FileNotFoundError, OSError, ValueError):
         raise HTTPException(404, "선택한 저장 결과의 요약 파일을 찾거나 읽을 수 없습니다.")
+    title, timestamp = parse_saved_folder_name(folder.name)
     return {
         "name": name,
+        "title": title,
+        "saved_at": timestamp.isoformat() if timestamp else None,
         "video_url": f"/api/saved/{quote(name, safe='')}/video" if find_saved_video(folder) else None,
         **summary,
     }
@@ -514,7 +580,7 @@ def _history_log(directory: Path) -> Path | None:
     return None
 
 
-@app.get("/api/history", dependencies=protected)
+@app.get("/api/history", dependencies=developer_only)
 def history() -> dict:
     records = list_records(DEFAULT_HISTORY_DIR)
     for record in records:
@@ -535,7 +601,7 @@ class CsvBody(BaseModel):
     run_ids: list[str]
 
 
-@app.post("/api/history/csv", dependencies=protected)
+@app.post("/api/history/csv", dependencies=developer_only)
 def history_csv(body: CsvBody) -> Response:
     wanted = set(body.run_ids)
     records = [record for record in list_records(DEFAULT_HISTORY_DIR) if record["run_id"] in wanted]
@@ -543,7 +609,7 @@ def history_csv(body: CsvBody) -> Response:
                     headers={"Content-Disposition": 'attachment; filename="run_history.csv"'})
 
 
-@app.get("/api/history/{run_id}", dependencies=protected)
+@app.get("/api/history/{run_id}", dependencies=developer_only)
 def history_detail(run_id: str) -> dict[str, Any]:
     directory = _history_dir(run_id)
     record = read_record(directory)
@@ -558,7 +624,7 @@ def history_detail(run_id: str) -> dict[str, Any]:
     }
 
 
-@app.get("/api/history/{run_id}/log", dependencies=protected)
+@app.get("/api/history/{run_id}/log", dependencies=developer_only)
 def history_log(run_id: str) -> FileResponse:
     log_path = _history_log(_history_dir(run_id))
     if log_path is None:

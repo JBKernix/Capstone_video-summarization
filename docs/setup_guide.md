@@ -88,7 +88,7 @@ beam_size:
 APP_PASSWORD = "원하는 비밀번호"
 ```
 
-`APP_PASSWORD`가 없거나 `.streamlit/secrets.toml` 자체가 없으면 로컬 접속은 로그인 화면 없이 통과하고, Cloudflare를 거친 외부 접속은 차단됩니다. 이 파일은 `.gitignore`에 등록되어 있어 커밋되지 않습니다.
+`APP_PASSWORD`가 없거나 `.streamlit/secrets.toml` 자체가 없으면 React 앱 서버는 로컬·Cloudflare 외부 접속 모두 로그인 화면 없이 통과시킵니다(예비 Streamlit 화면은 외부 접속을 차단). 개발자용 화면(`/dev`)은 이와 별개로 개발자 비밀번호가 필요합니다. 기본값은 `admin`이므로 외부에 공개할 때는 `DEV_PASSWORD` 환경변수로 바꾸세요. 이 파일은 `.gitignore`에 등록되어 있어 커밋되지 않습니다.
 
 ## Cloudflare Tunnel로 외부 공개 (선택)
 

@@ -33,7 +33,7 @@ def test_pipeline_archives_metrics(video, tmp_path, level, skip_ocr, skip_vlm):
     run_dir = tmp_path / "runs"
     raw_stt = {"language": "ko", "segments": [{"start": 0, "end": 1.5, "text": "테스트 문장"}]}
     llm = {"summary": "예시 음성 요약", "important_segments": [{"start": 0, "end": 1.5}]}
-    argv = ["pipeline", "--video", str(video), "--run-dir", str(run_dir), "--summary-level", level, "--interval-seconds", "1"]
+    argv = ["pipeline", "--video", str(video), "--run-dir", str(run_dir), "--summary-level", level]
     if skip_ocr:
         argv.append("--skip-ocr")
     if skip_vlm:
@@ -54,9 +54,10 @@ def test_pipeline_archives_metrics(video, tmp_path, level, skip_ocr, skip_vlm):
     assert record["counts"]["stt_segments"] == 1
     assert record["settings"]["stt"]["model_size"] == {"simple": "small", "standard": "medium", "detailed": "large"}[level]
     assert record["settings"]["preset_semantics"] == "whisper_only_v1"
-    assert record["counts"]["frames_extracted"] == 2
+    # 화면이 그대로인 단색 영상이라 대표 프레임 방식은 구간에서 1장만 남깁니다.
+    assert record["counts"]["frames_extracted"] == 1
     if not skip_ocr:
-        assert record["counts"]["ocr_success"] == 2
+        assert record["counts"]["ocr_success"] == 1
     if not skip_ocr and not skip_vlm:
         assert record["counts"]["vlm_frames"] == 2
         assert all(stage["status"] == "success" for stage in record["stages"])
@@ -80,10 +81,10 @@ def test_claude_pipeline_archives_all_stage_outputs(video, tmp_path, monkeypatch
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-only-secret")
     run_dir = tmp_path / "runs"
     responses = [reply({"summary": "음성 요약", "important_segment_ids": [0]}),
-                 reply({"results": [{"index": 0, "summary": "파란 화면"}, {"index": 1, "summary": "같은 화면"}]}),
+                 reply({"results": [{"index": 0, "summary": "파란 화면"}]}),
                  reply({"summary": "# 최종 요약\n영상의 음성과 화면을 통합했습니다."})]
     with (patch.object(sys, "argv", ["pipeline", "--video", str(video), "--run-dir", str(run_dir),
-                                    "--analysis-backend", "claude", "--interval-seconds", "1"]),
+                                    "--analysis-backend", "claude"]),
           patch("modules.llm.backends.BackendOptions.validate", return_value={"analysis_backend": "claude", "analysis_model": "claude-haiku-4-5"}),
           patch("modules.stt.run_whisper_stt", return_value={"language": "ko", "segments": [{"start": 0, "end": 1.5, "text": "테스트"}]}),
           patch("modules.ocr.ocr_formatter.OCRExtractor") as ocr,

@@ -38,7 +38,8 @@ main()
 | --- | --- | --- |
 | `--video` | `data/input/*.mp4` | 분석할 영상 경로 또는 glob 패턴 |
 | `--run-dir` | `runs` | 결과 저장 루트 |
-| `--method` | `interval` | `interval` 또는 `scene_change` |
+| `--method` | `representative` | `representative`(중요 구간마다 화면이 바뀐 만큼 대표 프레임), `interval`, `scene_change` |
+| `--max-frames-per-segment` | `4` | representative 방식에서 중요 구간 하나당 남길 최대 대표 프레임 수 |
 | `--interval-seconds` | `5.0` | interval 방식 프레임 추출 간격 |
 | `--scene-threshold` | `0.5` | FFmpeg scene score 임계값 |
 | `--scene-min-gap-seconds` | `1.0` | 장면 전환 프레임 간 최소 간격 |

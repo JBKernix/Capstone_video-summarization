@@ -59,7 +59,7 @@ ffmpeg -nostdin -progress pipe:1 -nostats <args...>
 | `frame_sampler.sample_interval_frames()` (구간 미지정) | 전체 영상 fps 필터 추출 진행률을 `STEP_FRAME_EXTRACTION`으로 보고 |
 | `frame_sampler.sample_scene_change_frames()` | 장면 전환 탐색 진행률을 `STEP_FRAME_EXTRACTION`으로 보고 |
 
-반면 `frame_sampler._sample_interval_frames_in_ranges()`(중요 구간이 지정된 경우, 타임스탬프마다 개별 ffmpeg 호출)는 여전히 블로킹 방식인 `run_ffmpeg()`를 그대로 사용하고, 매 프레임 처리 후 `report_progress()`를 `"N/M"` 형태의 메시지로 직접 호출합니다. 자세한 내용은 `frame_sampling.md`를 참고하세요.
+반면 `frame_sampler._sample_interval_frames_in_ranges()`(중요 구간이 지정된 경우, 타임스탬프마다 개별 ffmpeg 호출)는 여전히 블로킹 방식인 `run_ffmpeg()`를 그대로 사용하고, 매 프레임 처리 후 `report_progress()`를 `"N/M"` 형태의 메시지로 직접 호출합니다. 기본 방식인 `frame_sampler.sample_representative_frames()`도 구간마다(후보 추출 `_segment_candidates()`, 대체 한 장 `_extract_single_frame()`) `run_ffmpeg()`를 쓰고, 구간 하나를 마칠 때마다 `report_progress()`를 호출합니다. 프레임 추출의 가변 프레임 출력 옵션은 FFmpeg에서 폐지 예정인 `-vsync vfr` 대신 `-fps_mode vfr`를 씁니다. 자세한 내용은 `frame_sampling.md`를 참고하세요.
 
 ## MP4 변환
 

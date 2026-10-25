@@ -18,6 +18,8 @@ NUMBERED_ITEM_PATTERN = re.compile(
     r"###\s+(\d+)\.\s*(.*?)\s*\(\s*타임라인\s*:\s*([\d.]+)\s*(?:~\s*([\d.]+)\s*)?\)"
 )
 HAS_NUMBERED_ITEM_PATTERN = re.compile(r"(^|\n)###\s+\d+\.")
+# 타임라인 항목 하나에 보여 줄 최대 화면 수입니다(프레임 추출의 구간당 최대 대표 프레임 수와 같습니다).
+MAX_FRAMES_PER_ITEM = 4
 
 
 def format_timestamp(seconds: float) -> str:
@@ -57,6 +59,26 @@ def load_ocr_entries(ocr_result_path: Path) -> list[dict[str, Any]]:
     return data if isinstance(data, list) else []
 
 
+def _entries_in_range(ocr_entries: list[dict[str, Any]], start: float, end: float | None) -> list[dict[str, Any]]:
+    """타임라인 구간 안의 프레임입니다. 구간 안에 하나도 없을 때만 앞뒤 1초까지 넓혀 찾습니다.
+
+    처음부터 넓혀 찾으면 바로 옆 구간의 프레임이 섞여 들어옵니다.
+    """
+    end = end if end is not None else start
+    entries = [entry for entry in ocr_entries if isinstance(entry, dict) and entry.get("image_path")]
+    for margin in (0.0, 1.0):
+        in_range = [
+            entry for entry in entries if start - margin <= float(entry.get("timestamp", -1)) <= end + margin
+        ]
+        if in_range:
+            return in_range
+    return []
+
+
+def _prefer_charts(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [entry for entry in entries if entry.get("scene_type") == "chart_or_table"] or entries
+
+
 def find_matching_frame_image(
     ocr_entries: list[dict[str, Any]],
     start: float,
@@ -64,25 +86,51 @@ def find_matching_frame_image(
     ocr_result_path: Path,
     project_root: Path,
 ) -> Path | None:
-    """타임라인 구간과 겹치는 프레임 중 표/차트로 분류된 화면을 우선으로 찾습니다."""
-    end = end if end is not None else start
-    in_range = [
-        entry
-        for entry in ocr_entries
-        if isinstance(entry, dict) and start - 1 <= float(entry.get("timestamp", -1)) <= end + 1
-    ]
-    if not in_range:
-        return None
+    """구간을 대표할 프레임 한 장입니다. 표/차트로 분류된 화면, 그다음 글자가 있는 화면을 우선합니다."""
+    pool = sorted(
+        _prefer_charts(_entries_in_range(ocr_entries, start, end)),
+        key=lambda entry: not str(entry.get("ocr_text", "")).strip(),
+    )
+    for entry in pool:
+        resolved = find_existing_path(entry["image_path"], ocr_result_path, project_root)
+        if resolved is not None:
+            return resolved
+    return None
 
-    chart_entries = [entry for entry in in_range if entry.get("scene_type") == "chart_or_table"]
-    pool = chart_entries or in_range
-    pool = sorted(pool, key=lambda entry: not str(entry.get("ocr_text", "")).strip())
 
-    image_path = pool[0].get("image_path")
-    if not image_path:
-        return None
+def find_matching_frames(
+    ocr_entries: list[dict[str, Any]],
+    start: float,
+    end: float | None,
+    ocr_result_path: Path,
+    project_root: Path,
+    charts_only: bool = False,
+    limit: int = MAX_FRAMES_PER_ITEM,
+) -> list[dict[str, Any]]:
+    """구간 안의 프레임을 시간순으로 모두 돌려줍니다(``{"path", "timestamp"}``).
 
-    return find_existing_path(image_path, ocr_result_path, project_root)
+    프레임 추출 단계에서 같은 화면은 이미 하나로 묶었으므로, 여기 나오는 프레임은 서로 다른 화면입니다.
+    ``charts_only``이면 표/차트 화면이 있을 때 그것만 씁니다. ``limit``장을 넘으면 시간상 고르게 줄입니다.
+    """
+    entries = _entries_in_range(ocr_entries, start, end)
+    if charts_only:
+        entries = _prefer_charts(entries)
+
+    frames: list[dict[str, Any]] = []
+    seen: set[Path] = set()
+    for entry in sorted(entries, key=lambda entry: float(entry.get("timestamp", 0))):
+        resolved = find_existing_path(entry["image_path"], ocr_result_path, project_root)
+        if resolved is None or resolved in seen:
+            continue
+        seen.add(resolved)
+        frames.append({"path": resolved, "timestamp": float(entry.get("timestamp", start))})
+
+    if len(frames) <= limit:
+        return frames
+    if limit == 1:
+        return frames[:1]
+    step = (len(frames) - 1) / (limit - 1)
+    return [frames[round(position * step)] for position in range(limit)]
 
 
 def _parse_numbered_items(
@@ -120,6 +168,11 @@ def _parse_numbered_items(
             "label": format_timeline_label(start, end),
             "text": plain_timeline_text(item[match.end():].strip()),
             "image_path": image_path,
+            "frames": (
+                find_matching_frames(ocr_entries, start, end, ocr_result_path, project_root, charts_only=True)
+                if show_images
+                else []
+            ),
         })
     return items
 
@@ -133,7 +186,8 @@ def parse_summary_markdown(
 
     번호가 매겨진 항목(``### N. 제목 (타임라인: ...)``)이 있는 구간은 ``items`` 블록으로,
     그 외 구간은 타임라인 표기만 분:초 형식으로 바꾼 ``markdown`` 블록으로 반환합니다.
-    "표/차트" 성격의 구간(``show_images``)은 항목마다 해당 구간 프레임 경로(``image_path``)를 찾습니다.
+    "표/차트" 성격의 구간(``show_images``)은 항목마다 대표 프레임 경로(``image_path``)와
+    구간 안의 서로 다른 화면 목록(``frames``)을 찾습니다.
     """
     ocr_entries = load_ocr_entries(ocr_result_path)
     blocks: list[dict[str, Any]] = []

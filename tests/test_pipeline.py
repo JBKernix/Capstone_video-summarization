@@ -115,6 +115,7 @@ class PipelineVlmTests(unittest.TestCase):
                 interval_seconds=10.0,
                 scene_threshold=0.3,
                 scene_min_gap_seconds=1.0,
+                max_frames_per_segment=4,
                 ocr_lang="korean",
                 skip_ocr=False,
                 skip_vlm=False,

@@ -21,6 +21,8 @@ OCR 텍스트와 선택된 JPG 프레임을 Anthropic으로 전송합니다. API
 ## 앱 화면 (React · Streamlit 공통)
 
 1. 영상 업로드 화면의 **분석 방식**에서 로컬 모델 서버 또는 Claude API를 선택합니다.
+   React에서는 개발자 화면(`/dev/upload`)에서만 고를 수 있습니다. 사용자 화면에서 시작한 분석은
+   개발자가 분석 설정에서 **사용자 화면에 적용**을 눌러 저장한 방식(`runs/user_defaults.json`, 지정 전에는 로컬 기본 모델)을 씁니다.
 2. 서버 주소는 `modules/llm/__init__.py`의 `GPU_SERVER_URL` 설정을 자동으로 사용합니다.
    서버 주소와 API 키 입력란은 화면에 표시하지 않습니다. API 키는 서버 컴퓨터의 환경변수를 사용합니다.
 3. **Whisper 음성 인식**에서 아래 모델을 선택합니다.
@@ -112,7 +114,7 @@ Claude의 응답 usage에서 입력·출력 토큰과 완료 API 응답 횟수�
 로컬 모드의 **로컬 분석 모델** 선택은 모든 요약 단계에 전달됩니다. 기본은 기존 Qwen 조합입니다.
 Qwen3.5 9B, Qwen3-VL 8B, Gemma 4 12B, MiniCPM-V 4.5, InternVL3.5 8B, GLM-4.6V-Flash를 추가했습니다.
 GPU 서버에서 `python scripts/download_models.py --all`로 가중치를 미리 일괄 다운로드합니다.
-앱 업로드 화면의 **모델 설치 상태**에서는 설치 완료 여부를 확인합니다(React는 앱 API `GET /api/models`가 추론 서버 `/models`를 대신 조회). 화면에 다운로드 버튼은 제공하지 않습니다.
+앱 업로드 화면의 **모델 설치 상태**에서는 설치 완료 여부를 확인합니다(React는 개발자 화면에서만 표시하며, 개발자 전용 앱 API `GET /api/models`가 추론 서버 `/models`를 대신 조회). 화면에 다운로드 버튼은 제공하지 않습니다.
 라이브러리 설치 및 전체 다운로드 명령은 제공된 `gpu-server/docs/local_models.md`를 참고하세요.
 전체 가중치는 약 149 GB이며 ZIP에는 포함되지 않습니다. 4비트 변환은 GPU에 로딩할 때 수행합니다.
 MiniCPM은 `python scripts/setup_minicpm.py`로 전용 실행 환경을 설치해야 합니다.

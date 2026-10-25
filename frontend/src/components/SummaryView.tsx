@@ -1,9 +1,10 @@
 import { useRef } from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import type { StructuredSummary, SummaryBlock, SummaryResult } from '../api'
+import type { StructuredSummary, SummaryBlock, SummaryContent, SummaryResult } from '../api'
+import { FrameGallery } from './FrameGallery'
 
-type Seek = (seconds: number) => void
+export type Seek = (seconds: number) => void
 
 function Md({ text }: { text: string }) {
   return <Markdown remarkPlugins={[remarkGfm]}>{text}</Markdown>
@@ -33,12 +34,21 @@ export function SummaryView({ result }: { result: SummaryResult }) {
       <div className="card">
         <h2>요약 결과</h2>
         <div className="summary-scroll">
-          {result.mode === 'blocks' && <Blocks blocks={result.blocks} seek={seek} />}
-          {result.mode === 'structured' && <Structured summary={result.summary} />}
-          {result.mode === 'raw' && <pre className="log">{JSON.stringify(result.data, null, 2)}</pre>}
+          <SummaryBody result={result} seek={seek} />
         </div>
       </div>
     </div>
+  )
+}
+
+/** 요약 본문만 그립니다. 사용자용 강의노트 화면도 이 컴포넌트를 씁니다. */
+export function SummaryBody({ result, seek }: { result: SummaryContent; seek: Seek }) {
+  return (
+    <>
+      {result.mode === 'blocks' && <Blocks blocks={result.blocks} seek={seek} />}
+      {result.mode === 'structured' && <Structured summary={result.summary} />}
+      {result.mode === 'raw' && <pre className="log">{JSON.stringify(result.data, null, 2)}</pre>}
+    </>
   )
 }
 
@@ -72,11 +82,13 @@ function Blocks({ blocks, seek }: { blocks: SummaryBlock[]; seek: Seek }) {
                   {block.show_images ? (
                     <div className="with-image">
                       <div>
-                        {item.image_url ? (
-                          <figure style={{ margin: 0 }}>
-                            <img src={item.image_url} alt={`${item.title} 구간 화면`} loading="lazy" />
-                            <figcaption className="caption">해당 구간 화면</figcaption>
-                          </figure>
+                        {item.image_url || item.frames.length > 0 ? (
+                          <FrameGallery
+                            frames={item.frames}
+                            fallbackUrl={item.image_url}
+                            title={item.title}
+                            onSeek={seek}
+                          />
                         ) : (
                           <p className="caption">해당 구간 화면을 찾을 수 없습니다.</p>
                         )}

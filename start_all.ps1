@@ -198,13 +198,12 @@ if ($EnableTunnel) {
     $hasPassword = (-not [string]::IsNullOrWhiteSpace($env:APP_PASSWORD)) -or
         ((Test-Path $secrets) -and (Select-String -Path $secrets -Pattern '^\s*APP_PASSWORD\s*=\s*"[^"]+"' -Quiet))
     if (-not $hasPassword) {
-        Write-Host "[ERROR] APP_PASSWORD(.streamlit\secrets.toml 또는 환경변수)가 없어 외부 공개를 시작하지 않습니다." -ForegroundColor Red
-        Write-Host "        docs/single_server_deployment.md의 '외부 접속 비밀번호' 절차를 따른 뒤 앱 서버를 재시작하고 다시 실행하세요."
-    } else {
-        & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root "start_tunnel.ps1") -Port $AppPort -Detach
-        $urlFile = Join-Path $root "tunnel_url.txt"
-        if (Test-Path $urlFile) { $publicUrl = (Get-Content $urlFile -Raw).Trim() }
+        # 비밀번호 없이도 외부 공개합니다(누구나 접속 가능). 개발자 화면은 개발자 비밀번호로 따로 보호됩니다.
+        Write-Host "APP_PASSWORD가 없어 외부 접속 주소를 아는 누구나 로그인 없이 사용할 수 있습니다." -ForegroundColor Yellow
     }
+    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root "start_tunnel.ps1") -Port $AppPort -Detach
+    $urlFile = Join-Path $root "tunnel_url.txt"
+    if (Test-Path $urlFile) { $publicUrl = (Get-Content $urlFile -Raw).Trim() }
 } else {
     Write-Host "비활성화됨 (외부 접속이 필요하면 start_all.bat -Tunnel 또는 ENABLE_TUNNEL=1)."
 }

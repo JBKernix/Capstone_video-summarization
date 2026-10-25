@@ -23,7 +23,7 @@ export function LoginPage({ onLogin }: { onLogin: () => void }) {
 
   return (
     <form className="card login-box stack" style={{ gap: '1rem' }} onSubmit={submit}>
-      <h2>🔒 로그인</h2>
+      <h2>🔒 핵심만PLZ 로그인</h2>
       <label className="field">
         비밀번호
         <input type="password" autoFocus value={password} onChange={(event) => setPassword(event.target.value)} />

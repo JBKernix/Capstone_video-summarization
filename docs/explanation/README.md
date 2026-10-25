@@ -12,7 +12,7 @@
 | Configs | `configs/configs.md` | `configs/` | STT 설정과 비어 있는 설정 파일 상태 |
 | Scripts | `scripts/scripts.md` | `scripts/` | CLI 실행 스크립트별 역할 |
 | 전체 파이프라인 | `pipeline/pipeline.md` | `scripts/run_pipeline.py` | 오디오 추출, STT, LLM 요약, 프레임 추출, OCR, VLM 요약 순서 |
-| 전처리 | `preprocess/frame_sampling.md` | `modules/preprocess/frame_sampler.py` | interval/scene 기반 프레임 샘플링과 메타데이터 생성 |
+| 전처리 | `preprocess/frame_sampling.md` | `modules/preprocess/frame_sampler.py` | representative(기본)/interval/scene_change 프레임 샘플링과 메타데이터 생성 |
 | 전처리 | `preprocess/audio_extraction.md` | `modules/preprocess/audio_extractor.py` | 영상에서 WAV 오디오 추출 |
 | 전처리 | `preprocess/video_info.md` | `modules/preprocess/video_info.py` | FFprobe 기반 영상 길이, 해상도, FPS 조회 |
 | 전처리 | `preprocess/ffmpeg_utils.md` | `modules/preprocess/ffmpeg_utils.py` | FFmpeg/FFprobe 실행 유틸리티와 MP4 보장 로직 |
@@ -41,7 +41,7 @@
 | 영역 | 상태 | 비고 |
 | --- | --- | --- |
 | 영상 전처리 | 구현됨 | FFmpeg/FFprobe 필요 |
-| 프레임 추출 | 구현됨 | `interval`, `scene` 방식 지원 |
+| 프레임 추출 | 구현됨 | `representative`(기본), `interval`, `scene_change` 방식 지원 |
 | 오디오 추출 | 구현됨 | 기본 출력은 `runs/audio/audio.wav` |
 | STT | 구현됨 | Whisper 사용, 설정은 `configs/stt_config.yaml` |
 | OCR | 구현됨 | EasyOCR 사용 |

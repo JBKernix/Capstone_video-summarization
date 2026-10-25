@@ -56,6 +56,7 @@ def analyze_single_frame(frame_info: Dict[str, Any], ocr_extractor: OCRExtractor
     return {
         "frame_id": frame_info.get("frame_id"),
         "timestamp": frame_info.get("timestamp"),
+        "segment_id": frame_info.get("segment_id"),
         "image_path": image_path,
         "ocr_text": ocr_text,
         "detected_language": detected_language,

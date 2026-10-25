@@ -29,6 +29,7 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
       // 본문이 JSON이 아니면 기본 문구를 씁니다.
     }
     if (response.status === 401) window.dispatchEvent(new Event('auth-required'))
+    if (response.status === 403 && message.includes('개발자 모드')) window.dispatchEvent(new Event('dev-required'))
     throw new ApiError(response.status, message)
   }
   return response.json() as Promise<T>
@@ -37,6 +38,7 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
 export const api = {
   get: <T>(url: string) => request<T>('GET', url),
   post: <T>(url: string, body?: unknown) => request<T>('POST', url, body ?? {}),
+  put: <T>(url: string, body: unknown) => request<T>('PUT', url, body),
   delete: <T>(url: string) => request<T>('DELETE', url),
 }
 
@@ -95,7 +97,13 @@ export function saveBlob(blob: Blob, filename: string) {
 export interface Session {
   required: boolean
   authenticated: boolean
-  blocked: boolean
+  /** 개발자 모드(비밀번호 별도) 인증 여부입니다. */
+  developer: boolean
+}
+
+export interface UserDefaults {
+  analysis_backend: string
+  local_model: string
 }
 
 export interface Option {
@@ -120,6 +128,8 @@ export interface Options {
   backends: Option[]
   local_models: Option[]
   default_local_model: string
+  /** 사용자용 화면에서 시작한 분석에 쓰는 분석 방식(개발자가 지정)입니다. */
+  user_defaults: UserDefaults
   claude_model: string
   backend_ready: boolean
   upload_limit_mb: number
@@ -157,7 +167,17 @@ export interface TimelineItem {
   end: number | null
   label: string
   text: string
+  /** 대표 화면 한 장(표/차트 화면 우선) */
   image_url: string | null
+  /** 구간 안의 서로 다른 화면들(시간순). 표/차트 섹션이 아니면 빈 배열입니다. */
+  frames: FrameRef[]
+}
+
+/** 구간에서 뽑은 화면 한 장과 그 시각입니다. */
+export interface FrameRef {
+  url: string
+  time: number
+  label: string
 }
 
 export type SummaryBlock =
@@ -177,12 +197,57 @@ export interface StructuredSummary {
   conclusion?: string
 }
 
+/** 사용자용 강의노트(챕터 플레이어) 화면에 쓰는 요약 구조입니다. 타임라인 챕터가 없으면 null입니다. */
+export interface NoteOutline {
+  title: string | null
+  /** 3줄 요약(최종 요약의 "핵심 주제") */
+  key_points: string[]
+  keywords: string[]
+  chapters: NoteChapter[]
+  /** 표/차트·수식·코드 등 화면 속 자료 */
+  visuals: NoteVisual[]
+  conclusion: string[]
+  /** 핵심 용어와 정의(강의 노트 JSON 결과에만 있음) */
+  terms: NoteTerm[]
+  /** 과제·시험·다음 수업 공지(강의 노트 JSON 결과에만 있음) */
+  notices: string[]
+  /** 위 분류에 들지 않은 마크다운 */
+  extras: string[]
+}
+
+export interface NoteTerm {
+  term: string
+  definition: string
+}
+
+/** 화면 속 자료입니다. 강의 노트 JSON에서는 시간을 모르면 start가 null이고, kind에 자료 유형(표·수식 등)이 옵니다. */
+export type NoteVisual = Omit<TimelineItem, 'start'> & { start: number | null; section: string; kind?: string }
+
+export interface NoteChapter {
+  index: number
+  title: string
+  /** 시간을 모르는 챕터는 null입니다(재생 버튼·챕터 막대에서 빠짐). */
+  start: number | null
+  end: number | null
+  label: string
+  points: string[]
+  /** 화면 분석(VLM)에서 확인한 내용 */
+  screen_notes: string[]
+  thumb_url: string | null
+  /** 챕터 구간 안의 서로 다른 화면들(시간순) */
+  frames: FrameRef[]
+}
+
 export type SummaryContent =
-  | { mode: 'blocks'; blocks: SummaryBlock[] }
+  | { mode: 'blocks'; blocks: SummaryBlock[]; outline?: NoteOutline | null }
   | { mode: 'structured'; summary: StructuredSummary }
   | { mode: 'raw'; data: unknown }
 
-export type SummaryResult = SummaryContent & { video_url: string | null; title?: string | null }
+export type SummaryResult = SummaryContent & {
+  video_url: string | null
+  title?: string | null
+  saved_at?: string | null
+}
 
 export interface SavedItem {
   name: string

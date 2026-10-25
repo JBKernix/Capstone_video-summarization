@@ -111,14 +111,30 @@ python -m uvicorn app.api.server:app --host 127.0.0.1 --port 8501
 
 화면 코드를 고친 뒤에는 `npm run build`를 다시 실행하세요. 개발 중에는 앱 서버를 8501에 띄운 상태에서 `frontend`에서 `npm run dev`를 실행하면 `/api` 요청이 8501로 전달됩니다.
 
+화면은 **사용자용 화면(핵심만PLZ)** 과 **개발자용 화면**으로 나뉩니다. 그냥 접속하면 사용자용 화면이 열리고, 오른쪽 위 `🛠️ 개발자` 버튼에서 개발자 비밀번호(기본 `admin`, `DEV_PASSWORD` 환경변수로 변경)를 입력해야 개발자용 화면(`/dev`)에 들어갈 수 있습니다.
+
+사용자용 화면
+
 | 경로 | 화면 |
 | --- | --- |
-| `/upload` | 영상 업로드·분석 설정·진행 상황 (`?run=<실행 ID>`로 새로고침 후 다시 연결) |
-| `/result/<실행 ID>` | 원본 영상과 최종 요약, 결과 저장 |
-| `/saved` | 저장된 요약 목록·확인·삭제 |
-| `/history` | 실행 이력과 성능 지표 |
+| `/` | 유튜브 링크·영상 파일 입력, 요약 방식(빠르게/표준/꼼꼼하게) 선택 후 요약 시작 |
+| `/summarize/<실행 ID>` | 요약 진행 상황 |
+| `/note/run/<실행 ID>`, `/note/saved/<이름>` | 강의노트(영상 + 시간대별 요약), 저장·인쇄 |
+| `/library` | 저장한 강의노트 목록 |
 
-- 로그인 비밀번호는 `APP_PASSWORD` 환경변수 또는 기존 `.streamlit/secrets.toml`의 `APP_PASSWORD`를 씁니다. 규칙은 Streamlit과 같습니다(비밀번호가 없으면 로컬만 허용, Cloudflare Tunnel 경유 접속은 차단).
+개발자용 화면 (개발자 비밀번호 필요)
+
+| 경로 | 화면 |
+| --- | --- |
+| `/dev/upload` | 영상 업로드·분석 설정·진행 상황 (`?run=<실행 ID>`로 새로고침 후 다시 연결) |
+| `/dev/result/<실행 ID>` | 원본 영상과 최종 요약, 결과 저장 |
+| `/dev/saved` | 저장된 요약 목록·확인·삭제 |
+| `/dev/history` | 실행 이력과 성능 지표 |
+
+- 일반 사용자는 분석 방식(로컬 모델 / Claude API)을 고를 수 없습니다. 개발자 화면의 분석 설정에서 `사용자 화면에 적용`을 누른 방식이 쓰이며(`runs/user_defaults.json`), 지정 전에는 로컬 기본 모델을 씁니다.
+- 실행 이력·모델 상태·분석 로그 API는 개발자 모드에서만 응답합니다.
+
+- 입장 비밀번호는 선택 사항입니다. `APP_PASSWORD` 환경변수 또는 `.streamlit/secrets.toml`의 `APP_PASSWORD`를 설정하면 모든 접속에 로그인 화면이 나오고, 설정하지 않으면 로컬·Cloudflare Tunnel 외부 접속 모두 로그인 없이 사용자 화면으로 들어갑니다(개발자 화면은 항상 개발자 비밀번호 필요).
 - 로그인 세션은 서버를 재시작하면 풀립니다. 유지하려면 `APP_SESSION_SECRET`을 고정값으로 설정하세요(유효 시간 `APP_SESSION_HOURS`, 기본 12시간).
 - 업로드 한도는 `MAX_UPLOAD_MB`(기본 500MB), 외부 접속은 `EXTERNAL_UPLOAD_LIMIT_MB`(기본 100MB)입니다.
 - 기존 Streamlit 화면이 필요하면 `start_all.bat -Streamlit`(또는 `APP_UI=streamlit`)으로 같은 포트에 띄울 수 있습니다. 두 화면은 같은 실행 기록·저장 결과를 공유하지만 같은 포트를 쓰므로 하나만 실행하세요.
@@ -160,7 +176,7 @@ streamlit run app/main.py
 
 앱을 로컬에서만 쓸 때는 아래 설정이 필요 없습니다. Cloudflare Tunnel 등으로 외부에 공개할 때만 설정하세요.
 
-- **로그인 게이트**: `.streamlit/secrets.toml`(React 앱 서버는 `APP_PASSWORD` 환경변수도 가능)에 `APP_PASSWORD`를 설정하면 모든 화면 진입 전에 비밀번호 입력 화면이 표시됩니다(React: `app/api/auth.py`, Streamlit: `app/auth.py`의 `require_login()`). `APP_PASSWORD`가 없으면 로컬 접속은 그대로 통과하고, Cloudflare를 거친 외부 접속은 차단됩니다.
+- **로그인 게이트**: `.streamlit/secrets.toml`(React 앱 서버는 `APP_PASSWORD` 환경변수도 가능)에 `APP_PASSWORD`를 설정하면 모든 화면 진입 전에 비밀번호 입력 화면이 표시됩니다(React: `app/api/auth.py`, Streamlit: `app/auth.py`의 `require_login()`). `APP_PASSWORD`가 없으면 React 앱 서버는 로컬·외부 접속 모두 로그인 없이 통과시킵니다(예비 Streamlit 화면은 여전히 외부 접속을 차단).
 - **Cloudflare Tunnel**: `start_tunnel.bat`(Windows) 또는 `start_tunnel.ps1`을 실행하면 `cloudflared`가 로컬 8501 포트(앱 서버 기본 포트)를 외부 URL로 연결하고, 발급된 URL을 `tunnel_url.txt`에 저장합니다. `cloudflared`가 PATH에 설치되어 있어야 합니다.
 
 ## 전체 파이프라인 실행
@@ -175,8 +191,8 @@ python scripts/run_pipeline.py --video data/input/sample.mp4 --run-dir runs
 python scripts/run_pipeline.py \
   --video data/input/sample.mp4 \
   --run-dir runs \
-  --method interval \
-  --interval-seconds 5 \
+  --method representative \
+  --max-frames-per-segment 4 \
   --stt-model-size small \
   --stt-language ko \
   --summary-level standard

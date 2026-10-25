@@ -45,6 +45,10 @@ a { color: var(--blue); }
 }
 .topbar nav a.active, .topbar nav a:hover { background: var(--blue-soft); color: var(--blue); }
 .topbar .spacer { flex: 1; }
+.dev-badge {
+  font-size: 0.72rem; font-weight: 800; color: #b45309; background: #fef3c7;
+  border-radius: 999px; padding: 0.15rem 0.55rem; margin-left: 0.3rem; vertical-align: middle;
+}
 
 .page { max-width: 1500px; margin: 0 auto; padding: 2rem 2rem 4rem; }
 .main-title { font-size: 2.1rem; font-weight: 800; color: var(--navy); margin: 0 0 0.3rem; }
@@ -217,3 +221,24 @@ tbody tr.selected { background: var(--blue-soft); }
 .login-box { max-width: 380px; margin: 12vh auto 0; }
 .center { text-align: center; }
 .muted { color: var(--muted); }
+
+/* 구간 화면 갤러리(FrameGallery)와 챕터 화면 줄(FrameStrip): 사용자·개발자 화면이 함께 씁니다. */
+.frame-gallery { margin: 0; display: flex; flex-direction: column; gap: 0.45rem; min-width: 0; }
+.frame-gallery > img { display: block; width: 100%; }
+.frame-gallery figcaption { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; font-size: 0.8rem; color: #6b7286; }
+.frame-seek {
+  border: 0; border-radius: 999px; padding: 0.1rem 0.55rem; cursor: pointer; font: inherit; font-weight: 700;
+  background: #eef1ff; color: #2440d6; font-variant-numeric: tabular-nums;
+}
+.frame-gallery .frame-thumbs { display: flex; gap: 0.35rem; overflow-x: auto; }
+.frame-thumbs button { flex: none; padding: 0; border: 2px solid transparent; border-radius: 8px; background: none; cursor: pointer; line-height: 0; }
+.frame-thumbs button.on { border-color: #3355ff; }
+.frame-gallery .frame-thumbs button img { width: 64px; aspect-ratio: 16 / 9; object-fit: cover; border: 0; border-radius: 6px; }
+.frame-strip { display: flex; gap: 0.5rem; margin-top: 0.75rem; overflow-x: auto; padding-bottom: 0.15rem; }
+.frame-strip button {
+  flex: none; display: flex; flex-direction: column; align-items: center; gap: 0.2rem; padding: 0; border: 0;
+  background: none; cursor: pointer; font: inherit; font-size: 0.74rem; color: #6b7286; font-variant-numeric: tabular-nums;
+}
+.frame-strip img { width: 88px; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 8px; border: 1px solid #e7e5df; }
+.frame-strip button:hover img { border-color: #3355ff; }
+.frame-strip button:hover span { color: #3355ff; }

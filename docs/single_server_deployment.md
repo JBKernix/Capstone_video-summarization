@@ -61,7 +61,8 @@ FastAPI를 외부와 완전히 분리하려면 기존 서버 창을 직접 닫�
 | `SERVER_DIR` | 이 폴더의 상위 폴더 `\Summarization` | gpu-server 브랜치 체크아웃 |
 | `API_PORT` / `APP_PORT` (예전 이름 `STREAMLIT_PORT`) | `8000` / `8501` | 내부 포트 |
 | `GPU_SERVER_URL` | `http://127.0.0.1:8000` | 앱(파이프라인)이 호출하는 추론 서버 주소 |
-| `APP_PASSWORD` | 없음 | 외부 접속 비밀번호. 없으면 `.streamlit\secrets.toml` 값을 사용 |
+| `APP_PASSWORD` | 없음 | 입장 비밀번호(선택). 없으면 `.streamlit\secrets.toml` 값을 사용하고, 둘 다 없으면 로그인 없이 공개 |
+| `DEV_PASSWORD` | `admin` | React 개발자 화면(`/dev`)과 개발자 전용 API(실행 이력·모델 상태·분석 로그·사용자 분석 방식 지정) 비밀번호. 외부 공개 시 변경 권장 |
 | `APP_SESSION_SECRET` / `APP_SESSION_HOURS` | 시작 시 무작위 / `12` | React 로그인 세션 서명 키와 유지 시간. 키를 고정하면 앱 서버 재시작 후에도 로그인 유지 |
 | `MAX_UPLOAD_MB` | `500` | React 화면 업로드 한도(서버 PC 직접 접속) |
 | `ENABLE_TUNNEL` | `0` | `1`이면 `-Tunnel` 없이도 터널 실행 |
@@ -80,7 +81,7 @@ LLM/VLM 서버 설정(`LLM_BACKEND`, `KEEP_LLM_LOADED`, `ANTHROPIC_API_KEY`, `HF
 - Streamlit: `run_app.bat`
 - 터널: `start_tunnel.bat`
 
-## 2. 외부 접속 비밀번호 (필수)
+## 2. 외부 접속 비밀번호 (선택)
 
 외부 공개 전에 서버 PC에서 `.streamlit\secrets.toml`을 만듭니다(이 파일은 `.gitignore`에 포함되어 Git에 올라가지 않습니다). React 앱 서버와 Streamlit이 모두 이 파일을 읽습니다. React 앱 서버는 `APP_PASSWORD` 환경변수가 있으면 그 값을 먼저 씁니다.
 
@@ -88,7 +89,7 @@ LLM/VLM 서버 설정(`LLM_BACKEND`, `KEEP_LLM_LOADED`, `ANTHROPIC_API_KEY`, `HF
 APP_PASSWORD = "충분히 긴 임의의 비밀번호"
 ```
 
-- 비밀번호가 없으면 Cloudflare를 거친 접속은 화면에서 차단되고, `start_all -Tunnel`도 터널을 열지 않습니다.
+- 비밀번호가 없어도 `start_all -Tunnel`은 터널을 엽니다. 이때 React 화면은 외부 주소를 아는 누구나 로그인 없이 사용할 수 있습니다(개발자 화면은 개발자 비밀번호 `DEV_PASSWORD`, 기본 `admin`으로 따로 보호). 예비 Streamlit 화면은 비밀번호가 없으면 외부 접속을 차단합니다.
 - 같은 IP에서 5회 연속 실패하면 60초간 로그인을 막습니다.
 - Streamlit은 파일을 만든 뒤 재시작해야 적용됩니다. React 앱 서버는 요청마다 다시 읽으므로 바로 적용되며, 비밀번호를 바꾸면 기존 로그인 세션이 모두 끊깁니다.
 
@@ -184,7 +185,8 @@ FastAPI의 단일 추론 큐(`max_workers=1`)와 작업 ID 폴링·타임아웃(
 ## 6. 보안 점검 요약
 
 - 외부 노출: 8501의 앱 서버만 터널로 공개, 추론용 FastAPI(모델 다운로드·Claude 프록시 엔드포인트 포함)는 localhost 전용
-- 외부 접속인데 비밀번호 미설정이면 차단, 비밀번호 비교는 상수 시간 비교, 연속 실패 시 잠금
+- `APP_PASSWORD` 미설정이면 React 사용자 화면은 외부 주소를 아는 누구나 사용 가능(Streamlit은 외부 접속 차단). 개발자 화면·개발자 전용 API는 `DEV_PASSWORD`로 별도 보호(서명 범위를 나눈 `vs_dev` 쿠키). 비밀번호 비교는 상수 시간 비교, 연속 실패 시 잠금(일반·개발자 로그인 따로 셈)
+- 일반 사용자는 분석 방식(로컬/Claude API)을 고를 수 없고, 개발자가 지정한 방식(`runs/user_defaults.json`)으로만 실행. 분석 로그도 개발자에게만 보임
 - React 앱 서버: HttpOnly·SameSite 세션 쿠키(외부 접속은 Secure), 상태를 바꾸는 요청은 `X-Requested-With` 헤더 확인(CSRF 차단), API 문서 화면(`/docs`) 끔. 자세한 내용은 [앱 API 서버](explanation/app/app_api.md#로그인과-보안)
 - Streamlit: `client.toolbarMode = "viewer"`, `client.showErrorDetails = "none"`로 외부 사용자에게 개발자 메뉴와 서버 경로가 담긴 예외 상세를 숨김
 - 화면에 서버 절대경로를 표시하지 않음(저장 완료 메시지는 폴더명만). 영상·프레임은 실행 ID/저장 폴더명과 OCR 항목 번호로 만든 주소로만 전달(React) 또는 Streamlit 미디어 URL로 전달
@@ -192,7 +194,7 @@ FastAPI의 단일 추론 큐(`max_workers=1`)와 작업 ID 폴링·타임아웃(
 - `ANTHROPIC_API_KEY`는 FastAPI만 읽고 파이프라인 자식 프로세스에는 전달하지 않음(기존 동작). `TUNNEL_TOKEN`은 환경변수로만 전달
 - `.gitignore`: `secrets.toml`, `logs/`, `*.log`, `runs/`, `data/input/`, `data/saved/`, `.cloudflared/`, `*.pem`, `.env`, `tunnel_url.txt`
 
-한계: 비밀번호를 공유하는 모든 사용자는 같은 권한을 가지며 "저장된 요약"과 "실행 이력"을 함께 보고 삭제할 수 있습니다.
+한계: 사용자 화면에 들어온 모든 사용자는 같은 권한을 가지며 저장된 강의노트를 함께 보고 삭제할 수 있습니다. 실행 이력은 개발자 비밀번호를 아는 사용자만 볼 수 있습니다.
 사용자별 분리가 필요하면 Cloudflare Access로 사용자를 제한하고, 앱 단 사용자 계정 기능을 추가해야 합니다.
 
 ## 7. 외부 PC에서 수행할 검증 체크리스트

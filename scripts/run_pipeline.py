@@ -27,6 +27,7 @@ from modules.common import (  # noqa: E402
 )
 from modules.preprocess import (
     DEFAULT_INTERVAL_SECONDS,
+    DEFAULT_MAX_FRAMES_PER_SEGMENT,
     DEFAULT_SAMPLING_METHOD,
     DEFAULT_SCENE_MIN_GAP_SECONDS,
     DEFAULT_SCENE_THRESHOLD,
@@ -186,6 +187,12 @@ def parse_args():
         help="연속 화면 전환 프레임 사이의 최소 간격입니다.",
     )
     parser.add_argument(
+        "--max-frames-per-segment",
+        type=int,
+        default=DEFAULT_MAX_FRAMES_PER_SEGMENT,
+        help="representative 방식에서 중요 구간 하나당 남길 최대 대표 프레임 수입니다.",
+    )
+    parser.add_argument(
         "--ocr-lang",
         default=DEFAULT_OCR_LANGUAGE,
         help="OCR 엔진에 전달할 언어 설정입니다.",
@@ -294,6 +301,7 @@ def run_preprocess_step(
     scene_threshold: float,
     scene_min_gap_seconds: float,
     important_segments_path: Path | None = None,
+    max_frames_per_segment: int = DEFAULT_MAX_FRAMES_PER_SEGMENT,
 ) -> Path:
     """영상 정보를 확인하고 프레임 이미지와 메타데이터를 생성합니다."""
     if not video_path.exists():
@@ -322,6 +330,7 @@ def run_preprocess_step(
         scene_min_gap_seconds=scene_min_gap_seconds,
         project_root=PROJECT_ROOT,
         important_segments_path=important_segments_path,
+        max_frames_per_segment=max_frames_per_segment,
     )
 
     metadata_path = run_path(run_dir, DEFAULT_FRAME_METADATA_RELATIVE_PATH)
@@ -466,6 +475,7 @@ def _run_pipeline(args, recorder):
                 scene_threshold=args.scene_threshold,
                 scene_min_gap_seconds=args.scene_min_gap_seconds,
                 important_segments_path=llm_summary_json_path,
+                max_frames_per_segment=args.max_frames_per_segment,
             )
 
     with _stage_timeline("5/7", "OCR 분석") as stage:

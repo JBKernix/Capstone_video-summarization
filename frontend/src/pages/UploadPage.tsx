@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { api, uploadWithProgress, type ModelCatalogueEntry, type Options, type RunStatus, type Upload } from '../api'
+import {
+  api,
+  uploadWithProgress,
+  type ModelCatalogueEntry,
+  type Options,
+  type RunStatus,
+  type Upload,
+  type UserDefaults,
+} from '../api'
 import { Notice, PageTitle } from '../components/Notice'
 import { StepTracker } from '../components/StepTracker'
 
@@ -481,6 +489,57 @@ function AnalysisOptions({
         간단·기본·상세는 Whisper 크기만 바꿉니다. 세 옵션 모두 OCR·화면 분석·최종 통합을 수행하며 요약 생성 설정은
         같습니다.
       </p>
+      <hr />
+      <UserDefaultsControl options={options} settings={settings} disabled={disabled} />
+    </>
+  )
+}
+
+function backendText(options: Options, value: UserDefaults) {
+  const backend = options.backends.find((item) => item.id === value.analysis_backend)?.label ?? value.analysis_backend
+  if (value.analysis_backend !== 'local') return backend
+  const model = options.local_models.find((item) => item.id === value.local_model)?.label ?? value.local_model
+  return `${backend} · ${model}`
+}
+
+/** 사용자용 화면(일반 접속)에서 시작하는 분석이 쓸 분석 방식을 지정합니다. */
+function UserDefaultsControl({ options, settings, disabled }: { options: Options; settings: Settings; disabled: boolean }) {
+  const [current, setCurrent] = useState<UserDefaults>(options.user_defaults)
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const same =
+    current.analysis_backend === settings.analysis_backend &&
+    (settings.analysis_backend !== 'local' || current.local_model === settings.local_model)
+
+  const apply = async () => {
+    setBusy(true)
+    setError('')
+    try {
+      setCurrent(
+        await api.put<UserDefaults>('/api/dev/user-defaults', {
+          analysis_backend: settings.analysis_backend,
+          local_model: settings.local_model,
+        }),
+      )
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <>
+      <label className="field">사용자 화면 분석 방식</label>
+      <p className="caption">
+        현재: <strong>{backendText(options, current)}</strong>
+        <br />
+        일반 사용자는 분석 방식을 고를 수 없고, 여기서 지정한 방식으로 분석합니다.
+      </p>
+      <button className="small" style={{ width: '100%' }} onClick={apply} disabled={disabled || busy || same}>
+        {same ? '위 분석 방식이 사용자 화면에 적용되어 있습니다' : '위에서 고른 분석 방식을 사용자 화면에 적용'}
+      </button>
+      {error && <Notice kind="error">{error}</Notice>}
     </>
   )
 }
