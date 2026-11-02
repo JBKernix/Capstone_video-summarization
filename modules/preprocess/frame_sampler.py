@@ -385,6 +385,10 @@ def _segment_candidates(
     start, end = time_range
     prefix = f"_candidate_{segment_id:04d}_"
     remove_files(frames_dir.glob(f"{prefix}*.jpg"))
+    if end - start < candidate_interval_seconds:
+        # fps 필터는 구간이 간격의 절반보다 짧으면 0장을 내고, 그러면 FFmpeg가 인코더를 열지 못해 실패합니다.
+        # 간격보다 짧은 구간은 후보를 뽑지 않고 호출한 쪽의 가운데 프레임 대비책에 맡깁니다.
+        return []
     result = run_ffmpeg(
         [
             "-y",

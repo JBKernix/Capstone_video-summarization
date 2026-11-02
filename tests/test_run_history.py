@@ -6,10 +6,53 @@ from unittest.mock import patch
 
 import pytest
 
+from modules.common import run_history
 from modules.common.run_history import (
-    RunRecorder, finish_external, list_records, prepare_run, read_record,
+    RunRecorder, atomic_json, finish_external, list_records, prepare_run, read_record,
     record_counts, records_csv, snapshot_result,
 )
+
+
+def _flaky_replace(failures):
+    real_replace = run_history.os.replace
+    calls = []
+
+    def replace(src, dst):
+        calls.append(dst)
+        if len(calls) <= failures:
+            raise PermissionError(5, "Access is denied")
+        real_replace(src, dst)
+
+    return replace, calls
+
+
+def test_atomic_json_retries_while_destination_is_briefly_locked(monkeypatch, tmp_path):
+    path = tmp_path / "metrics.json"
+    path.write_text("{}")
+    replace, calls = _flaky_replace(failures=2)
+    monkeypatch.setattr(run_history.os, "replace", replace)
+    monkeypatch.setattr(run_history.time, "sleep", lambda _seconds: None)
+
+    atomic_json(path, {"status": "running"})
+
+    assert len(calls) == 3
+    assert json.loads(path.read_text()) == {"status": "running"}
+    assert list(tmp_path.glob("*.tmp")) == []
+
+
+def test_atomic_json_gives_up_when_destination_stays_locked(monkeypatch, tmp_path):
+    path = tmp_path / "metrics.json"
+    path.write_text("{}")
+    replace, calls = _flaky_replace(failures=100)
+    monkeypatch.setattr(run_history.os, "replace", replace)
+    monkeypatch.setattr(run_history.time, "sleep", lambda _seconds: None)
+
+    with pytest.raises(PermissionError):
+        atomic_json(path, {"status": "running"})
+
+    assert len(calls) == len(run_history.REPLACE_RETRY_DELAYS) + 1
+    assert path.read_text() == "{}"
+    assert list(tmp_path.glob("*.tmp")) == []
 
 
 def test_runs_keep_separate_logs_and_snapshots(tmp_path):

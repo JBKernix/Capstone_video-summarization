@@ -242,3 +242,33 @@ def test_representative_sampling_falls_back_to_middle_frame(monkeypatch, tmp_pat
 
     assert commands[-1][commands[-1].index("-ss") + 1] == "15.000"
     assert [(item.segment_id, item.timestamp) for item in result] == [(0, 15.0)]
+
+
+def test_representative_sampling_uses_middle_frame_for_segment_shorter_than_interval(monkeypatch, tmp_path):
+    video_path = tmp_path / "input.mp4"
+    video_path.write_bytes(b"fake")
+    commands = []
+
+    def fake_run_ffmpeg(args):
+        commands.append(args)
+        if "-frames:v" not in args:
+            raise RuntimeError("Command failed with exit code 4294967274")
+        Path(args[-1]).write_bytes(b"jpg")
+        return CompletedProcess(args, 0, stderr="")
+
+    monkeypatch.setattr(frame_sampler, "run_ffmpeg", fake_run_ffmpeg)
+    monkeypatch.setattr(frame_sampler, "get_video_info", lambda _path: SimpleNamespace(duration=1000.0))
+
+    # 0.84초 구간은 2초 간격 fps 필터로는 후보가 0장이라 FFmpeg가 실패하므로 후보 추출을 건너뜁니다.
+    result = frame_sampler.sample_representative_frames(
+        video_path=video_path,
+        frames_dir=tmp_path / "frames",
+        metadata_path=tmp_path / "metadata.json",
+        candidate_interval_seconds=2.0,
+        project_root=tmp_path,
+        time_ranges=[(844.08, 844.92)],
+    )
+
+    assert len(commands) == 1
+    assert commands[0][commands[0].index("-ss") + 1] == "844.500"
+    assert [(item.segment_id, item.timestamp) for item in result] == [(0, 844.5)]
