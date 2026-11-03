@@ -10,7 +10,7 @@ Whisper base/small/medium은 이 선택과 독립적이다. 외부 API 키는 �
 | --- | --- | --- | ---: |
 | legacy-qwen | Qwen/Qwen3-8B + Qwen/Qwen2.5-VL-7B-Instruct | FP16, 단계 종료 시 해제 | 32.99 |
 | qwen3.5-9b | Qwen/Qwen3.5-9B | NF4 4비트 | 19.33 |
-| qwen3-vl-8b | Qwen/Qwen3-VL-8B-Instruct | NF4 4비트 | 17.55 |
+| qwen3-vl-8b (기본값) | Qwen/Qwen3-VL-8B-Instruct | NF4 4비트 | 17.55 |
 | gemma4-12b | google/gemma-4-12B-it | NF4 4비트 | 23.95 |
 | minicpm-v4.5 | openbmb/MiniCPM-V-4_5 | NF4 4비트, 시각 모듈 제외 | 17.41 |
 | internvl3.5-8b | OpenGVLab/InternVL3_5-8B-HF | NF4 4비트 | 17.07 |
@@ -20,6 +20,8 @@ Whisper base/small/medium은 이 선택과 독립적이다. 외부 API 키는 �
 전체 약 148.91 GB, 기존 조합 제외 약 115.91 GB이다. 패키지/환경/임시 파일 공간은 별도다.
 원본 safetensors를 내려받아 실행할 때 4비트로 변환한다. 따라서 GPU 메모리 절감과 다운로드/디스크 크기는 다르다.
 NF4는 양자화 설정이며 정확도나 4090 메모리 적합성을 보장하지 않는다. 입력 길이에 따라 OOM이 날 수 있다.
+`LLM_BACKEND=local`(기본값)에서 `local_model`을 생략한 요청은 기본 모델 `qwen3-vl-8b`(`configs/local_models.py`의 `DEFAULT_LOCAL_MODEL`)로 처리한다.
+따라서 로컬 모드로 서버를 쓰려면 최소한 `requirements-local.txt` 설치와 `qwen3-vl-8b` 다운로드가 필요하다.
 
 ## GPU 서버 설치 (Python 3.10 이상)
 
@@ -48,6 +50,8 @@ python scripts/download_models.py --list
 python scripts/download_models.py --model qwen3.5-9b qwen3-vl-8b
 ```
 
+기본 모델만 쓰려면 `python scripts/download_models.py --model qwen3-vl-8b`만 실행해도 된다.
+
 접근 승인이 필요한 모델은 Hugging Face 모델 페이지의 사용 조건에 동의하고 서버의 `HF_TOKEN` 환경변수 또는
 Hugging Face 로그인 캐시로 인증한다. Streamlit에는 토큰 입력란이 없다. 다운로드 인증과 분석 API 키는 별개다.
 실제 추론은 로컬 파일만 읽고 가중치를 자동 다운로드하지 않는다.
@@ -74,9 +78,14 @@ Streamlit에는 다운로드 버튼을 표시하지 않는다.
 - 완료 manifest에 없는 새 모델은 준비됨으로 처리하지 않는다. 기존 Qwen 캐시는 config/tokenizer/샤드 존재 검사로 호환한다.
 - 저장소와 모델 ID는 코드의 허용 목록으로 제한한다. 임의 경로/모델 저장소를 HTTP로 받지 않는다.
 - 다운로드는 별도 단일 큐, 추론은 기존 단일 큐에서 실행한다. CLI와 서버 간 같은 모델 다운로드도 파일 잠금으로 겹치지 않는다.
-- 매 STT/VLM/최종 요청에 `local_model`이 들어간다. HTTP 요청 처리 스레드에서는 현재 모델을 전환하지 않는다.
+- 매 STT/VLM/최종 요청에 `local_model`이 들어간다. 생략하면 `LLM_BACKEND=local`에서는 `qwen3-vl-8b`로 채우고(미다운로드면 422),
+  `LLM_BACKEND=claude`에서는 Claude API + 기존 Qwen2.5-VL 기본 서비스를 쓴다. HTTP 요청 처리 스레드에서는 현재 모델을 전환하지 않는다.
 - 추론 큐에서 모델을 전환할 때 이전 모델을 해제한다. 새 단일 모델은 작업 간 재사용하며, 기존 FP16 조합은 단계별로 해제한다.
 - 모델 실행이 실패해도 다른 로컬 모델이나 Claude로 자동 대체하지 않는다.
+- 신규 모델의 입력 토큰 상한은 16384다. STT 전체 요약이 상한을 넘으면 구간별로 요약한 뒤 통합하고, 다른 단계는 오류로 거부한다.
+- `qwen3-vl-8b`는 `models/attention.py`의 `sdpa_no_gqa`(메모리 효율 SDPA 커널)로 실행한다. 기본 SDPA에서는 Math 커널로 떨어져
+  4090에서 7천 토큰 21.0GB, 8천 토큰 OOM이었고, `sdpa_no_gqa`는 1.6만 토큰 9.8GB다. `LOCAL_MODEL_ATTENTION=sdpa`로 기본 SDPA와 7000토큰 상한으로 되돌린다.
+- `qwen3-vl-8b`는 중요 구간 청크를 6000자, 최종 요약의 STT·VLM 입력을 각각 4000자로 줄여 넣는다. 측정 스크립트와 결과는 `benchmarks/`에 있다.
 - `GET /models`는 파일 준비 상태/정밀도/commit/다운로드 상태, `POST /models/{id}/download`는 다운로드 접수이다.
 - `GET /health`의 `local_model_selection`은 프로파일 선택 지원 여부다. 기존 llm_model/vlm_model 필드는 구형 기본 서비스 정보이며
   실제 선택 모델은 분석 로그의 local_model/model_checkpoints를 확인한다.

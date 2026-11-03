@@ -6,7 +6,8 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 MODEL_ROOT = Path(os.environ.get("LOCAL_MODEL_DIR", PROJECT_ROOT / "models" / "hf_cache"))
-DEFAULT_LOCAL_MODEL = "legacy-qwen"
+DEFAULT_LOCAL_MODEL = "qwen3-vl-8b"
+LEGACY_LOCAL_MODEL = "legacy-qwen"
 
 @dataclass(frozen=True)
 class ModelProfile:
@@ -66,7 +67,7 @@ def checkpoint_status(repo):
                 for name, size in files.items())
             return {"ready": ready, "revision": data.get("revision"), "source": "manifest"}
         # Preserve existing legacy downloads only; new profiles require a completed manifest.
-        if repo in PROFILES[DEFAULT_LOCAL_MODEL].repos:
+        if repo in PROFILES[LEGACY_LOCAL_MODEL].repos:
             index = directory / "model.safetensors.index.json"
             names = set(json.loads(index.read_text())["weight_map"].values()) if index.exists() else {"model.safetensors"}
             ready = (directory / "config.json").is_file() and (directory / "tokenizer_config.json").is_file() and all(

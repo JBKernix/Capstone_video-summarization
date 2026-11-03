@@ -4,9 +4,10 @@
 
 ## 주요 기능
 
-- Qwen3-8B 기반 한국어 STT 요약
-- STT 타임스탬프 기반 중요 영상 구간 추출
-- Qwen2.5-VL-7B-Instruct 기반 프레임 및 OCR 분석
+- 기본 로컬 모델 Qwen3-VL-8B-Instruct(NF4 4비트) 하나로 한국어 STT 요약·프레임/OCR 분석·최종 요약 처리
+- 입력 토큰 상한을 넘는 긴 강의는 구간별로 요약한 뒤 통합(map-reduce)
+- STT 타임스탬프 기반 중요 영상 구간 추출(요약 레벨별 추출 개수)
+- 기존 Qwen3-8B + Qwen2.5-VL-7B-Instruct 조합과 그 밖의 로컬 모델 선택
 - STT/VLM 요약을 종합한 강의 노트(JSON + 마크다운) 최종 요약
 - 작업 ID 기반 비동기 요청과 진행 상태 조회
 - 단일 작업 큐와 공용 lock을 통한 GPU 추론 직렬화
@@ -15,10 +16,13 @@
 
 ## 사용 모델
 
-| 용도 | Hugging Face 모델 | 로컬 저장 경로 |
-| --- | --- | --- |
-| STT 요약 및 중요 구간 추출 | `Qwen/Qwen3-8B` | `models/hf_cache/Qwen3-8B` |
-| 프레임 및 OCR 분석 | `Qwen/Qwen2.5-VL-7B-Instruct` | `models/hf_cache/Qwen2.5-VL-7B-Instruct` |
+| 선택 ID | 용도 | Hugging Face 모델 | 로컬 저장 경로 |
+| --- | --- | --- | --- |
+| `qwen3-vl-8b` (기본값) | STT 요약·중요 구간 추출·프레임/OCR 분석·최종 요약 | `Qwen/Qwen3-VL-8B-Instruct` | `models/hf_cache/Qwen3-VL-8B-Instruct` |
+| `legacy-qwen` | STT 요약·중요 구간 추출·최종 요약 | `Qwen/Qwen3-8B` | `models/hf_cache/Qwen3-8B` |
+| `legacy-qwen` | 프레임 및 OCR 분석 | `Qwen/Qwen2.5-VL-7B-Instruct` | `models/hf_cache/Qwen2.5-VL-7B-Instruct` |
+
+기본 로컬 모델은 `configs/local_models.py`의 `DEFAULT_LOCAL_MODEL`(`qwen3-vl-8b`)입니다. `LLM_BACKEND=local`에서 요청에 `local_model`이 없으면 이 모델로 처리합니다. 기존 Qwen 조합(`legacy-qwen`)은 `local_model`로 직접 선택하거나, `LLM_BACKEND=claude`에서 `local_model` 없이 요청했을 때 VLM 단계에 쓰입니다. 그 밖의 선택 가능한 모델은 [로컬 모델 가이드](docs/local_models.md)를 참고합니다.
 
 모델 가중치와 Hugging Face 캐시는 용량이 크므로 GitHub에 포함되지 않습니다.
 
@@ -27,9 +31,9 @@
 - Python 3.10 이상
 - CUDA를 지원하는 NVIDIA GPU
 - 설치된 CUDA 환경과 호환되는 PyTorch
-- 모델 저장 공간 약 35GB 이상
+- 모델 저장 공간: 기본 모델(`qwen3-vl-8b`) 약 18GB, 기존 Qwen 조합(`legacy-qwen`)까지 받으면 약 51GB 이상
 
-기본 모델 설정은 `device="cuda"`, `torch_dtype="float16"`입니다.
+기본 모델 `qwen3-vl-8b`는 bfloat16 계산의 NF4 4비트로 로드하며, 기존 Qwen 조합의 로더 설정은 `device="cuda"`, `torch_dtype="float16"`입니다.
 
 ## 설치
 
@@ -42,7 +46,7 @@ pip install -r requirements.txt
 
 CUDA 환경에 맞는 PyTorch가 별도로 필요하다면 [PyTorch 설치 안내](https://pytorch.org/get-started/locally/)에 따라 설치합니다.
 
-신규 로컬 모델(Qwen3.5, Qwen3-VL, Gemma4, MiniCPM-V, InternVL3.5, GLM-4.6V) 중 하나라도 쓰려면 `requirements-local.txt`를 추가로 설치합니다. MiniCPM은 Transformers 버전이 달라 별도 가상환경이 필요하며 자세한 내용은 [로컬 모델 가이드](docs/local_models.md)를 참고합니다.
+기본 로컬 모델 `qwen3-vl-8b`를 포함해 신규 로컬 모델(Qwen3.5, Qwen3-VL, Gemma4, MiniCPM-V, InternVL3.5, GLM-4.6V) 중 하나라도 쓰려면 `requirements-local.txt`를 추가로 설치합니다(`LLM_BACKEND=local` 기본 설정에서는 사실상 필수). MiniCPM은 Transformers 버전이 달라 별도 가상환경이 필요하며 자세한 내용은 [로컬 모델 가이드](docs/local_models.md)를 참고합니다.
 
 ```powershell
 pip install -r requirements-local.txt
@@ -54,7 +58,7 @@ pip install -r requirements-local.txt
 python scripts\download_models.py --all
 ```
 
-기존 Qwen 조합만 받으려면 `python scripts\download_models.py --model legacy-qwen`을 사용합니다. 모델별 선택 다운로드, 용량 미리보기(`--plan`), 목록 조회(`--list`)는 [로컬 모델 가이드](docs/local_models.md)를 참고합니다. 다운로드된 파일은 `models/hf_cache/`에 저장되며 `.gitignore`에 의해 Git에서 제외됩니다.
+기본 모델만 받으려면 `python scripts\download_models.py --model qwen3-vl-8b`, 기존 Qwen 조합만 받으려면 `--model legacy-qwen`을 사용합니다. `LLM_BACKEND=local`에서 기본 모델이 다운로드되어 있지 않으면 `local_model`을 생략한 요청도 `422`로 거부됩니다. 모델별 선택 다운로드, 용량 미리보기(`--plan`), 목록 조회(`--list`)는 [로컬 모델 가이드](docs/local_models.md)를 참고합니다. 다운로드된 파일은 `models/hf_cache/`에 저장되며 `.gitignore`에 의해 Git에서 제외됩니다.
 
 ## 서버 실행
 
@@ -96,14 +100,16 @@ GPU 모델과 작업 상태가 프로세스 메모리에 저장되므로 운영 
 | --- | --- | --- |
 | `SERVER_HOST` | `0.0.0.0` | `server.py` 직접 실행 시 호스트 주소 |
 | `SERVER_PORT` | `8000` | `server.py` 직접 실행 시 포트 |
-| `KEEP_LLM_LOADED` | `0` | `1`이면 LLM 작업 후 모델을 GPU에 유지 (로컬 백엔드에만 적용) |
-| `KEEP_VLM_LOADED` | `0` | `1`이면 VLM 작업 후 모델을 GPU에 유지 |
+| `KEEP_LLM_LOADED` | `0` | `1`이면 LLM 작업 후 모델을 GPU에 유지 (`local_model` 없이 처리하는 기본 실행기에만 적용) |
+| `KEEP_VLM_LOADED` | `0` | `1`이면 VLM 작업 후 모델을 GPU에 유지 (기본 실행기에만 적용) |
 | `NO_COLOR` | 미설정 | 설정하면 콘솔 컬러 로그 비활성화 |
-| `LLM_BACKEND` | `local` | `claude`로 설정하면 STT 요약/중요 구간 추출/최종 요약에 로컬 Qwen3-8B 대신 Claude API 사용 |
+| `LLM_BACKEND` | `local` | `local`이면 `local_model`이 없는 요청을 기본 로컬 모델(`qwen3-vl-8b`)로 처리. `claude`로 설정하면 `local_model`이 없는 요청의 STT 요약/중요 구간 추출/최종 요약에 Claude API 사용(VLM은 로컬 Qwen2.5-VL) |
 | `ANTHROPIC_API_KEY` | 미설정 | `LLM_BACKEND=claude`일 때 필수인 Anthropic API 키 |
 | `CLAUDE_LLM_MODEL` | `claude-haiku-4-5` | `LLM_BACKEND=claude`일 때 사용할 Claude 모델 ID |
+| `LOCAL_MODEL_ATTENTION` | 미설정 | `sdpa`로 설정하면 `qwen3-vl-8b`의 메모리 효율 attention(`sdpa_no_gqa`) 대신 기본 SDPA와 이전 입력 상한(7000토큰)을 사용 |
+| `LOCAL_MODEL_DIR` | `models/hf_cache` | 로컬 모델 저장 루트 (서버와 다운로드 CLI 공통) |
 
-기본 설정에서는 각 작업이 끝날 때 모델 참조와 CUDA 캐시를 해제합니다(`LLM_BACKEND=claude`인 경우 LLM 쪽은 해제할 GPU 자원이 없습니다).
+기본 실행기(`LLM_BACKEND=claude`에서 `local_model` 없는 요청)와 `legacy-qwen`은 각 작업이 끝날 때 모델 참조와 CUDA 캐시를 해제합니다(`LLM_BACKEND=claude`인 경우 LLM 쪽은 해제할 GPU 자원이 없습니다). `qwen3-vl-8b` 등 단일 체크포인트 모델은 작업 간 GPU에 유지되고 다른 모델로 전환할 때만 해제됩니다.
 
 ## API
 
@@ -135,9 +141,11 @@ GPU 모델과 작업 상태가 프로세스 메모리에 저장되므로 운영 
 }
 ```
 
-`full_text`가 비어 있으면 `segments[].text`를 연결하여 사용합니다. `summary_level`은 `simple`(간단요약) / `standard`(기본요약, 기본값) / `detailed`(상세요약) 중 하나이며, 실제 생성 토큰 수와 청크 크기는 `configs/inference_config.py`의 `SUMMARY_LEVEL_PRESETS`에서 정의합니다. `simple`은 프레임/OCR/VLM 단계를 쓰지 않는 클라이언트를 위한 프리셋이라 중요 구간 추출 자체를 건너뛰고 STT 전체 요약만 생성합니다.
+`full_text`가 비어 있으면 `segments[].text`를 연결하여 사용합니다. `summary_level`은 `simple`(간단요약) / `standard`(기본요약, 기본값) / `detailed`(상세요약) 중 하나이며, 실제 생성 토큰 수, 청크 크기, 청크당 중요 구간 개수(3/5/7)는 `configs/inference_config.py`의 `SUMMARY_LEVEL_PRESETS`에서 정의합니다([프리셋 표](services/README.md#요약-레벨summary_level-프리셋)). `simple`은 프레임/OCR/VLM 단계를 쓰지 않는 클라이언트를 위한 프리셋이라 중요 구간 추출 자체를 건너뛰고 STT 전체 요약만 생성합니다.
 
-`local_model`(선택)에 [로컬 모델 가이드](docs/local_models.md)의 선택 ID(예: `qwen3.5-9b`)를 지정하면 해당 요청만 그 모델로 처리합니다. 생략하거나 `null`이면 기존 기본 서비스(`LLM_BACKEND`가 정한 로컬 Qwen 또는 Claude API)를 사용합니다. 지정한 모델이 다운로드되어 있지 않으면 `422`를 반환합니다.
+STT 요약 프롬프트가 모델의 입력 토큰 상한을 넘으면 오류 대신 STT 세그먼트를 구간으로 나눠 요약한 뒤 하나로 통합하며, 이때 작업 상태에 `긴 강의를 구간별로 요약하고 있습니다. (i/n)`이 표시됩니다.
+
+`local_model`(선택)에 [로컬 모델 가이드](docs/local_models.md)의 선택 ID(예: `qwen3.5-9b`, `legacy-qwen`)를 지정하면 해당 요청만 그 모델로 처리합니다. 생략하거나 `null`이면 `LLM_BACKEND=local`에서는 기본 로컬 모델(`qwen3-vl-8b`)을, `LLM_BACKEND=claude`에서는 Claude API(LLM)와 로컬 Qwen2.5-VL(VLM)로 된 기본 서비스를 사용합니다. 사용할 로컬 모델이 다운로드되어 있지 않으면 `422`를 반환합니다.
 
 ### VLM 프레임 분석 요청
 
@@ -148,7 +156,7 @@ GPU 모델과 작업 상태가 프로세스 메모리에 저장되므로 운영 
 | `ocr_result` | JSON 파일 1개 | 프레임별 OCR 결과 배열 |
 | `frames` | JPG 파일 여러 개 | OCR의 `image_path` 파일명과 매칭할 프레임 |
 | `summary_level` | 문자열 | `simple` / `standard`(기본값) / `detailed` |
-| `local_model` | 문자열 (선택) | 이 요청에 사용할 로컬 모델 선택 ID. 생략 시 기본 서비스 사용 |
+| `local_model` | 문자열 (선택) | 이 요청에 사용할 로컬 모델 선택 ID. 생략 시 `LLM_BACKEND=local`이면 `qwen3-vl-8b`, `claude`면 기본 서비스 사용 |
 
 PowerShell 요청 예시:
 
@@ -173,9 +181,9 @@ curl.exe -X POST "http://localhost:8000/vlm/summarize" `
 | `stt_summary` | TXT 파일 1개 (선택) | STT 전체 요약 텍스트. 생략하면 `stt_summary_result`의 `summary` 필드를 대신 사용 |
 | `vlm_summary` | TXT 파일 1개 (선택) | VLM 전체 요약 텍스트 |
 | `summary_level` | 문자열 | `simple` / `standard`(기본값) / `detailed` |
-| `local_model` | 문자열 (선택) | 이 요청에 사용할 로컬 모델 선택 ID. 생략 시 기본 서비스 사용 |
+| `local_model` | 문자열 (선택) | 이 요청에 사용할 로컬 모델 선택 ID. 생략 시 `LLM_BACKEND=local`이면 `qwen3-vl-8b`, `claude`면 기본 서비스 사용 |
 
-VLM 결과 중 강사 화면처럼 강의 내용이 없는 프레임은 최종 요약 입력에서 제외되며, 남는 화면 자료가 없어도 오류 없이 STT 요약만으로 최종 요약을 만듭니다.
+VLM 결과 중 강사 화면처럼 강의 내용이 없는 프레임은 최종 요약 입력에서 제외되며, 남는 화면 자료가 없어도 오류 없이 STT 요약만으로 최종 요약을 만듭니다. 최종 요약 입력에 넣는 STT 중요 구간은 `summary_level`별로 최대 `simple` 8개, `standard` 12개, `detailed` 16개이며 넘으면 시간순으로 고르게 추립니다. `qwen3-vl-8b`는 STT·VLM 입력 텍스트를 각각 4000자(기본 5000자)로 줄여 넣습니다.
 
 완료된 작업의 `result`는 마크다운 최종 요약(`final_summary`)과 강의 노트 JSON(`lecture_note`)을 함께 담습니다. 모델 출력을 JSON으로 읽지 못하면 오류 내용을 덧붙여 한 번 더 요청하고, 그래도 실패하면 마크다운 프롬프트로 대체하며 이때 `lecture_note`는 `null`입니다. 타임라인은 HH:MM:SS가 아닌 초 단위 숫자입니다.
 
@@ -193,12 +201,13 @@ VLM 결과 중 강사 화면처럼 강의 내용이 없는 프레임은 최종 �
       {"type": "수식", "title": "갱신식", "start": 95.0, "end": null, "content": ["..."], "meaning": "..."}
     ],
     "conclusion": ["..."],
+    "emphasis": ["..."],
     "notices": []
   }
 }
 ```
 
-`final_summary`의 섹션 구성은 `## 핵심 주제`, `## 주요 용어`, `## 주요 내용`, `## 표/차트 기반 주요 정보`, `## 종합 결론`, `## 공지 사항`이며 내용이 없는 섹션은 생략됩니다. 자세한 검증·정규화 규칙은 [`services/README.md`](services/README.md#최종-요약)를 참고하세요.
+`emphasis`는 강사가 "중요하다", "시험에 나온다"처럼 강조한 내용, `notices`는 과제 제출·시험 일정·다음 수업 안내 같은 일정·행정 공지만 담습니다(공지에 섞인 강조 표현은 `emphasis`로 옮겨짐). `visuals[].type`은 표·그래프·수식·코드·도식·판서 중 하나이며 그 밖의 화면은 제외됩니다. `final_summary`의 섹션 구성은 `## 핵심 주제`, `## 주요 용어`, `## 주요 내용`, `## 표/차트 기반 주요 정보`, `## 종합 결론`, `## 강조 사항`, `## 공지 사항`이며 내용이 없는 섹션은 생략됩니다. 자세한 검증·정규화 규칙은 [`services/README.md`](services/README.md#최종-요약)를 참고하세요.
 
 ### 작업 상태 조회
 
@@ -257,10 +266,17 @@ VLM 결과 중 강사 화면처럼 강의 내용이 없는 프레임은 최종 �
 |   |-- __init__.py
 |   |-- inference_config.py
 |   `-- local_models.py
+|-- benchmarks/
+|   |-- results/
+|   |-- e2e_pipeline_check.py
+|   |-- qwen3vl_context_bench.py
+|   |-- sdpa_backend_probe.py
+|   `-- sdpa_default_dispatch.py
 |-- docs/
 |   `-- local_models.md
 |-- models/
 |   |-- __init__.py
+|   |-- attention.py
 |   |-- claude_llm_loader.py
 |   |-- llm_loader.py
 |   |-- minicpm_loader.py
@@ -281,8 +297,11 @@ VLM 결과 중 강사 화면처럼 강의 내용이 없는 프레임은 최종 �
 |-- tests/
 |   |-- test_backend_health.py
 |   |-- test_claude_api.py
+|   |-- test_lecture_rules.py
 |   |-- test_local_models.py
-|   `-- test_model_load_metrics.py
+|   |-- test_model_load_metrics.py
+|   |-- test_profile_limits.py
+|   `-- test_stt_sections.py
 |-- .gitignore
 |-- README.md
 |-- requirements-local.txt
@@ -336,6 +355,7 @@ Hugging Face 모델의 로딩, 추론과 GPU 메모리 해제를 담당합니다
 | `vlm_loader.py` | Qwen2.5-VL 모델과 프로세서 로드, 이미지 분석, 모델 해제 |
 | `claude_llm_loader.py` | Anthropic API 기반 LLM 로더. `llm_loader.py`와 동일한 인터페이스 제공 |
 | `multimodal_loader.py` | 신규 로컬 멀티모달 모델(Qwen3.5, Qwen3-VL, Gemma4, InternVL3.5, GLM-4.6V) 공용 로더. 4비트 양자화된 단일 체크포인트를 텍스트/이미지 단계에 함께 사용 |
+| `attention.py` | GQA 모델을 메모리 효율 SDPA 커널로 실행하는 `sdpa_no_gqa` attention 구현(`qwen3-vl-8b`가 사용) |
 | `minicpm_loader.py` | MiniCPM-V 4.5 전용 로더. 서버와 다른 Transformers 버전이 필요해 별도 서브프로세스(worker)로 격리 실행 |
 
 이 로더들은 모두 모델을 지연 로딩하며, `unload()` 호출 시 참조 제거와 CUDA 캐시 정리를 수행합니다.
@@ -348,10 +368,23 @@ Hugging Face 모델의 로딩, 추론과 GPU 메모리 해제를 담당합니다
 
 | 파일 | 역할 |
 | --- | --- |
-| `llm_service.py` | 강의용 STT 요약 프롬프트, 중요 구간 추출, 세그먼트 분할과 결과 파싱(모델 시간을 입력 구간에 맞춰 보정) |
+| `llm_service.py` | 강의용 STT 요약 프롬프트(입력 상한을 넘으면 구간별 요약 후 통합), 중요 구간 추출, 세그먼트 분할과 결과 파싱(모델 시간을 입력 구간에 맞춰 보정) |
 | `vlm_service.py` | OCR 결과 파싱, 다중 프레임 매칭, 4줄 구조화 VLM 프롬프트와 `vlm_fields` 파싱 |
 | `final_service.py` | STT/VLM 요약을 종합한 강의 노트 JSON 생성·검증과 마크다운 변환(JSON 실패 시 재요청·마크다운 대체) |
-| `summary_service.py` | LLM/VLM 서비스 생성, 공용 GPU lock 공유, 상위 호출 인터페이스 제공. `local_model_manager.py`가 다른 로더를 주입할 수 있도록 생성자에서 `llm_loader`/`vlm_loader`를 선택적으로 받음 |
+| `summary_service.py` | LLM/VLM 서비스 생성, 공용 GPU lock 공유, 상위 호출 인터페이스 제공. `local_model_manager.py`가 다른 로더와 모델별 최종 요약 입력 한도를 주입할 수 있도록 생성자에서 `llm_loader`/`vlm_loader`/`max_stt_chars`/`max_vlm_chars`를 선택적으로 받음 |
+
+## Benchmarks 폴더
+
+`qwen3-vl-8b`의 입력 길이별 GPU 메모리·시간과 SDPA 커널 선택을 측정한 재현용 스크립트입니다. 서버 실행에는 필요하지 않으며 `gpu-server` 폴더에서 실행합니다. 같은 GPU를 쓰는 분석 서버는 측정 동안 중지합니다.
+
+| 파일 | 역할 |
+| --- | --- |
+| `qwen3vl_context_bench.py` | 운영 로더(`MultimodalLoader`)로 Qwen3-VL 8B를 로드해 attention 모드(`default`, `registered`, `cudnn`, `nogqa`, `flash`)별로 입력 길이에 따른 메모리·시간 측정. 모드마다 별도 프로세스에서, 남은 VRAM 안에서만 할당하도록 제한 |
+| `e2e_pipeline_check.py` | 실제 서버 코드 경로(`LocalModelManager` → `InferenceJobRunner` → 서비스 → `MultimodalLoader`)로 STT 요약 → VLM → 최종 강의 노트를 실행해 결과·메모리·모델 재로딩 여부 확인. `LOCAL_MODEL_ATTENTION=sdpa`와 `--cases rollback`으로 이전 설정도 확인 |
+| `sdpa_backend_probe.py` | 모델 없이 Qwen3-VL attention 모양의 합성 텐서로 SDPA 백엔드별 지원 여부와 메모리 확인 |
+| `sdpa_default_dispatch.py` | 커널을 강제하지 않은 기본 SDPA가 어떤 커널을 고르는지 Profiler로 확인 |
+
+결과는 `benchmarks/results/`에 저장됩니다. 측정값(JSONL)과 종단 간 검증 보고서(`e2e_*/report.json`)만 커밋하고, 실행 로그(`*.log`)와 요약 출력물은 `benchmarks/results/.gitignore`로 제외합니다. 주요 측정 수치는 [`models/README.md`](models/README.md#신규-로컬-멀티모달-모델-multimodalloader)를 참고하세요.
 
 ## GitHub 제외 항목
 
@@ -372,9 +405,9 @@ Hugging Face 모델의 로딩, 추론과 GPU 메모리 해제를 담당합니다
 
 ## 처리 흐름
 
-1. `app/server.py`가 요청을 검증하고(`local_model`이 있으면 다운로드 완료 여부 확인) 작업을 생성합니다.
+1. `app/server.py`가 요청을 검증하고(`local_model`이 없고 `LLM_BACKEND=local`이면 기본 로컬 모델 `qwen3-vl-8b`로 채운 뒤, 사용할 로컬 모델의 다운로드 완료 여부 확인) 작업을 생성합니다.
 2. `JobStore`가 작업 상태와 진행률을 메모리에 저장합니다.
-3. 단일 `ThreadPoolExecutor`가 `LocalModelManager.run()`을 통해 GPU 추론 작업을 순서대로 실행합니다. `local_model`이 지정되면 해당 모델 전용 `InferenceJobRunner`로 전환(필요 시 이전 모델 해제)하고, 없으면 기본 `InferenceJobRunner`를 사용합니다.
+3. 단일 `ThreadPoolExecutor`가 `LocalModelManager.run()`을 통해 GPU 추론 작업을 순서대로 실행합니다. `local_model`이 정해지면 해당 모델 전용 `InferenceJobRunner`로 전환(필요 시 이전 모델 해제)하고, 없으면(`LLM_BACKEND=claude`) 기본 `InferenceJobRunner`를 사용합니다.
 4. `InferenceJobRunner`가 `SummaryService`를 통해 LLM 또는 VLM 서비스를 호출합니다.
 5. 서비스가 입력을 정규화하고 프롬프트를 구성한 뒤 모델 로더에 전달합니다. 로더의 `load()` 호출은 `model_load_metrics.py`가 계측해 작업 상태의 `model_loads`에 기록합니다.
 6. 작업 완료 후 결과를 저장하고 기본 설정에서는 GPU 모델을 해제합니다.
@@ -385,7 +418,7 @@ Hugging Face 모델의 로딩, 추론과 GPU 메모리 해제를 담당합니다
 - `/health`는 서버 프로세스 상태만 확인하며 CUDA와 모델 로딩까지 검사하지 않습니다.
 - 작업 취소, 결과 영속화, 만료 작업 정리 기능은 현재 제공하지 않습니다.
 - `KEEP_LLM_LOADED=1` 또는 `KEEP_VLM_LOADED=1`은 재로딩 시간을 줄이지만 GPU 메모리를 계속 점유합니다.
-- LLM 입력 토큰이 `configs/inference_config.py`의 `LLM_INFERENCE_CONFIG.max_input_tokens`(기본 16000)를 초과하면 추론을 시작하지 않고 오류를 반환합니다.
+- 입력 토큰 상한은 `legacy-qwen`의 `LLMLoader`가 `LLM_INFERENCE_CONFIG.max_input_tokens`(16000), 신규 모델이 프로필의 `max_input_tokens`(16384, `LOCAL_MODEL_ATTENTION=sdpa`일 때 `qwen3-vl-8b`는 7000)입니다. STT 전체 요약은 상한을 넘으면 구간별 요약 후 통합하고, 그 밖의 단계는 상한을 넘으면 추론을 시작하지 않고 오류를 반환합니다. `qwen3-vl-8b`는 중요 구간 청크를 6000자 이하로, 최종 요약의 STT·VLM 입력을 각각 4000자 이하로 줄여 넣습니다.
 - LLM/VLM 추론 중 GPU 메모리가 부족(CUDA OOM)하면 캐시를 비우고 사용자에게 안내 메시지를 반환합니다. 이때 작업 상태의 `message`에는 일반 실패 메시지 대신 실제 오류 내용이 표시됩니다.
 
 ## 클라이언트 분석 방식 분리
@@ -405,11 +438,11 @@ GPU 전송은 CUDA 동기화까지 기다린 뒤 측정을 마칩니다. 작업 
 
 ## 로컬 모델 선택·다운로드
 
-신규 6개 모델과 기존 Qwen 조합을 선택할 수 있습니다. 설치와 검증은 [로컬 모델 가이드](docs/local_models.md)를 참고하세요.
+신규 6개 모델과 기존 Qwen 조합을 선택할 수 있으며, `local_model`을 생략한 로컬 요청의 기본값은 `qwen3-vl-8b`입니다. 설치와 검증은 [로컬 모델 가이드](docs/local_models.md)를 참고하세요.
 
 ## 테스트
 
-`tests/`에는 GPU나 실제 모델 없이 동작하는 단위 테스트가 있습니다(`/health` 응답 형태, Claude 프록시 검증, 로컬 모델 카탈로그, 모델 로딩 계측). `pytest`는 `requirements.txt`에 포함되어 있지 않으므로 별도로 설치합니다.
+`tests/`에는 GPU나 실제 모델 없이 동작하는 단위 테스트가 있습니다(`/health` 응답 형태, Claude 프록시 검증, 로컬 모델 카탈로그, 모델 로딩 계측, 모델별 입력 한도, 긴 강의 구간 요약, 강조 사항·공지·판서 분류 규칙). 서비스 모듈을 불러오는 테스트(`test_lecture_rules.py`, `test_stt_sections.py`, `test_profile_limits.py` 일부)는 `transformers`가 없는 환경에서 건너뜁니다. `pytest`는 `requirements.txt`에 포함되어 있지 않으므로 별도로 설치합니다.
 
 ```powershell
 pip install pytest

@@ -23,7 +23,7 @@ from app.api_models import (
 from app.inference_jobs import InferenceJobRunner
 from app.local_model_api import router as model_router
 from app.local_model_manager import LocalModelManager
-from configs.local_models import require_downloaded
+from configs.local_models import DEFAULT_LOCAL_MODEL, require_downloaded
 from app.job_store import JobStore
 from app.server_logging import configure_logging
 from app.claude_api import router as claude_router, claude_api_configured
@@ -82,11 +82,15 @@ job_runner = InferenceJobRunner(
 model_manager = LocalModelManager(job_runner)
 
 def validate_local_model(model_id):
+    # local_model을 생략한 요청도 로컬 백엔드에서는 기본 로컬 모델로 처리합니다.
+    if model_id is None and os.getenv("LLM_BACKEND", "local").strip().lower() == "local":
+        model_id = DEFAULT_LOCAL_MODEL
     if model_id is not None:
         try:
             require_downloaded(model_id)
         except ValueError as error:
             raise HTTPException(422, str(error)) from error
+    return model_id
 
 job_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="summary-job")
 
@@ -120,7 +124,7 @@ def health_check():
     status_code=status.HTTP_202_ACCEPTED,
 )
 def summarize(request: SummaryRequest):
-    validate_local_model(request.local_model)
+    local_model = validate_local_model(request.local_model)
     stt_text = request.full_text.strip() or " ".join(
         segment.text.strip()
         for segment in request.segments
@@ -144,7 +148,7 @@ def summarize(request: SummaryRequest):
         len(request.segments),
         request.summary_level,
     )
-    job_executor.submit(model_manager.run, request.local_model, "run_summary", job_id, request.model_dump())
+    job_executor.submit(model_manager.run, local_model, "run_summary", job_id, request.model_dump())
     return JobSubmissionResponse(
         job_id=job_id,
         status="queued",
@@ -164,7 +168,7 @@ async def summarize_frames(
     summary_level: str = Form(default=DEFAULT_SUMMARY_LEVEL),
     local_model: str | None = Form(default=None),
 ):
-    validate_local_model(local_model)
+    local_model = validate_local_model(local_model)
     if not frames:
         raise HTTPException(status_code=422, detail="프레임 이미지가 필요합니다.")
     if len(frames) > VLM_INFERENCE_CONFIG.max_frame_count:
@@ -255,7 +259,7 @@ async def summarize_final(
     summary_level: str = Form(default=DEFAULT_SUMMARY_LEVEL),
     local_model: str | None = Form(default=None),
 ):
-    validate_local_model(local_model)
+    local_model = validate_local_model(local_model)
     try:
         preset = get_summary_level_preset(summary_level)
     except ValueError as error:

@@ -20,7 +20,7 @@
 | OCR | `ocr/ocr_pipeline.md` | `modules/ocr/ocr_extractor.py`, `modules/ocr/ocr_formatter.py` | 프레임 메타데이터 기반 OCR 실행 흐름 |
 | OCR | `ocr/ocr.md` | `modules/ocr/` | EasyOCR 처리 세부 구조 |
 | STT | `stt/stt.md` | `modules/stt/`, `scripts/run_stt.py` | Whisper 기반 음성 인식과 결과 저장 |
-| LLM/VLM | `llm/llm.md` | `modules/llm/`, `scripts/run_llm_summary.py`, `scripts/run_vlm_summary.py`, `scripts/run_final_summary.py` | GPU 서버 기반 요약 클라이언트, 공통 HTTP/job 폴링 로직(`gpu_job_client.py`) |
+| LLM/VLM | `llm/llm.md` | `modules/llm/`, `scripts/run_llm_summary.py`, `scripts/run_vlm_summary.py`, `scripts/run_final_summary.py` | GPU 서버 기반 요약 클라이언트, 공통 HTTP/job 폴링 로직(`gpu_job_client.py`), Claude API 경로(`claude_backend.py`)와 강의 노트 공통 규칙(`lecture_note.py`) |
 | Common | `common/common.md` | `modules/common/` | 기본 경로, JSON/YAML 로딩(`config.py`), 경로 탐색(`file_utils.py`), 진행률 보고(`progress.py`) 등 공통 유틸리티 |
 | Tests | `tests/tests.md` | `tests/` | pytest 테스트 파일 구성 |
 

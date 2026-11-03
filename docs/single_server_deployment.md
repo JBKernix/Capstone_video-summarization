@@ -38,7 +38,7 @@ mklink /J C:\capstone\gpu-server\.venv-minicpm C:\Summarization\.venv-minicpm
 start_all.bat            :: FastAPI + React 앱 서버 (로컬 전용)
 start_all.bat -Tunnel    :: + Cloudflare Tunnel (외부 접속)
 start_all.bat -Streamlit :: React 대신 기존 Streamlit 화면 (APP_UI=streamlit과 같음)
-stop_all.bat             :: start_all이 시작한 프로세스만 종료
+stop_all.bat             :: start_all이 시작한 프로세스 + 앱 포트(8501)의 앱 서버 종료
 stop_all.bat -TunnelOnly :: 터널만 종료 (외부 접속 차단, 서버는 유지)
 ```
 
@@ -54,7 +54,9 @@ stop_all.bat -TunnelOnly :: 터널만 종료 (외부 접속 차단, 서버는 �
 6. `-Tunnel`이면 비밀번호 설정을 확인한 뒤 `start_tunnel.ps1 -Detach` 실행
 7. 로컬/외부 접속 주소와 로그 위치 출력
 
-이미 실행 중인 서버를 종료하지 않습니다. 기존 창이 `0.0.0.0`에 바인딩되어 있으면 경고만 출력하므로,
+`stop_all`은 `runs\pids`에 기록된(start_all/start_tunnel이 시작한) 프로세스를 종료하고, 이어서 앱 포트(`APP_PORT`, 예전 이름 `STREAMLIT_PORT`, 기본 8501)에서 대기 중인 프로세스 중 명령줄이 앱 서버(`app.api.server` 또는 `streamlit`)인 것은 pid 기록이 없어도 종료합니다. 그대로 두면 `start_all`이 예전 코드로 떠 있는 앱 서버를 재사용하기 때문입니다. `-TunnelOnly`일 때는 앱 서버를 건드리지 않고, 직접 띄운 추론 서버(FastAPI)나 터널도 종료하지 않습니다.
+
+`start_all`은 이미 실행 중인 서버를 종료하지 않습니다. 기존 창이 `0.0.0.0`에 바인딩되어 있으면 경고만 출력하므로,
 FastAPI를 외부와 완전히 분리하려면 기존 서버 창을 직접 닫고 `start_all.bat`을 다시 실행하세요.
 
 실행 로그: `logs\launcher\*.log`(시작 스크립트·앱 서버 `app.err.log`/Streamlit `streamlit.err.log`), `gpu-server\logs\server.log`(FastAPI),

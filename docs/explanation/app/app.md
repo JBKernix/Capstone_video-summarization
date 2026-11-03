@@ -87,7 +87,7 @@ streamlit run app/main.py
    - 내부적으로 `yt-dlp` 사용, 확장자와 무관하게 항상 `.mp4`로 저장(기존 파일이 있으면 삭제 후 재다운로드)
    - 반환값은 `(저장 경로, 영상 제목)` 튜플이며 영상 제목은 유튜브 메타데이터의 실제 제목
    - `is_youtube_url(url)`로 링크 형식을 먼저 검증
-4. 업로드 박스 옆 "⚙️ 분석 설정" 박스에서 분석 방식(로컬 모델 서버/Claude API), 로컬 모델, Whisper 음성 인식(간단 small / 기본 medium / 상세 large)을 선택 (`app/analysis_options.py`, 기본값 `standard`). 세 Whisper 설정 모두 OCR·VLM을 실행하며 Whisper 크기만 다릅니다. 분석 진행 중에는 비활성화됩니다. 자세한 내용은 [분석 방식 설정](../../analysis_backends.md)을 참고하세요.
+4. 업로드 박스 옆 "⚙️ 분석 설정" 박스에서 분석 방식(로컬 모델 서버/Claude API), 로컬 모델, Whisper 음성 인식(간단 small / 기본 medium / 상세 large)을 선택 (`app/analysis_options.py`, 기본값 `standard`, 로컬 모델 기본값은 `DEFAULT_LOCAL_MODEL` = Qwen3-VL 8B). 세 Whisper 설정 모두 OCR·VLM을 실행하며 Whisper 크기만 다릅니다. 분석 진행 중에는 비활성화됩니다. 자세한 내용은 [분석 방식 설정](../../analysis_backends.md)을 참고하세요.
 5. `app/pipeline_process.py`의 `launch_pipeline()`이 `scripts/run_pipeline.py --video <저장된 경로> --summary-level <선택값> --run-dir runs/jobs/<run_id> ...`을 `subprocess.Popen`으로 실행. 서버 전체에서 한 번에 하나만 실행하며(`run_registry.start_job`), 다른 분석이 진행 중이면 시작 버튼이 비활성화됩니다 (`--skip-stt` 옵션은 비활성화되어 있어 STT는 항상 실행됨)
 6. stdout/stderr를 `runs/history/<run_id>/process.log`에 저장 (UTF-8 강제: `PYTHONIOENCODING`/`PYTHONUTF8` 환경변수 설정)
 7. `app/pipeline_log.py`가 로그에서 `##PROGRESS##` 마커(JSON)와 Whisper STT의 tqdm 퍼센트 표시줄을 파싱해 "분석 절차" 영역의 7개 단계별 원형 아이콘을 실시간으로 갱신

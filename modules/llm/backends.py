@@ -9,7 +9,7 @@ from urllib.parse import urlsplit
 import requests
 
 from modules.llm import GPU_SERVER_URL
-from modules.llm.local_models import DEFAULT_LOCAL_MODEL, LOCAL_MODEL_LABELS
+from modules.llm.local_models import DEFAULT_LOCAL_MODEL, LEGACY_LOCAL_MODEL, LOCAL_MODEL_LABELS
 
 BACKEND_LABELS = {"local": "로컬 모델 서버", "claude": "Claude API (Haiku)"}
 DEFAULT_CLAUDE_MODEL = "claude-haiku-4-5"
@@ -62,7 +62,8 @@ class BackendOptions:
                     "vision_model": checkpoints[-1]["repo"] if checkpoints else self.local_model,
                     "local_model_precision": model.get("precision"), "model_checkpoints": checkpoints,
                     "local_server_url": self.local_server_url}
-        if self.local_model != DEFAULT_LOCAL_MODEL:
+        # 모델 선택을 지원하지 않는 예전 서버는 기존 Qwen 조합만 실행하므로 그 외 선택은 거부합니다.
+        if self.local_model != LEGACY_LOCAL_MODEL:
             raise RuntimeError("서버가 모델 선택을 지원하지 않습니다. gpu-server 수정본을 적용하고 재시작하세요.")
         if not isinstance(health, dict) or health.get("llm_backend") != "local" or health.get("vlm_backend") != "local":
             raise RuntimeError("로컬 모델 서버인지 확인할 수 없습니다. 제공된 gpu-server 수정본을 적용하고 LLM_BACKEND=local로 서버를 재시작하세요.")

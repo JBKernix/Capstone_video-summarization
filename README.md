@@ -95,7 +95,7 @@ temperature: 0.0
 beam_size:
 ```
 
-LLM/VLM/최종 요약은 `--analysis-backend local|claude`로 선택합니다. 로컬 모드는 `gpu-server/` 폴더의 Qwen 모델 서버를, API 모드는 같은 분석 서버를 거쳐 Claude Haiku를 사용합니다. 키는 서버 컴퓨터의 `ANTHROPIC_API_KEY` 환경변수에서만 읽습니다. 서버 업데이트 방법은 [분석 방식 설정](docs/analysis_backends.md)을 참고하세요.
+LLM/VLM/최종 요약은 `--analysis-backend local|claude`로 선택합니다. 로컬 모드는 `gpu-server/` 폴더의 로컬 모델 서버(기본 모델 Qwen3-VL 8B, `--local-model`로 변경)를, API 모드는 같은 분석 서버를 거쳐 Claude Haiku를 사용합니다. 두 모드 모두 같은 강의용 프롬프트로 같은 형식의 강의 노트 JSON(`lecture_note`)을 만듭니다(로컬 모델이 JSON을 만들지 못하면 마크다운 요약으로 대체). 키는 서버 컴퓨터의 `ANTHROPIC_API_KEY` 환경변수에서만 읽습니다. 서버 업데이트 방법은 [분석 방식 설정](docs/analysis_backends.md)을 참고하세요.
 
 ## React 앱 실행 (기본)
 
@@ -133,7 +133,7 @@ python -m uvicorn app.api.server:app --host 127.0.0.1 --port 8501
 | `/dev/saved` | 저장된 요약 목록·확인·삭제 |
 | `/dev/history` | 실행 이력과 성능 지표 |
 
-- 일반 사용자는 분석 방식(로컬 모델 / Claude API)을 고를 수 없습니다. 개발자 화면의 분석 설정에서 `사용자 화면에 적용`을 누른 방식이 쓰이며(`runs/user_defaults.json`), 지정 전에는 로컬 기본 모델을 씁니다.
+- 일반 사용자는 분석 방식(로컬 모델 / Claude API)을 고를 수 없습니다. 개발자 화면의 분석 설정에서 `사용자 화면에 적용`을 누른 방식이 쓰이며(`runs/user_defaults.json`), 지정 전에는 로컬 기본 모델(Qwen3-VL 8B)을 씁니다.
 - 실행 이력·모델 상태·분석 로그 API는 개발자 모드에서만 응답합니다.
 
 - 입장 비밀번호는 선택 사항입니다. `APP_PASSWORD` 환경변수 또는 `.streamlit/secrets.toml`의 `APP_PASSWORD`를 설정하면 모든 접속에 로그인 화면이 나오고, 설정하지 않으면 로컬·Cloudflare Tunnel 외부 접속 모두 로그인 없이 사용자 화면으로 들어갑니다(개발자 화면은 항상 개발자 비밀번호 필요).

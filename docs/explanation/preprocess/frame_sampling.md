@@ -76,9 +76,9 @@ sample_frames()
 python scripts/run_pipeline.py --video data/input/sample.mp4 --method representative --max-frames-per-segment 4
 ```
 
-1. 구간마다 `_segment_candidates()`가 ffmpeg 한 번으로 후보를 뽑습니다. `-ss <시작> -t <길이>`를 입력 옵션으로 두고 `fps=1/2,mpdecimate,showinfo` 필터를 써서, 2초 간격 후보 중 직전에 남긴 후보와 거의 같은 화면은 버립니다(A→B→A처럼 돌아온 화면은 다시 남습니다). showinfo 시각은 구간 시작 기준이라 구간 시작 시각을 더합니다.
+1. 구간마다 `_segment_candidates()`가 ffmpeg 한 번으로 후보를 뽑습니다. `-ss <시작> -t <길이>`를 입력 옵션으로 두고 `fps=1/2,mpdecimate,showinfo` 필터를 써서, 2초 간격 후보 중 직전에 남긴 후보와 거의 같은 화면은 버립니다(A→B→A처럼 돌아온 화면은 다시 남습니다). showinfo 시각은 구간 시작 기준이라 구간 시작 시각을 더합니다. 구간이 후보 간격(`candidate_interval_seconds`, 2초)보다 짧으면 ffmpeg를 실행하지 않고 후보 없이 넘어갑니다(fps 필터가 0장을 내면 FFmpeg가 인코더를 열지 못해 실패하기 때문).
 2. 후보가 `max_frames_per_segment`(기본 4)장을 넘으면 `_select_evenly()`가 처음과 끝을 포함해 시간상 고르게 줄입니다.
-3. 후보가 하나도 없으면(구간이 영상 끝을 넘는 등) `_extract_single_frame()`으로 구간 가운데 시점 한 장을 씁니다. 그것도 실패하면 구간을 건너뜁니다.
+3. 후보가 하나도 없으면(짧은 구간, 구간이 영상 끝을 넘는 등) `_extract_single_frame()`으로 구간 가운데 시점 한 장을 씁니다. 그것도 실패하면 구간을 건너뜁니다.
 4. 남긴 후보는 `frame_000001.jpg`처럼 전체 순번으로 이름을 바꾸고, 나머지 후보 파일(`_candidate_*.jpg`)은 지웁니다.
 
 - **시간 구간 미지정**: 영상 전체를 `FULL_VIDEO_WINDOW_SECONDS`(60초) 길이로 나눈 구간마다 같은 방식으로 처리합니다. 영상 길이를 알 수 없으면 interval 방식으로 대신합니다.

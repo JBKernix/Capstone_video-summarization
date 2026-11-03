@@ -149,7 +149,7 @@ runs/vlm/vlm_summary_result.json
 }
 ```
 
-VLM 서버 응답 필드는 서버 구현에 따라 추가될 수 있습니다. 클라이언트는 각 결과 항목이 객체인지 검증합니다.
+VLM 서버 응답 필드는 서버 구현에 따라 추가될 수 있습니다. 클라이언트는 각 결과 항목이 객체인지 검증합니다. gpu-server의 VLM 프롬프트와 Claude 경로는 `vlm_summary`를 `화면 유형:`·`제목:`·`핵심 내용:`·`수식·코드·수치:` 4줄 형식으로 만들고, 이를 항목별로 나눈 `vlm_fields`(`{screen_type, title, content, formula, has_content, parsed}`, 형식을 읽지 못하면 `parsed: false`)를 함께 넣습니다. 최종 요약은 `vlm_fields`로 강사 화면처럼 내용이 없는 프레임을 빼고 입력할 화면을 고릅니다.
 
 ## 최종 요약 결과
 
@@ -181,6 +181,7 @@ runs/final/final_summary_result.json
       {"type": "표", "title": "...", "start": 1051.9, "end": 1066.9, "content": ["..."], "meaning": "..."}
     ],
     "conclusion": ["..."],
+    "emphasis": ["..."],
     "notices": []
   }
 }
@@ -191,9 +192,11 @@ runs/final/final_summary_result.json
 | `source` | object | 최종 요약 생성에 사용된 STT/VLM 요약 JSON 파일 경로 2개 (`scripts/run_final_summary.py`가 추가) |
 | `final_summary` | string | GPU 서버가 반환한 마크다운 텍스트 (`summary`와 동일한 내용) |
 | `summary` | string | 위와 동일한 마크다운 텍스트. `runs/final/final_summary.txt`에 그대로 저장됨 |
-| `lecture_note` | object 또는 null | GPU 서버가 만든 강의 노트 JSON. 서버가 모델 출력을 JSON으로 읽지 못해 마크다운 프롬프트로 대체했으면 `null`, 이전 서버 버전의 결과에는 키 자체가 없음 |
+| `lecture_note` | object 또는 null | GPU 서버(또는 Claude 경로)가 만든 강의 노트 JSON. 서버가 모델 출력을 JSON으로 읽지 못해 마크다운 프롬프트로 대체했으면 `null`, 이전 서버 버전의 결과에는 키 자체가 없음 |
 
-`lecture_note`의 필드는 `title`, `key_points`(1~3개), `terms`(`{term, definition}`), `chapters`(`{title, start, end, points, screen_notes}`), `visuals`(`{type, title, start, end, content, meaning}`, `type`은 표·그래프·수식·코드·도식·기타), `conclusion`, `notices`(과제·시험·공지)입니다. `start`/`end`는 초 단위 숫자이며, 서버가 입력 자료의 시간 범위를 벗어난 값을 `null`로 바꿉니다. 마크다운(`summary`)은 서버가 이 JSON에서 만든 것으로 `## 주요 용어`, `## 공지 사항` 섹션이 더 있을 수 있습니다. 클라이언트(`modules/llm/final_summarizer_client.py`)는 응답 필드를 그대로 보존하므로 이 키도 결과 JSON에 저장됩니다.
+`lecture_note`의 필드는 `title`, `key_points`(1~3개), `terms`(`{term, definition}`), `chapters`(`{title, start, end, points, screen_notes}`), `visuals`(`{type, title, start, end, content, meaning}`, `type`은 표·그래프·수식·코드·도식·판서), `conclusion`, `emphasis`(강사가 "시험에 나온다"·"중요하다" 등으로 강조한 내용), `notices`(과제 제출·시험 일정·다음 수업 안내 같은 일정·행정 공지)입니다. 모델이 강조 표현을 `notices`에 넣으면 `emphasis`로 옮깁니다. 이전 결과에는 `emphasis`가 없고 `visuals`의 `type`이 "기타"일 수 있습니다. `start`/`end`는 초 단위 숫자이며, 서버가 입력 자료의 시간 범위를 벗어난 값을 `null`로 바꿉니다. 마크다운(`summary`)은 서버가 이 JSON에서 만든 것으로 `## 주요 용어`, `## 강조 사항`, `## 공지 사항` 섹션이 더 있을 수 있습니다. 클라이언트(`modules/llm/final_summarizer_client.py`)는 응답 필드를 그대로 보존하므로 이 키도 결과 JSON에 저장됩니다.
+
+Claude API 경로(`--analysis-backend claude`, `modules/llm/claude_backend.py`의 `ClaudeFinalClient`)도 같은 규칙(`modules/llm/lecture_note.py`)으로 `lecture_note`를 만들고 그 JSON에서 `summary` 마크다운을 만듭니다. 이 경로의 결과 JSON은 `source`, `summary`, `lecture_note`, `warnings`(시간·개수·유형을 고친 내역)로, `final_summary` 키가 없고 `lecture_note`는 항상 객체입니다(두 번 시도해도 챕터가 없으면 오류).
 
 `summary` 마크다운은 보통 다음 순서의 `##` 섹션으로 구성됩니다(GPU 서버 프롬프트에 따라 달라질 수 있어 고정된 스키마는 아닙니다).
 

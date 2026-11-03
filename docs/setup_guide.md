@@ -169,7 +169,7 @@ python scripts/run_final_summary.py
 | 유튜브 영상 다운로드 실패 | 링크 형식(`is_youtube_url`), `yt-dlp` 설치 여부, 네트워크/영상 비공개 여부 |
 | 로그인 화면이 계속 나오거나 전혀 안 나옴 | `APP_PASSWORD` 환경변수와 `.streamlit/secrets.toml`의 `APP_PASSWORD` 값 확인 (React는 환경변수 우선) |
 | React 화면 대신 "React 빌드 결과가 없습니다" 오류 | `frontend`에서 `npm ci`·`npm run build` 실행 후 새로고침 |
-| `start_all`이 "포트 8501을 다른 프로그램이 사용 중" | Streamlit과 React 앱 서버는 같은 포트를 씀. 실행 중인 쪽을 `stop_all.bat` 또는 해당 창을 닫아 종료 |
+| `start_all`이 "포트 8501을 다른 프로그램이 사용 중" | Streamlit과 React 앱 서버는 같은 포트를 씀. 실행 중인 쪽을 `stop_all.bat`(앱 포트의 앱 서버는 pid 기록이 없어도 종료) 또는 해당 창을 닫아 종료 |
 | 화면 코드를 고쳤는데 반영되지 않음 | `frontend`에서 `npm run build` 다시 실행(앱 API 서버 재시작은 불필요) |
 | 결과 화면을 다시 열 수 없음 | 실행 산출물 보존 기간(`JOB_RETENTION_HOURS`, 72시간)이 지나 정리됨. 오래 볼 결과는 "영상과 요약 결과 저장" |
 | `start_tunnel.bat` 실행 후 URL을 못 찾음 | `cloudflared` PATH 설치 여부, `cloudflared.log` 내용 확인 |

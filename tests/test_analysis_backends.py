@@ -29,14 +29,22 @@ def test_local_mode_refuses_unverified_or_cloud_server(health):
     response = MagicMock()
     response.json.return_value = health
     with patch("modules.llm.backends.requests.get", return_value=response), pytest.raises(RuntimeError, match="LLM_BACKEND=local"):
-        BackendOptions().validate()
+        BackendOptions(local_model="legacy-qwen").validate()
+
+
+@pytest.mark.parametrize("local_model", ["qwen3-vl-8b", "gemma4-12b"])
+def test_old_server_without_model_selection_runs_only_legacy_qwen(local_model):
+    response = MagicMock()
+    response.json.return_value = {"llm_backend": "local", "vlm_backend": "local"}
+    with patch("modules.llm.backends.requests.get", return_value=response), pytest.raises(RuntimeError, match="모델 선택"):
+        BackendOptions(local_model=local_model).validate()
 
 
 def test_local_routes_only_to_configured_server():
     response = MagicMock()
     response.json.return_value = {"llm_backend": "local", "vlm_backend": "local", "llm_model": "Qwen3-8B"}
     with patch("modules.llm.backends.requests.get", return_value=response) as health:
-        with use_backend(BackendOptions(local_server_url="http://localhost:8000")) as metadata:
+        with use_backend(BackendOptions(local_server_url="http://localhost:8000", local_model="legacy-qwen")) as metadata:
             assert metadata["analysis_model"] == "Qwen3-8B"
             assert get_summary_client("stt").config.server_url == "http://localhost:8000"
             assert get_summary_client("vlm").config.server_url == "http://localhost:8000"

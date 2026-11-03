@@ -11,7 +11,8 @@ Hugging Face 모델의 로드, 입력 전처리, 생성 호출과 GPU 메모리 
 | `llm_loader.py` | Qwen3-8B | 토크나이저와 Causal LM 로드, 텍스트 생성 |
 | `claude_llm_loader.py` | Claude (Anthropic API) | Anthropic API 호출을 통한 텍스트 생성, `llm_loader.py`와 동일한 인터페이스 |
 | `vlm_loader.py` | Qwen2.5-VL-7B-Instruct | 프로세서와 VLM 로드, 이미지 기반 텍스트 생성 |
-| `multimodal_loader.py` | Qwen3.5-9B, Qwen3-VL-8B, Gemma4-12B, InternVL3.5-8B, GLM-4.6V-Flash | 4비트 양자화된 단일 체크포인트를 텍스트/이미지 단계에 공유하는 공용 로더 |
+| `multimodal_loader.py` | Qwen3.5-9B, Qwen3-VL-8B(기본 로컬 모델), Gemma4-12B, InternVL3.5-8B, GLM-4.6V-Flash | 4비트 양자화된 단일 체크포인트를 텍스트/이미지 단계에 공유하는 공용 로더 |
+| `attention.py` | (Qwen3-VL-8B) | GQA 모델을 메모리 효율 SDPA 커널로 실행하는 `sdpa_no_gqa` attention 구현과 등록 함수 |
 | `minicpm_loader.py` | MiniCPM-V 4.5 | `multimodal_loader.py`를 상속, 서버와 다른 Transformers 버전이 필요해 서브프로세스로 격리 실행 |
 | `hf_cache/` | 로컬 모델 파일 | Git에서 제외되는 모델 설정 및 가중치 저장소 |
 
@@ -67,7 +68,7 @@ VLMConfig(
 
 Qwen3의 긴 내부 추론 출력을 줄이기 위해 채팅 템플릿에서 `enable_thinking=False`를 사용합니다. 생성 결과에서는 입력 토큰을 제외하고 새로 생성된 토큰만 디코딩합니다.
 
-토큰화 후 입력 토큰 수가 `LLM_INFERENCE_CONFIG.max_input_tokens`(기본 16000)를 초과하면 `generate()`는 모델 호출 전에 `ValueError`를 발생시킵니다. 이 상한은 24GB급 GPU에서 입력 토큰 24054개로 CUDA OOM이 발생한 사례를 반영해 정상 운영 범위(약 9천~1만4천 토큰)보다 여유를 두고 설정되어 있습니다.
+`LLMLoader`는 `max_input_tokens` 속성과 `count_prompt_tokens(prompt)`(같은 채팅 템플릿 기준 토큰 수)를 제공해, `LLMService`가 긴 STT를 구간 요약으로 나눌지 미리 판단할 수 있게 합니다. 토큰화 후 입력 토큰 수가 `LLM_INFERENCE_CONFIG.max_input_tokens`(기본 16000)를 초과하면 `generate()`는 모델 호출 전에 `ValueError`를 발생시킵니다. 이 상한은 24GB급 GPU에서 입력 토큰 24054개로 CUDA OOM이 발생한 사례를 반영해 정상 운영 범위(약 9천~1만4천 토큰)보다 여유를 두고 설정되어 있습니다.
 
 ## VLM 입력 처리
 
@@ -83,17 +84,19 @@ Qwen3의 긴 내부 추론 출력을 줄이기 위해 채팅 템플릿에서 `en
 
 ## GPU 메모리 부족(OOM) 처리
 
-`LLMLoader.generate()`와 `VLMLoader.describe_image()`는 모델 호출을 `torch.OutOfMemoryError`에 대해 감싸고 있습니다. OOM이 발생하면 `torch.cuda.empty_cache()`로 캐시를 비운 뒤, 입력 토큰 수를 포함한 안내 메시지와 함께 `ValueError`로 다시 발생시킵니다. 이렇게 변환된 `ValueError`는 `app/inference_jobs.py`가 잡아 작업 상태의 `message`에 그대로 노출합니다.
+`LLMLoader.generate()`와 `VLMLoader.describe_image()`(그리고 `MultimodalLoader`의 생성 호출)는 모델 호출을 `torch.OutOfMemoryError`에 대해 감싸고 있습니다. OOM이 발생하면 `torch.cuda.empty_cache()`로 캐시를 비운 뒤, 입력 토큰 수를 포함한 안내 메시지와 함께 `ValueError`로 다시 발생시킵니다. 이렇게 변환된 `ValueError`는 `app/inference_jobs.py`가 잡아 작업 상태의 `message`에 그대로 노출합니다.
 
 ## 신규 로컬 멀티모달 모델 (MultimodalLoader)
 
-`multimodal_loader.py`는 `legacy-qwen`(Qwen3-8B + Qwen2.5-VL) 조합 대신 선택할 수 있는 신규 6개 프로필 중 MiniCPM을 제외한 5개(Qwen3.5, Qwen3-VL, Gemma4, InternVL3.5, GLM-4.6V)가 공통으로 사용하는 로더입니다. `LLMLoader`/`VLMLoader`처럼 모델을 두 개 따로 두지 않고, 텍스트 전용 요약과 이미지 설명 모두에 같은 4비트(NF4) 체크포인트 하나를 `load_text()`/`load_vision()`으로 재사용합니다.
+`multimodal_loader.py`는 `legacy-qwen`(Qwen3-8B + Qwen2.5-VL) 조합 대신 선택할 수 있는 신규 6개 프로필 중 MiniCPM을 제외한 5개(Qwen3.5, Qwen3-VL, Gemma4, InternVL3.5, GLM-4.6V)가 공통으로 사용하는 로더입니다. `LLM_BACKEND=local`에서 `local_model`을 생략한 요청의 기본 모델(`configs/local_models.py`의 `DEFAULT_LOCAL_MODEL` = `qwen3-vl-8b`)도 이 로더로 실행됩니다. `LLMLoader`/`VLMLoader`처럼 모델을 두 개 따로 두지 않고, 텍스트 전용 요약과 이미지 설명 모두에 같은 4비트(NF4) 체크포인트 하나를 `load_text()`/`load_vision()`으로 재사용합니다.
 
 - 모델 클래스는 `configs/local_models.py`의 `ModelProfile.architecture`(예: `Qwen3VLForConditionalGeneration`)로 `transformers`에서 동적으로 조회합니다. 설치된 Transformers 버전에 해당 클래스가 없으면 즉시 `RuntimeError`를 발생시킵니다.
 - `BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4", ...)`로 로딩 시점에 4비트 양자화하며, `trust_remote_code=False`로 고정되어 있습니다(공식 저장소의 커스텀 코드를 실행하지 않음).
-- 입력 토큰이 프로필의 `max_input_tokens`(기본 16384)를 넘으면 `LLMLoader`의 상한과 별개로 자체 `ValueError`를 발생시킵니다. `count_prompt_tokens()`로 같은 chat template 기준의 토큰 수를 미리 셀 수 있어, `LLMService`가 긴 STT를 구간 요약으로 나눌지 판단할 때 씁니다. CUDA OOM은 캐시를 비운 뒤 `ValueError`로 바꿔 작업 상태에 노출합니다.
+- 입력 토큰이 프로필의 `max_input_tokens`(모든 프로필 16384, `LOCAL_MODEL_ATTENTION=sdpa`일 때는 `sdpa_max_input_tokens`가 있으면 그 값)를 넘으면 `LLMLoader`의 상한과 별개로 자체 `ValueError`("입력이 너무 깁니다")를 발생시킵니다. `count_prompt_tokens()`로 같은 chat template 기준의 토큰 수를 미리 셀 수 있어, `LLMService`가 긴 STT를 구간 요약으로 나눌지 판단할 때 씁니다. CUDA OOM은 캐시를 비운 뒤 `ValueError`로 바꿔 작업 상태에 노출합니다.
 - attention 구현은 프로필의 `attn_implementation`을 따릅니다. `qwen3-vl-8b`는 `attention.py`의 `sdpa_no_gqa`를 씁니다. Windows용 PyTorch는 Flash 커널 없이 빌드되어 있고 mem-efficient 커널은 GQA(`enable_gqa`)를 지원하지 않아, 기본 `sdpa`는 Math 커널로 떨어져 메모리가 입력 길이의 제곱으로 늘었습니다(RTX 4090에서 7천 토큰 21.0GB, 8천 토큰 OOM). `sdpa_no_gqa`는 K/V를 query head 수만큼 복제한 뒤 호출해 mem-efficient 커널을 쓰며, 7천 토큰 7.6GB, 1.6만 토큰 9.8GB입니다. 근거와 재현 방법은 `benchmarks/qwen3vl_context_bench.py`에 있습니다.
-- 문제가 생기면 서버를 `LOCAL_MODEL_ATTENTION=sdpa`로 실행해 기본 SDPA와 이전 입력 상한(`sdpa_max_input_tokens`, Qwen3-VL은 7000)으로 되돌릴 수 있습니다.
+- `sdpa_no_gqa`를 쓰는 프로필을 로드할 때만 `attention.register()`로 transformers의 `AttentionInterface`/`AttentionMaskInterface`에 구현을 등록합니다(mask는 기본 `sdpa`와 같은 방식). 계산식은 같고 커널만 바뀝니다.
+- 문제가 생기면 서버를 `LOCAL_MODEL_ATTENTION=sdpa`로 실행해 기본 SDPA와 이전 입력 상한(`sdpa_max_input_tokens`, Qwen3-VL은 7000)으로 되돌릴 수 있습니다. 기본 SDPA에서 RTX 4090 24GB 측정값은 입력 4천 토큰 11.3GB, 8천 토큰 25.4GB(VRAM 초과로 시스템 메모리 사용), 1.6만 토큰 79.6GB였습니다.
+- `qwen3-vl-8b` 프로필은 로더 상한과 별개로 상위 단계 입력도 줄입니다: 중요 구간 청크 `segment_chunk_chars=6000`자, 최종 요약 STT·VLM 입력 `final_stt_chars`/`final_vlm_chars`=각 4000자. 이 값은 `app/local_model_manager.py`가 `InferenceJobRunner`/`SummaryService`에 전달하며, 다른 프로필은 `None`(프리셋·서비스 기본값 사용)입니다.
 - `gemma4-12b`는 `processor.parse_response()`로 응답을 파싱하고, 그 외 모델은 `<think>...</think>` 블록(비활성화한 thinking 모드가 완료된 채 출력된 경우)을 제거한 뒤 빈 응답이면 `ValueError`를 발생시킵니다.
 
 ## MiniCPM 서브프로세스 격리 (MiniCPMLoader)
@@ -108,7 +111,7 @@ MiniCPMLoader._load()
   -> 준비 완료 응답을 stdin/stdout JSON 한 줄 프로토콜로 대기
 ```
 
-`_generate()`는 프롬프트(및 있으면 PNG로 인코딩한 이미지)를 JSON 한 줄로 worker에 보내고 결과 텍스트를 받습니다. worker 응답이 없거나 타임아웃되면 `ValueError`로 변환하고 프로세스를 종료·재시작할 수 있도록 `unload()`합니다. worker 표준 에러는 `logs/minicpm-worker.log`에 남습니다. `MINICPM_PYTHON` 환경변수로 가상환경 Python 경로를 바꿀 수 있습니다.
+`_generate()`는 프롬프트(및 있으면 PNG로 인코딩한 이미지)를 JSON 한 줄로 worker에 보내고 결과 텍스트를 받습니다. worker 응답이 없거나 타임아웃되면 `ValueError`로 변환하고 프로세스를 종료·재시작할 수 있도록 `unload()`합니다. worker 표준 에러는 `logs/minicpm-worker.log`에 남습니다. `MINICPM_PYTHON` 환경변수로 가상환경 Python 경로를 바꿀 수 있습니다. 토크나이저가 worker 프로세스에 있어 `count_prompt_tokens()`는 `None`을 반환하며, `LLMService`는 글자 수로 토큰 수를 어림합니다.
 
 ## GPU 메모리 해제
 
@@ -149,7 +152,7 @@ python scripts\download_models.py --all
 
 ## 분석 LLM 백엔드 전환 (로컬 <-> Claude API)
 
-`services/llm_service.py`의 `_build_loader()`가 환경변수 `LLM_BACKEND`를 읽어 로더를 선택합니다.
+`services/llm_service.py`의 `_build_loader()`가 환경변수 `LLM_BACKEND`를 읽어 서버 시작 시 만드는 기본 서비스의 로더를 선택합니다. 이 기본 서비스는 `local_model` 없이 처리되는 요청에만 쓰이며, `LLM_BACKEND=local`(기본값)에서는 `local_model`을 생략해도 서버가 `qwen3-vl-8b`로 채우므로 실제로는 `LLM_BACKEND=claude`일 때만 사용됩니다.
 
 | 환경변수 | 기본값 | 설명 |
 | --- | --- | --- |
@@ -159,4 +162,4 @@ python scripts\download_models.py --all
 
 `ClaudeLLMLoader`는 `llm_loader.py`와 동일하게 `load()` / `unload()` / `generate(prompt, max_new_tokens)`를 제공하므로 `LLMService`와 `FinalService`는 백엔드가 로컬인지 API인지 알 필요가 없습니다. 다만 API 백엔드에는 GPU 자원이 없어 `unload()`는 클라이언트 참조만 제거하는 no-op이며, `KEEP_LLM_LOADED` 설정과 무관하게 동작합니다. Claude API 오류(인증 실패, 요청 한도 초과, 연결 실패, 안전 거부)는 로컬 모델의 CUDA OOM과 동일하게 `ValueError`로 변환되어 작업 상태의 `message`에 노출됩니다.
 
-VLM(`vlm_loader.py`)은 이 전환과 무관하게 항상 로컬 모델을 사용합니다.
+기본 서비스의 VLM(`vlm_loader.py`, Qwen2.5-VL)은 이 전환과 무관하게 항상 로컬 모델을 사용합니다.

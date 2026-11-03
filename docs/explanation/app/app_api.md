@@ -125,8 +125,8 @@ React 화면은 실행 중인 동안 `GET /api/runs/{run_id}`를 1초마다 호�
 
 `blocks` 형태에는 사용자용 강의노트(챕터 플레이어) 화면을 위한 `outline`도 함께 들어갑니다. 만드는 방법은 두 가지입니다.
 
-1. **강의 노트 JSON** — gpu-server 최종 요약 결과에 챕터가 있는 `lecture_note`가 있으면(`is_lecture_note`) 마크다운 파싱 없이 그 JSON으로 만듭니다(`_lecture_note_outline`). 이때 `structured` 판정보다 먼저 확인합니다. 시간이 없는 챕터·자료도 버리지 않고 `start: null`, `label: "시간 정보 없음"`으로 넘깁니다(화면은 재생 버튼만 숨김). `terms`·`notices`가 채워지고, 키워드는 `terms`의 용어를 먼저 쓴 뒤 아래 방식으로 채웁니다.
-2. **마크다운 파싱** — 그 외에는 `_outline`이 아래 규칙으로 마크다운 블록에서 만듭니다. 번호 매긴 타임라인 챕터가 하나도 없으면 `null`이고, `terms`·`notices`는 항상 빈 목록입니다.
+1. **강의 노트 JSON** — 최종 요약 결과(gpu-server 로컬 모델 또는 Claude 경로)에 챕터가 있는 `lecture_note`가 있으면(`is_lecture_note`) 마크다운 파싱 없이 그 JSON으로 만듭니다(`_lecture_note_outline`). 이때 `structured` 판정보다 먼저 확인합니다. 시간이 없는 챕터·자료도 버리지 않고 `start: null`, `label: "시간 정보 없음"`으로 넘깁니다(화면은 재생 버튼만 숨김). `terms`·`emphasis`·`notices`가 채워집니다. 강조 사항(`emphasis`)을 따로 받기 전에 저장된 결과는 공지에 "시험에 나온다"·"중요하다" 같은 강조 표현이 섞여 있으므로, `modules/llm/lecture_note.py`의 `EMPHASIS_IN_NOTICE`에 맞는 공지를 `emphasis`로 옮깁니다. 자료 유형이 "기타"(이전 결과)이면 유형 없이 넘기고, 제목이 없으면 "화면 자료"로 씁니다. 키워드는 `terms`의 용어를 먼저 쓴 뒤 아래 방식으로 채웁니다.
+2. **마크다운 파싱** — 그 외에는 `_outline`이 아래 규칙으로 마크다운 블록에서 만듭니다. 번호 매긴 타임라인 챕터가 하나도 없으면 `null`이고, `terms`·`emphasis`·`notices`는 항상 빈 목록입니다.
 
 | 필드 | 만드는 방법 |
 | --- | --- |
@@ -134,9 +134,10 @@ React 화면은 실행 중인 동안 `GET /api/runs/{run_id}`를 1초마다 호�
 | `key_points` | 제목에 "핵심"이 들어간 섹션(`## 핵심 주제`)의 목록. 없으면 결론 앞 3개 |
 | `keywords` | 요약에서 따옴표로 강조한 용어('스타실드' 등) + 음성 요약의 중요 구간 주제(`runs/jobs/<run_id>/llm/stt_summary_result.json`, 실행 결과에만 있음). 2~15자, 서로 겹치는 표현 제외, 최대 6개 |
 | `chapters` | 표/차트가 아닌 `items` 블록 항목. `{index, title, start, end, label, points, screen_notes, thumb_url, frames}`. "VLM 요약 자료에서는 …"으로 시작하는 항목은 접두어를 떼어 `screen_notes`로 분리. `thumb_url`은 챕터 구간의 대표 프레임(구간 안에 없으면 ±1초, 그래도 없으면 `null`), `frames`는 구간 안의 서로 다른 화면 목록 |
-| `visuals` | 표/차트 섹션 항목(`items` 항목 + `section`). 강의 노트 JSON에서 만들면 `kind`(표·그래프·수식·코드·도식)도 있고, `text`는 `content` 목록과 "강의에서의 의미" |
+| `visuals` | 표/차트 섹션 항목(`items` 항목 + `section`). 강의 노트 JSON에서 만들면 `kind`(표·그래프·수식·코드·도식·판서, 모르면 빈 문자열)도 있고, `text`는 `content` 목록과 "강의에서의 의미" |
 | `terms` | `{term, definition}` 목록(강의 노트 JSON에만 있음) |
-| `notices` | 과제·시험·공지 목록(강의 노트 JSON에만 있음) |
+| `emphasis` | 강사가 "시험에 나온다"·"중요하다" 등으로 강조한 내용 목록(강의 노트 JSON에만 있음) |
+| `notices` | 과제 제출·시험 일정·다음 수업 안내 같은 일정·행정 공지 목록(강의 노트 JSON에만 있음) |
 | `conclusion` | 제목에 "결론"이 들어간 섹션의 목록 |
 | `extras` | 위에 들지 않은 마크다운 |
 

@@ -33,6 +33,8 @@ LocalModelManager(기본 실행기)
 ThreadPoolExecutor(max_workers=1)
 ```
 
+기본 `InferenceJobRunner`는 `local_model` 없이 처리되는 요청(`LLM_BACKEND=claude`)에만 쓰이며, `LLM_BACKEND=local`에서는 `local_model`을 생략해도 기본 로컬 모델(`qwen3-vl-8b`)용 실행기로 처리됩니다([로컬 모델 카탈로그](#로컬-모델-카탈로그-local_model_apipy) 참고).
+
 `ThreadPoolExecutor`의 worker를 하나로 유지하여 LLM과 VLM 작업이 동시에 GPU를 점유하지 않도록 합니다. `SummaryService` 내부에서도 두 서비스가 하나의 lock을 공유하므로 직접 서비스 메서드를 호출하는 경우에도 추론은 직렬화됩니다.
 
 `app.include_router(claude_router)`와 `app.include_router(model_router)`로 `claude_api.py`, `local_model_api.py`의 라우트를 등록합니다. 세 라우트(`/llm/summarize`, `/vlm/summarize`, `/llm/final-summary`)는 이제 `job_executor.submit(job_runner.run_*, ...)` 대신 `job_executor.submit(model_manager.run, local_model, "run_*", ...)`로 제출되어, 요청의 `local_model` 값에 따라 실제로 어떤 실행기가 쓰일지 결정됩니다.
@@ -43,7 +45,7 @@ ThreadPoolExecutor(max_workers=1)
 
 ```text
 run(model_id, method, job_id, *args)
-  model_id is None
+  model_id is None  (LLM_BACKEND=claude에서 local_model을 생략한 경우)
     -> 캐시된 로컬 모델 실행기가 있으면 GPU 메모리 해제 후 기본 실행기로 복귀
     -> 기본 실행기로 method 호출
   model_id == 캐시된 모델
@@ -53,8 +55,11 @@ run(model_id, method, job_id, *args)
     -> 기존 실행기의 LLM/VLM GPU 메모리 해제
     -> model_id에 맞는 로더로 새 SummaryService/InferenceJobRunner 생성
        (legacy-qwen은 LLMLoader/VLMLoader, 그 외는 MultimodalLoader 또는 MiniCPMLoader)
+       (프로필의 입력 한도 segment_chunk_chars, final_stt_chars/final_vlm_chars 전달)
     -> 새 실행기를 캐시하고 method 호출
 ```
+
+프로필에 입력 한도가 있으면(현재 `qwen3-vl-8b`만 해당) 새 실행기와 서비스에 함께 넘깁니다. `InferenceJobRunner(segment_chunk_chars=6000)`는 중요 구간 청크 크기를 `min(프리셋 값, 프로필 값)`으로 줄이고, `SummaryService(max_stt_chars=4000, max_vlm_chars=4000)`는 최종 요약 입력의 STT·VLM 텍스트 상한(기본 5000자)을 줄입니다. 한도가 없는 프로필은 `None`이라 프리셋·서비스 기본값을 그대로 씁니다.
 
 전환 실패(다운로드 안 됨, 모델 로딩 오류 등)는 모두 잡아 작업을 `failed` 상태로 기록합니다. `run()`은 `job_executor`가 실행하는 단일 스레드 안에서만 호출되므로, 모델 전환 도중 다른 요청이 같은 GPU를 동시에 건드리지 않습니다. `legacy-qwen`이 아닌 로컬 모델은 `keep_llm_loaded=True`/`keep_vlm_loaded=True`로 실행되어, 같은 모델을 쓰는 다음 작업에서 재로딩 없이 재사용됩니다(모델을 바꿀 때만 명시적으로 해제).
 
@@ -65,7 +70,7 @@ run(model_id, method, job_id, *args)
 - `GET /models`: 각 모델의 `profile_status()`(준비 상태, precision, runtime, commit revision, 체크포인트별 파일 검증 결과)와 현재 다운로드 진행 상태(`download`)를 함께 반환합니다.
 - `POST /models/{model_id}/download`: 존재하지 않는 `model_id`면 `422`. 이미 큐에 있거나 다운로드 중이면 새로 시작하지 않고 현재 상태를 반환합니다. 그 외에는 별도의 단일 워커 `ThreadPoolExecutor`(추론 큐와는 별개)에 `download_profile()`을 제출하고 `202`로 접수만 응답합니다. 실제 다운로드 완료 여부는 다시 `GET /models`로 폴링해서 확인해야 합니다.
 
-`server.py`의 `validate_local_model()`은 `/llm/summarize`, `/vlm/summarize`, `/llm/final-summary` 요청에 `local_model`이 있으면 `configs.local_models.require_downloaded()`로 다운로드 완료 여부를 먼저 검사하고, 준비되지 않았으면 작업을 큐에 넣지 않고 바로 `422`를 반환합니다.
+`server.py`의 `validate_local_model()`은 `/llm/summarize`, `/vlm/summarize`, `/llm/final-summary` 요청의 `local_model`을 확정합니다. `local_model`이 없고 `LLM_BACKEND`가 `local`(기본값)이면 `configs.local_models.DEFAULT_LOCAL_MODEL`(`qwen3-vl-8b`)로 채웁니다. 확정된 모델이 있으면 `configs.local_models.require_downloaded()`로 다운로드 완료 여부를 먼저 검사하고, 준비되지 않았으면 작업을 큐에 넣지 않고 바로 `422`를 반환합니다. 반환한 모델 ID(`LLM_BACKEND=claude`에서 생략한 경우 `None`)가 `model_manager.run`에 그대로 전달됩니다. 기존 Qwen 체크포인트의 호환 검사는 `LEGACY_LOCAL_MODEL`(`legacy-qwen`) 프로필 기준입니다.
 
 ## 모델 로딩 계측
 
@@ -92,11 +97,11 @@ run(model_id, method, job_id, *args)
 
 ```text
 POST /llm/summarize
-  -> SummaryRequest 검증
+  -> SummaryRequest 검증, local_model 확정
   -> JobStore에 queued 작업 생성
   -> InferenceJobRunner.run_summary 제출
-  -> STT 요약
-  -> 중요 구간 추출
+  -> STT 요약 (입력 상한 초과 시 구간별 요약 -> 통합)
+  -> 중요 구간 추출 (청크당 최대 important_segments_per_chunk개)
   -> completed 또는 failed 상태 저장
 ```
 
@@ -119,7 +124,7 @@ POST /vlm/summarize
 POST /llm/final-summary
   -> STT/VLM 요약 파일 검증
   -> JobStore에 queued 작업 생성
-  -> InferenceJobRunner.run_final 제출
+  -> InferenceJobRunner.run_final 제출 (preset.final_important_segments 전달)
   -> SummaryService.summarize_final_note()
   -> JSON 읽기 실패 시도는 warning, 최종 format(json/markdown_fallback)은 info 로그
   -> FinalSummaryResponse(final_summary, lecture_note) 저장
@@ -129,7 +134,9 @@ POST /llm/final-summary
 
 ## 요약 레벨(summary_level)
 
-`server.py`의 세 라우트(`/llm/summarize`, `/vlm/summarize`, `/llm/final-summary`)는 더 이상 `max_new_tokens`를 직접 입력받지 않습니다. 대신 `summary_level`(`simple`/`standard`/`detailed`) 값을 `configs/inference_config.py`의 `get_summary_level_preset()`으로 조회해 단계별 `max_new_tokens`와 청크 크기를 한 번에 결정합니다. `simple` 프리셋은 `extract_important_segments=False`이므로 `run_summary`가 중요 구간 추출 단계 자체를 건너뜁니다.
+`server.py`의 세 라우트(`/llm/summarize`, `/vlm/summarize`, `/llm/final-summary`)는 더 이상 `max_new_tokens`를 직접 입력받지 않습니다. 대신 `summary_level`(`simple`/`standard`/`detailed`) 값을 `configs/inference_config.py`의 `get_summary_level_preset()`으로 조회해 단계별 `max_new_tokens`, 청크 크기, 청크당 중요 구간 개수(`important_segments_per_chunk`), 최종 요약에 넣을 중요 구간 개수(`final_important_segments`)를 한 번에 결정합니다. `simple` 프리셋은 `extract_important_segments=False`이므로 `run_summary`가 중요 구간 추출 단계 자체를 건너뜁니다. 프리셋 값은 [`services/README.md`](../services/README.md#요약-레벨summary_level-프리셋)의 표를 참고하세요.
+
+STT 요약이 입력 상한을 넘어 구간별로 처리되면 `run_summary`는 진행 콜백으로 작업 상태를 `긴 강의를 구간별로 요약하고 있습니다. (i/n)`, 마지막 단계에서 `구간별 요약을 하나로 통합하고 있습니다.`로 갱신하고 `current_step`/`total_steps`도 구간 수 기준으로 바꿉니다.
 
 ## 작업 상태
 
@@ -151,6 +158,7 @@ queued -> running -> completed
 ```text
 stt-summary-<12자리 식별자>
 vlm-summary-<12자리 식별자>
+final-summary-<12자리 식별자>
 ```
 
 ## VLM 업로드 제한
@@ -173,7 +181,7 @@ OCR 결과에 `image_path`가 있으면 경로의 파일명과 업로드된 파�
 - `KEEP_LLM_LOADED=1`: LLM 유지
 - `KEEP_VLM_LOADED=1`: VLM 유지
 
-기본값은 모두 해제입니다. 유지 설정은 다음 요청의 로딩 시간을 줄이지만 GPU 메모리를 계속 점유합니다.
+기본값은 모두 해제입니다. 유지 설정은 다음 요청의 로딩 시간을 줄이지만 GPU 메모리를 계속 점유합니다. 이 환경변수는 서버 시작 시 만든 기본 실행기에만 적용되며, `LocalModelManager`가 만드는 실행기는 `legacy-qwen`이면 항상 해제, 그 외 모델(기본 `qwen3-vl-8b` 포함)은 항상 유지합니다.
 
 ## 로깅
 

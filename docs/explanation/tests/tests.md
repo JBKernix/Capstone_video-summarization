@@ -25,7 +25,8 @@ cd gpu-server && python -m pytest   # 추론 서버 테스트
 | `tests/test_pipeline_history.py`, `tests/test_run_history.py`, `tests/test_model_load_history.py` | 실행 이력 기록(`metrics.json`)과 모델 로딩 지표 |
 | `tests/test_history_ui.py` | Streamlit 실행 이력 화면 |
 | `tests/test_auth.py`, `tests/test_analysis_options.py`, `tests/test_local_models.py` | Streamlit 로그인 게이트, 분석 설정 위젯, 로컬 모델 선택 |
-| `tests/test_analysis_backends.py` | 로컬/Claude 분석 방식 설정과 오류 처리 |
+| `tests/test_analysis_backends.py` | 로컬/Claude 분석 방식 설정과 오류 처리, Claude 경로의 강의용 프롬프트·중요 구간(`topic`/`reason`)·화면 분석 4항목·강의 노트 JSON 최종 요약 |
+| `tests/test_lecture_note.py` | 강의 노트 공통 규칙(`modules/llm/lecture_note.py`): 글자 수 줄 제거, 판서 자료 유지·자료가 아닌 유형 제외, 공지에 섞인 강조 표현을 `emphasis`로 분리 |
 
 `tests/conftest.py`는 모든 테스트에서 `app/run_registry.py`의 업로드·실행 폴더와 실행 슬롯 파일을 임시 폴더로 바꿔, 테스트가 실제 `runs/`·`data/`를 건드리지 않게 합니다.
 
@@ -65,8 +66,16 @@ pytest tests/test_summary_result.py
 - `test_sample_frames_defaults_to_representative`: `sample_frames()`의 기본 방식이 `sample_representative_frames()`이며 구간당 최대 장수(`DEFAULT_MAX_FRAMES_PER_SEGMENT`)를 넘김
 - `test_representative_sampling_caps_frames_per_segment`: 구간을 시간순으로 정렬하고 영상 길이를 넘는 끝을 자름, FFmpeg 필터에 `mpdecimate`(같은 화면 제거) 사용, 구간당 최대 장수 제한, 파일 이름·`sampling_method` 기록
 - `test_representative_sampling_falls_back_to_middle_frame`: 후보가 하나도 없으면 구간 가운데 시각의 프레임 한 장을 뽑음
+- `test_representative_sampling_uses_middle_frame_for_segment_shorter_than_interval`: 후보 간격보다 짧은 구간은 후보 추출 FFmpeg를 실행하지 않고 가운데 프레임 한 장을 씀
 
-이에 맞춰 `tests/test_pipeline.py`의 파이프라인 인자에 `max_frames_per_segment`가 추가되었고, `tests/test_pipeline_history.py`는 `--interval-seconds` 없이 기본(대표 프레임) 방식으로 실행합니다. 테스트용 단색 영상은 화면이 바뀌지 않아 구간에서 1장만 남으므로 `frames_extracted`·`ocr_success`가 1이고, Claude 파이프라인 테스트의 VLM 응답도 1장 기준입니다.
+이에 맞춰 `tests/test_pipeline.py`의 파이프라인 인자에 `max_frames_per_segment`가 추가되었고, `tests/test_pipeline_history.py`는 `--interval-seconds` 없이 기본(대표 프레임) 방식으로 실행합니다. 테스트용 단색 영상은 화면이 바뀌지 않아 구간에서 1장만 남으므로 `frames_extracted`·`ocr_success`가 1이고, Claude 파이프라인 테스트의 VLM 응답도 1장 기준입니다. 이 테스트의 Claude 모의 응답은 중요 구간 객체, 화면 분석 4항목, 강의 노트 JSON 형식입니다.
+
+## 실행 이력 쓰기 재시도 테스트
+
+`tests/test_run_history.py`는 `os.replace`를 모킹해 Windows에서 다른 프로세스가 `metrics.json`을 열고 있을 때를 흉내 냅니다.
+
+- `test_atomic_json_retries_while_destination_is_briefly_locked`: 잠시 `PermissionError`가 나면 다시 시도해 저장하고 임시 파일을 남기지 않음
+- `test_atomic_json_gives_up_when_destination_stays_locked`: 계속 잠겨 있으면 `REPLACE_RETRY_DELAYS`만큼 재시도한 뒤 마지막 시도의 `PermissionError`를 내고, 기존 파일은 그대로 두며 임시 파일은 지움
 
 ## 앱 API 테스트: 개발자 모드와 강의노트
 
@@ -84,7 +93,7 @@ pytest tests/test_summary_result.py
   - `test_result_outline_for_chapter_player`: 마크다운에서 제목·3줄 요약·키워드(따옴표 강조 용어 우선, 겹치는 중요 구간 주제 제외)·챕터(시작 시각순, 내용과 화면 분석 문장 분리, 썸네일)·표/차트 자료·결론을 만듦
   - `test_result_without_chapters_has_no_outline`: 타임라인 챕터가 없으면 `outline`이 `null`
   - `test_result_returns_every_distinct_frame_in_a_chapter`: 챕터 `frames`에 구간 안의 화면을 시간순으로 모두 담고 다음 구간 화면은 섞지 않음. 표/차트 자료는 표/차트로 분류된 화면만 담고 대표 화면은 그중 첫 장
-  - `test_result_outline_from_lecture_note_json`: 결과 JSON에 `lecture_note`가 있으면 `outline`을 그 JSON으로 만듦(개발자 화면용 `blocks`는 계속 마크다운에서). 용어·공지, 빈 용어·제목 없는 챕터 제외, 시간 없는 챕터(`start: null`, "시간 정보 없음", 썸네일·`frames` 없음), 자료 유형(`kind`)·내용·의미 텍스트 확인
+  - `test_result_outline_from_lecture_note_json`: 결과 JSON에 `lecture_note`가 있으면 `outline`을 그 JSON으로 만듦(개발자 화면용 `blocks`는 계속 마크다운에서). 용어·공지, 빈 용어·제목 없는 챕터 제외, 시간 없는 챕터(`start: null`, "시간 정보 없음", 썸네일·`frames` 없음), 자료 유형(`kind`)·내용·의미 텍스트 확인. 강조 사항(`emphasis`)과 공지에 섞인 강조 표현을 `emphasis`로 옮기는 것, 이전 결과의 "기타" 자료를 유형 없이 보여 주는 것도 확인
 
 ## 앱 결과 로더 테스트
 

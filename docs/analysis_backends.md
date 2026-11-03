@@ -92,10 +92,19 @@ python scripts/run_pipeline.py --video sample.mp4 --analysis-backend claude --se
 Claude의 응답 usage에서 입력·출력 토큰과 완료 API 응답 횟수도 누적합니다.
 이 값은 성공적으로 읽은 응답 기준이며, 실패한 요청의 과금 전체를 보장하는 청구 내역은 아닙니다.
 
+Claude 경로(`modules/llm/claude_backend.py`)의 프롬프트는 gpu-server의 강의용 프롬프트(음성 요약·화면 분석·최종 강의 노트)와 같은 규칙을 씁니다.
 긴 STT는 기존 서버와 같은 12,000자 기준으로 구간을 묶어 부분 요약 후 통합합니다.
+음성 요약은 `## 강의 요약` 형식(학습 주제·핵심 개념·강의 흐름·강조 사항·공지)이며, 모델이 덧붙인 "(총 1198자)" 같은 글자 수 줄은 지웁니다.
+중요 구간은 묶음마다 최대 3개를 주제(`topic`)·고른 이유(`reason`)와 함께 고릅니다.
 선정된 중요 구간의 시간은 원본 STT에서 가져오며 모델이 생성한 시간을 그대로 믿지 않습니다.
 프레임은 기존 클라이언트의 최대 8장 배치를 재사용하고 Claude 전송 전에 긴 변을 최대
-1,280픽셀로 줄입니다. 중요 음성 구간이 없으면 전체 영상에서 지정한 간격/장면 전환 방식으로
+1,280픽셀로 줄입니다. 프레임마다 화면 유형·제목·핵심 내용·수식·코드·수치를 받아 gpu-server VLM과 같은
+4줄 `vlm_summary`와 `vlm_fields`로 저장합니다.
+최종 통합은 gpu-server와 같은 강의 노트 JSON(`lecture_note`: 챕터·화면 자료·용어·결론·강조 사항·공지)을
+구조화 출력으로 받아 `modules/llm/lecture_note.py`의 규칙으로 검증·정리하고(입력에 없는 시간은 `null`, 개수 상한,
+공지에 섞인 강조 표현은 강조 사항으로 이동), 그 JSON에서 마크다운 요약을 만듭니다. 챕터가 없으면 한 번 더 요청하고
+그래도 없으면 오류입니다. 입력은 STT 요약 최대 20,000자와 화면 자료 최대 40개로 제한합니다.
+결과 형식은 [데이터 형식](data_format.md#최종-요약-결과)을 참고하세요. 중요 음성 구간이 없으면 전체 영상에서 지정한 간격/장면 전환 방식으로
 프레임을 추출하여 화면 분석을 계속합니다.
 
 ## 검증 범위
@@ -111,8 +120,9 @@ Claude의 응답 usage에서 입력·출력 토큰과 완료 API 응답 횟수�
 
 ## 로컬 모델 선택과 다운로드
 
-로컬 모드의 **로컬 분석 모델** 선택은 모든 요약 단계에 전달됩니다. 기본은 기존 Qwen 조합입니다.
-Qwen3.5 9B, Qwen3-VL 8B, Gemma 4 12B, MiniCPM-V 4.5, InternVL3.5 8B, GLM-4.6V-Flash를 추가했습니다.
+로컬 모드의 **로컬 분석 모델** 선택은 모든 요약 단계에 전달됩니다. 기본은 Qwen3-VL 8B(`qwen3-vl-8b`, `modules/llm/local_models.py`의 `DEFAULT_LOCAL_MODEL`)입니다.
+기존 Qwen 조합(Qwen3 8B + Qwen2.5-VL 7B, `legacy-qwen`) 외에 Qwen3.5 9B, Qwen3-VL 8B, Gemma 4 12B, MiniCPM-V 4.5, InternVL3.5 8B, GLM-4.6V-Flash를 고를 수 있습니다.
+앱 화면·CLI(`--local-model`)·요약 클라이언트에서 모델을 지정하지 않으면 이 기본값을 씁니다.
 GPU 서버에서 `python scripts/download_models.py --all`로 가중치를 미리 일괄 다운로드합니다.
 앱 업로드 화면의 **모델 설치 상태**에서는 설치 완료 여부를 확인합니다(React는 개발자 화면에서만 표시하며, 개발자 전용 앱 API `GET /api/models`가 추론 서버 `/models`를 대신 조회). 화면에 다운로드 버튼은 제공하지 않습니다.
 라이브러리 설치 및 전체 다운로드 명령은 `gpu-server/docs/local_models.md`를 참고하세요.
