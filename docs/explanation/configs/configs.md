@@ -45,7 +45,7 @@ CLI 옵션
 
 ```text
 --stt-model-size (CLI)
-  -> SUMMARY_LEVEL_STT_MODELS[summary_level]  (simple=base, standard=small, detailed=medium)
+  -> SUMMARY_LEVEL_STT_MODELS[summary_level]  (simple=small, standard=medium, detailed=large)
   -> configs/stt_config.yaml의 model_size
   -> modules/stt/whisper_stt.py fallback 기본값
 ```

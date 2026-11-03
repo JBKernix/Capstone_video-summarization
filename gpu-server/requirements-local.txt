@@ -1,0 +1,9 @@
+# Install CUDA PyTorch/torchvision matched to your server first.
+-r requirements.txt
+transformers==5.17.0
+bitsandbytes>=0.49,<1
+sentencepiece>=0.2,<1
+protobuf>=5,<7
+torchvision>=0.20
+filelock>=3.16,<4
+librosa>=0.11,<1

@@ -12,6 +12,10 @@
 | `modules/llm/stt_summarizer_client.py` | STT 결과 요약 및 주요 구간 추출 |
 | `modules/llm/vlm_summarizer_client.py` | OCR 결과와 프레임 이미지를 VLM 서버로 전송 |
 | `modules/llm/final_summarizer_client.py` | STT/VLM 요약 파일을 결합해 최종 요약 요청 |
+| `modules/llm/local_models.py` | 로컬 모델 ID와 라벨(`LOCAL_MODEL_LABELS`), 기본 모델(`DEFAULT_LOCAL_MODEL = "qwen3-vl-8b"`) |
+| `modules/llm/backends.py` | 분석 방식(로컬/Claude) 선택·사전 검사와 단계별 클라이언트 선택(`get_summary_client`) |
+| `modules/llm/claude_backend.py` | Claude API 경로의 세 클라이언트(`ClaudeSTTClient`, `ClaudeVLMClient`, `ClaudeFinalClient`). 분석 서버의 `/claude/messages`를 호출 |
+| `modules/llm/lecture_note.py` | 강의 노트(`lecture_note`) 공통 규칙. 화면 자료 선택, 모델 출력 검증·정리(`normalize_lecture_note`), 마크다운 변환(`render_note_markdown`) |
 | `scripts/run_llm_summary.py` | STT 요약 단독 실행 |
 | `scripts/run_vlm_summary.py` | VLM 요약 단독 실행 |
 | `scripts/run_final_summary.py` | 최종 요약 단독 실행 |
@@ -31,6 +35,7 @@ GPU_SERVER_URL = "http://100.124.136.28:8000"
 | `timeout` | `600`초 |
 | `poll_interval` | `10`초 |
 | `job_timeout` | `3600`초 |
+| `local_model` | `DEFAULT_LOCAL_MODEL`(`qwen3-vl-8b`) |
 
 ## 요약 레벨 (`modules/llm/summary_levels.py`)
 
@@ -38,15 +43,15 @@ GPU_SERVER_URL = "http://100.124.136.28:8000"
 
 | 값 | 라벨 | 설명 |
 | --- | --- | --- |
-| `simple` | 간단요약 | 핵심만 간략히, 속도 빠름 |
-| `standard` (기본값) | 기본요약 | 균형 잡힌 요약 |
-| `detailed` | 상세요약 | 자세히 요약, 속도 느림 |
+| `simple` | 간단 | Whisper small · 빠른 음성 인식 |
+| `standard` (기본값) | 기본 | Whisper medium · 속도와 정확도의 균형 |
+| `detailed` | 상세 | Whisper large · 가장 큰 음성 인식 모델, 처리 시간 증가 |
 
-> `SUMMARY_LEVELS`의 값은 GPU 서버(`gpu-server` 브랜치)의 `configs/inference_config.py::SUMMARY_LEVEL_PRESETS` 키와 반드시 동일해야 합니다. 실제 토큰 수/속도는 서버가 프리셋에 따라 결정하며, 클라이언트는 값만 전달합니다.
+> `SUMMARY_LEVELS`의 값은 GPU 서버(`gpu-server/configs/inference_config.py`)의 `SUMMARY_LEVEL_PRESETS` 키와 반드시 동일해야 합니다. 실제 토큰 수/속도는 서버가 프리셋에 따라 결정하며, 클라이언트는 값만 전달합니다.
 >
-> `simple`은 `standard`/`detailed`와 달리 영상(VLM) 분석 자체를 생략합니다. `scripts/run_pipeline.py`가 `simple`일 때 프레임 추출/OCR/VLM 단계를 아예 건너뛰고 STT 요약만 최종 요약으로 사용하기 때문입니다(아래 "최종 요약" 및 `pipeline.md` 참고). `SUMMARY_LEVEL_CAPTIONS`(업로드 페이지 안내 문구)도 이를 반영해 "영상 분석 생략"을 명시합니다.
+> 현재 사용자가 고르는 간단·기본·상세는 **Whisper 크기만** 정합니다(`preset_semantics: "whisper_only_v1"`). `scripts/run_pipeline.py`는 세 설정 모두 프레임 추출·OCR·VLM을 실행하고, 서버의 STT 요약·VLM 요약·최종 요약 요청에는 항상 `DEFAULT_SUMMARY_LEVEL`(`standard`)을 보냅니다. 단독 요약 스크립트의 `--summary-level`은 호환용으로 남아 있습니다. `SUMMARY_LEVEL_CAPTIONS`(업로드 화면 안내 문구)도 이를 반영합니다.
 
-`summary_levels.py`에는 `SUMMARY_LEVEL_STT_MODELS`(`simple`=`base`, `standard`=`small`, `detailed`=`medium`)도 정의되어 있습니다. GPU 서버 요청과는 무관하며, `--stt-model-size`를 지정하지 않았을 때 `run_pipeline.py`가 STT 단계의 Whisper 모델 크기를 요약 프리셋에 맞춰 고르는 데 사용합니다(자세한 우선순위는 [`pipeline.md`](../pipeline/pipeline.md) 참고).
+`summary_levels.py`의 `SUMMARY_LEVEL_STT_MODELS`(`simple`=`small`, `standard`=`medium`, `detailed`=`large`)는 `--stt-model-size`를 지정하지 않았을 때 `run_pipeline.py`가 STT 단계의 Whisper 모델 크기를 고르는 데 사용합니다(자세한 우선순위는 [`pipeline.md`](../pipeline/pipeline.md) 참고).
 
 ## STT 요약
 
@@ -150,7 +155,7 @@ runs/final/final_summary_result.json
 
 ### VLM 요약이 없을 때 (`write_stt_only_final_summary_step`)
 
-`scripts/run_final_summary.py`에는 서버를 호출하지 않는 `write_stt_only_final_summary_step(stt_summary_json_path, output_path, output_json_path=None)`도 있습니다. `scripts/run_pipeline.py`는 VLM 요약이 없으면(`--summary-level simple`이라 VLM 단계를 건너뛰었거나 `--skip-vlm`을 지정한 경우) 이 함수로 최종 통합 요약 API 호출 없이 STT 요약을 그대로 최종 요약으로 사용합니다. 이 경우 결과 JSON은 일반 경로와 필드 구성이 다릅니다.
+`scripts/run_final_summary.py`에는 서버를 호출하지 않는 `write_stt_only_final_summary_step(stt_summary_json_path, output_path, output_json_path=None)`도 있습니다. `scripts/run_pipeline.py`는 VLM 요약이 없으면(`--skip-ocr`/`--skip-vlm`을 지정한 경우) 이 함수로 최종 통합 요약 API 호출 없이 STT 요약을 그대로 최종 요약으로 사용합니다. 이 경우 결과 JSON은 일반 경로와 필드 구성이 다릅니다.
 
 ```json
 {
@@ -164,6 +169,24 @@ runs/final/final_summary_result.json
 ```
 
 `final_summary` 키가 없고 `source.mode`가 `"stt_only"`라는 점이 일반 경로(`run_final_summary_step`, 아래 데이터 형식 참고)와 다릅니다. STT 요약 자체가 비어 있으면(`summary` 필드가 빈 문자열) `ValueError`가 발생합니다.
+
+## Claude API 경로 (`claude_backend.py`, `lecture_note.py`)
+
+`--analysis-backend claude`이면 `get_summary_client()`가 세 클라이언트 대신 `ClaudeSTTClient`·`ClaudeVLMClient`·`ClaudeFinalClient`를 돌려줍니다. 각각 로컬 클라이언트를 상속해 입출력 파일과 진행률 보고는 같고, 서버 요청 부분만 Claude 구조화 출력(도구 입력 스키마)으로 바꿉니다. 프롬프트는 gpu-server의 강의용 프롬프트(`llm_service.py`, `vlm_service.py`, `final_service.py`)와 같은 규칙입니다(자세한 설정은 [분석 방식](../../analysis_backends.md)).
+
+| 클라이언트 | 결과 |
+| --- | --- |
+| `ClaudeSTTClient` | 12,000자 묶음마다 `## 강의 요약` 형식 요약과 중요 구간 최대 3개(`index`, `topic`, `reason`)를 받고 부분 요약을 통합. 중요 구간 시간은 입력 STT에서 가져옴. 글자 수 줄(`strip_char_count`)을 지움 |
+| `ClaudeVLMClient` | 프레임마다 `screen_type`(`SCREEN_TYPES` 중 하나)·`title`·`content`·`formula`를 받아 gpu-server와 같은 4줄 `vlm_summary`와 `vlm_fields` 저장 |
+| `ClaudeFinalClient` | STT 요약(최대 20,000자)·중요 구간·화면 자료(최대 40개)로 강의 노트 JSON(`LECTURE_NOTE_SCHEMA`)을 받아 `normalize_lecture_note()`로 정리하고 `{summary, lecture_note, warnings}` 반환. 챕터가 없으면 한 번 더 요청하고 그래도 없으면 `ValueError` |
+
+`lecture_note.py`는 gpu-server `services/final_service.py`·`vlm_service.py`의 순수 함수를 옮긴 것입니다(gpu-server 모듈은 torch를 함께 불러오므로 앱에서 직접 import하지 않음). 규칙을 바꾸면 두 곳을 함께 고쳐야 합니다.
+
+- `format_vlm_entries()`: 강사 화면처럼 내용이 없는 프레임을 빼고, 이어진 같은 제목 화면을 한 구간으로 합친 뒤, 많으면 구간별로 우선순위(수식·코드·표·그래프·도식 > 슬라이드·판서)가 높은 화면을 고릅니다.
+- `normalize_lecture_note()`: 입력 자료의 마지막 시간보다 5초 넘게 늦거나 잘못된 시간은 `null`, 빈 항목 제거, 항목별 개수 상한(`NOTE_LIMITS`), `visuals`는 표·그래프·수식·코드·도식·판서(`VISUAL_TYPES`)만 남깁니다. 공지에 섞인 강조 표현(`EMPHASIS_IN_NOTICE`, 예: "시험에 나온다", "중요하다")은 `emphasis`로 옮깁니다. 고친 내용은 `warnings`로 함께 돌려줍니다.
+- `render_note_markdown()`: JSON을 앱의 마크다운 파서가 읽는 형식(`## 핵심 주제`, `## 주요 용어`, `## 주요 내용`, `## 표/차트 기반 주요 정보`, `## 종합 결론`, `## 강조 사항`, `## 공지 사항`)으로 바꿉니다.
+
+앱 API(`app/api/summary.py`)도 이전 결과의 공지를 나눌 때 `EMPHASIS_IN_NOTICE`를 씁니다.
 
 ## 비동기 job 응답
 

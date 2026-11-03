@@ -103,10 +103,10 @@ runs/stt/stt_result.txt
 
 ## 진행률 보고 방식
 
-다른 파이프라인 단계(OCR, VLM 요약 등)는 `modules.common.progress.report_progress()`를 직접 호출해 진행률을 앱에 알립니다. `run_whisper_stt()`는 이런 호출을 하지 않습니다. 대신 Whisper 라이브러리가 `model.transcribe()` 실행 중 자체적으로 출력하는 tqdm 진행률 표시줄(예: `45%|████      | 12/27 [00:05<00:06]`)을 `app/pages/1_upload.py`가 로그에서 파싱해 `STEP_STT` 진행률로 변환합니다.
+다른 파이프라인 단계(OCR, VLM 요약 등)는 `modules.common.progress.report_progress()`를 직접 호출해 진행률을 앱에 알립니다. `run_whisper_stt()`는 이런 호출을 하지 않습니다. 대신 Whisper 라이브러리가 `model.transcribe()` 실행 중 자체적으로 출력하는 tqdm 진행률 표시줄(예: `45%|████      | 12/27 [00:05<00:06]`)을 `app/pipeline_log.py`가 로그에서 파싱해 `STEP_STT` 진행률로 변환합니다(React·Streamlit 화면 공통).
 
 ```python
-# app/pages/1_upload.py
+# app/pipeline_log.py
 STT_TQDM_PATTERN = re.compile(r"^\s*(\d{1,3})%\|")
 ...
 match = STT_TQDM_PATTERN.match(line)
