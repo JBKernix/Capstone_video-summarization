@@ -1,0 +1,316 @@
+import logging
+import time
+from contextlib import contextmanager
+from threading import Event, Thread
+from typing import Any, TYPE_CHECKING
+
+from app.api_models import FinalSummaryResponse, SummaryRequest, SummaryResponse
+from app.job_store import JobStore
+from configs.inference_config import get_summary_level_preset
+from app.model_load_metrics import collect_job_loads
+if TYPE_CHECKING:
+    from services.summary_service import SummaryService
+
+
+class InferenceJobRunner:
+    def __init__(
+        self,
+        summary_service: "SummaryService",
+        job_store: JobStore,
+        logger: logging.Logger,
+        keep_llm_loaded: bool = False,
+        keep_vlm_loaded: bool = False,
+        segment_chunk_chars: int | None = None,
+    ):
+        self.summary_service = summary_service
+        self.job_store = job_store
+        self.logger = logger
+        self.keep_llm_loaded = keep_llm_loaded
+        self.keep_vlm_loaded = keep_vlm_loaded
+        # 모델 프로필의 입력 한도에 맞춰 중요 구간 묶음을 프리셋보다 작게 할 때 씁니다.
+        self.segment_chunk_chars = segment_chunk_chars
+
+    @contextmanager
+    def log_stage(self, job_id: str, stage: str):
+        stop_event = Event()
+        stage_started = time.perf_counter()
+        self.logger.info("job_id=%s | stage=%s | 시작", job_id, stage)
+
+        def heartbeat() -> None:
+            while not stop_event.wait(10):
+                self.logger.info(
+                    "job_id=%s | stage=%s | 진행 중 | stage_elapsed=%.1fs | "
+                    "total_elapsed=%.1fs",
+                    job_id,
+                    stage,
+                    time.perf_counter() - stage_started,
+                    self.job_store.elapsed(job_id),
+                )
+
+        reporter = Thread(target=heartbeat, daemon=True)
+        reporter.start()
+        succeeded = False
+        try:
+            yield
+            succeeded = True
+        finally:
+            stop_event.set()
+            reporter.join()
+            self.logger.info(
+                "job_id=%s | stage=%s | %s | stage_elapsed=%.1fs | "
+                "total_elapsed=%.1fs",
+                job_id,
+                stage,
+                "완료" if succeeded else "중단",
+                time.perf_counter() - stage_started,
+                self.job_store.elapsed(job_id),
+            )
+
+    @collect_job_loads
+    def run_summary(self, job_id: str, request_data: dict[str, Any]) -> None:
+        try:
+            request = SummaryRequest.model_validate(request_data)
+            preset = get_summary_level_preset(request.summary_level)
+            stt_text = request.full_text.strip() or " ".join(
+                segment.text.strip()
+                for segment in request.segments
+                if segment.text.strip()
+            )
+            segment_data = [segment.model_dump() for segment in request.segments]
+
+            run_important_segments = preset.extract_important_segments and bool(segment_data)
+            chunk_chars = min(preset.segment_chunk_chars, self.segment_chunk_chars or preset.segment_chunk_chars)
+
+            self.job_store.update(
+                job_id,
+                status="running",
+                message="STT 전체 요약을 생성하고 있습니다.",
+                current_step=1,
+                total_steps=2 if run_important_segments else 1,
+            )
+            def report_stt_progress(task: str, index: int, total: int) -> None:
+                # 입력이 상한을 넘어 구간별로 요약할 때만 호출됩니다(마지막 단계가 통합).
+                message = (
+                    f"긴 강의를 구간별로 요약하고 있습니다. ({index}/{total - 1})"
+                    if task == "stt_sections"
+                    else "구간별 요약을 하나로 통합하고 있습니다."
+                )
+                self.job_store.update(job_id, message=message, current_step=index, total_steps=total)
+                self.logger.info(
+                    "job_id=%s | STT 구간 요약 | %s %d/%d | total_elapsed=%.1fs",
+                    job_id, task, index, total, self.job_store.elapsed(job_id),
+                )
+
+            with self.log_stage(job_id, "STT 전체 요약"):
+                summary = self.summary_service.summarize_stt(
+                    stt_text=stt_text,
+                    max_new_tokens=preset.stt_max_new_tokens,
+                    segments=segment_data,
+                    progress_callback=report_stt_progress,
+                )
+
+            important_segments = []
+            if run_important_segments:
+                chunks = self.summary_service.llm_service.split_segments(
+                    segment_data,
+                    max_chunk_chars=chunk_chars,
+                )
+
+                def report_progress(_task: str, index: int, total: int) -> None:
+                    self.job_store.update(
+                        job_id,
+                        message=f"중요 구간을 추출하고 있습니다. ({index}/{total})",
+                        current_step=index,
+                        total_steps=total,
+                    )
+                    self.logger.info(
+                        "job_id=%s | 중요 구간 묶음 시작 | chunk=%d/%d | "
+                        "total_elapsed=%.1fs",
+                        job_id,
+                        index,
+                        total,
+                        self.job_store.elapsed(job_id),
+                    )
+
+                self.job_store.update(
+                    job_id,
+                    message=f"중요 구간을 추출하고 있습니다. (0/{len(chunks)})",
+                    current_step=0,
+                    total_steps=len(chunks),
+                )
+                with self.log_stage(job_id, "중요 구간 추출"):
+                    important_segments = (
+                        self.summary_service.get_important_segments_in_chunks(
+                            stt_segments=segment_data,
+                            stt_summary=summary,
+                            max_new_tokens=preset.important_segments_max_new_tokens,
+                            max_segments=preset.important_segments_per_chunk,
+                            max_chunk_chars=chunk_chars,
+                            progress_callback=report_progress,
+                        )
+                    )
+
+            result = SummaryResponse(
+                summary=summary,
+                important_segments=important_segments,
+            )
+            self.job_store.update(
+                job_id,
+                status="completed",
+                message="요약과 중요 구간 추출이 완료되었습니다.",
+                result=result.model_dump(),
+                current_step=1,
+                total_steps=1,
+            )
+            self.logger.info(
+                "job_id=%s | 작업 완료 | total_elapsed=%.1fs | "
+                "important_segments=%d",
+                job_id,
+                self.job_store.elapsed(job_id),
+                len(important_segments),
+            )
+        except Exception as error:
+            self.logger.exception("요약 작업 실패: job_id=%s", job_id)
+            self.job_store.update(
+                job_id,
+                status="failed",
+                message=str(error) if isinstance(error, ValueError) else "추론 작업 중 오류가 발생했습니다.",
+                error=str(error),
+            )
+        finally:
+            if not self.keep_llm_loaded:
+                self.summary_service.unload_llm()
+                self.logger.info("job_id=%s | LLM GPU 메모리 해제 완료", job_id)
+
+    @collect_job_loads
+    def run_vlm(
+        self,
+        job_id: str,
+        ocr_entries: list[dict[str, Any]],
+        frame_data: list[bytes],
+        max_new_tokens: int,
+    ) -> None:
+        try:
+            total_frames = len(ocr_entries)
+
+            def report_progress(_task: str, index: int, total: int) -> None:
+                self.job_store.update(
+                    job_id,
+                    status="running",
+                    message=f"프레임을 분석하고 있습니다. ({index}/{total})",
+                    current_step=index,
+                    total_steps=total,
+                )
+                self.logger.info(
+                    "job_id=%s | VLM 프레임 분석 | frame=%d/%d | "
+                    "total_elapsed=%.1fs",
+                    job_id,
+                    index,
+                    total,
+                    self.job_store.elapsed(job_id),
+                )
+
+            self.job_store.update(
+                job_id,
+                status="running",
+                message=f"프레임을 분석하고 있습니다. (0/{total_frames})",
+                current_step=0,
+                total_steps=total_frames,
+            )
+            with self.log_stage(job_id, "VLM 프레임 분석"):
+                result = self.summary_service.summarize_frames(
+                    ocr_results=ocr_entries,
+                    frames=frame_data,
+                    max_new_tokens=max_new_tokens,
+                    progress_callback=report_progress,
+                )
+
+            self.job_store.update(
+                job_id,
+                status="completed",
+                message="프레임 분석이 완료되었습니다.",
+                result=result,
+                current_step=total_frames,
+                total_steps=total_frames,
+            )
+            self.logger.info(
+                "job_id=%s | VLM 작업 완료 | total_elapsed=%.1fs | frames=%d",
+                job_id,
+                self.job_store.elapsed(job_id),
+                total_frames,
+            )
+        except Exception as error:
+            self.logger.exception("VLM 작업 실패: job_id=%s", job_id)
+            self.job_store.update(
+                job_id,
+                status="failed",
+                message=str(error) if isinstance(error, ValueError) else "프레임 분석 중 오류가 발생했습니다.",
+                error=str(error),
+            )
+        finally:
+            if not self.keep_vlm_loaded:
+                self.summary_service.unload_vlm()
+                self.logger.info("job_id=%s | VLM GPU 메모리 해제 완료", job_id)
+
+    @collect_job_loads
+    def run_final(
+        self,
+        job_id: str,
+        stt_text: bytes | None,
+        stt_json: bytes | None,
+        vlm_text: bytes | None,
+        vlm_json: bytes | None,
+        max_new_tokens: int,
+        max_important_segments: int | None = None,
+    ) -> None:
+        try:
+            self.job_store.update(
+                job_id,
+                status="running",
+                message="최종 요약을 생성하고 있습니다.",
+                current_step=0,
+                total_steps=1,
+            )
+            with self.log_stage(job_id, "final summary"):
+                final_note = self.summary_service.summarize_final_note(
+                    stt_text=stt_text,
+                    stt_json=stt_json,
+                    vlm_text=vlm_text,
+                    vlm_json=vlm_json,
+                    max_new_tokens=max_new_tokens,
+                    max_important_segments=max_important_segments,
+                )
+            for attempt in final_note["attempts"]:
+                if attempt["error"]:
+                    self.logger.warning("job_id=%s | 강의 노트 JSON 읽기 실패: %s", job_id, attempt["error"])
+            self.logger.info("job_id=%s | final summary format=%s", job_id, final_note["format"])
+
+            result = FinalSummaryResponse(
+                final_summary=final_note["markdown"],
+                lecture_note=final_note["lecture_note"],
+            )
+            self.job_store.update(
+                job_id,
+                status="completed",
+                message="최종 요약 생성이 완료되었습니다.",
+                result=result.model_dump(),
+                current_step=1,
+                total_steps=1,
+            )
+            self.logger.info(
+                "job_id=%s | final summary completed | total_elapsed=%.1fs",
+                job_id,
+                self.job_store.elapsed(job_id),
+            )
+        except Exception as error:
+            self.logger.exception("Final summary job failed: job_id=%s", job_id)
+            self.job_store.update(
+                job_id,
+                status="failed",
+                message=str(error) if isinstance(error, ValueError) else "최종 요약 작업 중 오류가 발생했습니다.",
+                error=str(error),
+            )
+        finally:
+            if not self.keep_llm_loaded:
+                self.summary_service.unload_llm()
+                self.logger.info("job_id=%s | LLM GPU memory released", job_id)

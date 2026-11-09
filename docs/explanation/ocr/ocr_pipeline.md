@@ -36,7 +36,8 @@ runs/metadata/frame_metadata.json
     "frame_id": 0,
     "timestamp": 10.0,
     "image_path": "runs/frames/frame_000001.jpg",
-    "sampling_method": "interval"
+    "sampling_method": "representative",
+    "segment_id": 0
   }
 ]
 ```
@@ -56,6 +57,7 @@ runs/ocr/ocr_result.json
   {
     "frame_id": 0,
     "timestamp": 10.0,
+    "segment_id": 0,
     "image_path": "C:\\capstone\\Capstone_video-summarization\\runs\\frames\\frame_000001.jpg",
     "ocr_text": "인식된 화면 텍스트",
     "detected_language": "ko",

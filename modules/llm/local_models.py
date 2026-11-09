@@ -1,5 +1,7 @@
 """Stable profile IDs shared with the GPU server catalogue."""
-DEFAULT_LOCAL_MODEL = "legacy-qwen"
+DEFAULT_LOCAL_MODEL = "qwen3-vl-8b"
+# 모델 선택을 지원하지 않는 예전 서버가 실행하는 유일한 조합입니다.
+LEGACY_LOCAL_MODEL = "legacy-qwen"
 LOCAL_MODEL_LABELS = {
     "legacy-qwen": "기존 Qwen3 8B + Qwen2.5-VL 7B",
     "qwen3.5-9b": "Qwen3.5 9B",

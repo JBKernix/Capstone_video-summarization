@@ -1,0 +1,240 @@
+{
+  "attention_override": null,
+  "cases": {
+    "short_13min": {
+      "status": "completed",
+      "message": "요약과 중요 구간 추출이 완료되었습니다.",
+      "error": null,
+      "seconds": 89.5,
+      "peak_allocated_gib": 6.79,
+      "peak_reserved_gib": 6.99,
+      "allocated_after_gib": 5.96,
+      "model_loads": [
+        [
+          "llm",
+          "loaded",
+          14.784689
+        ],
+        [
+          "llm",
+          "reused",
+          0.0
+        ],
+        [
+          "llm",
+          "reused",
+          0.0
+        ],
+        [
+          "llm",
+          "reused",
+          0.0
+        ],
+        [
+          "llm",
+          "reused",
+          0.0
+        ],
+        [
+          "llm",
+          "reused",
+          0.0
+        ]
+      ],
+      "progress": [
+        "1/2 STT 전체 요약을 생성하고 있습니다.",
+        "0/4 중요 구간을 추출하고 있습니다. (0/4)",
+        "1/4 중요 구간을 추출하고 있습니다. (1/4)",
+        "2/4 중요 구간을 추출하고 있습니다. (2/4)",
+        "3/4 중요 구간을 추출하고 있습니다. (3/4)",
+        "4/4 중요 구간을 추출하고 있습니다. (4/4)",
+        "1/1 요약과 중요 구간 추출이 완료되었습니다."
+      ]
+    },
+    "lecture_33min": {
+      "status": "completed",
+      "message": "요약과 중요 구간 추출이 완료되었습니다.",
+      "error": null,
+      "seconds": 115.5,
+      "peak_allocated_gib": 7.87,
+      "peak_reserved_gib": 8.34,
+      "allocated_after_gib": 5.96,
+      "model_loads": [
+        [
+          "llm",
+          "reused",
+          0.0
+        ],
+        [
+          "llm",
+          "reused",
+          0.0
+        ],
+        [
+          "llm",
+          "reused",
+          0.0
+        ],
+        [
+          "llm",
+          "reused",
+          0.0
+        ],
+        [
+          "llm",
+          "reused",
+          0.0
+        ],
+        [
+          "llm",
+          "reused",
+          0.0
+        ],
+        [
+          "llm",
+          "reused",
+          0.0
+        ]
+      ],
+      "progress": [
+        "1/2 STT 전체 요약을 생성하고 있습니다.",
+        "0/6 중요 구간을 추출하고 있습니다. (0/6)",
+        "1/6 중요 구간을 추출하고 있습니다. (1/6)",
+        "2/6 중요 구간을 추출하고 있습니다. (2/6)",
+        "3/6 중요 구간을 추출하고 있습니다. (3/6)",
+        "4/6 중요 구간을 추출하고 있습니다. (4/6)",
+        "5/6 중요 구간을 추출하고 있습니다. (5/6)",
+        "6/6 중요 구간을 추출하고 있습니다. (6/6)",
+        "1/1 요약과 중요 구간 추출이 완료되었습니다."
+      ]
+    },
+    "long_73min": {
+      "status": "failed",
+      "message": "입력이 너무 깁니다: 26859 tokens (Qwen3-VL 8B Instruct 최대 16384). 더 짧은 영상으로 실행하세요.",
+      "error": "입력이 너무 깁니다: 26859 tokens (Qwen3-VL 8B Instruct 최대 16384). 더 짧은 영상으로 실행하세요.",
+      "seconds": 0.1,
+      "peak_allocated_gib": 5.97,
+      "peak_reserved_gib": 8.34,
+      "allocated_after_gib": 5.96,
+      "model_loads": [
+        [
+          "llm",
+          "reused",
+          0.0
+        ],
+        [
+          "llm",
+          "reused",
+          0.0
+        ]
+      ],
+      "progress": [
+        "1/2 STT 전체 요약을 생성하고 있습니다.",
+        "1/2 긴 강의를 구간별로 요약하고 있습니다. (1/1)",
+        "/ 입력이 너무 깁니다: 26859 tokens (Qwen3-VL 8B Instruct 최대 16384). 더 짧은 영상으로 실행하세요."
+      ]
+    },
+    "vlm": {
+      "status": "completed",
+      "message": "프레임 분석이 완료되었습니다.",
+      "error": null,
+      "seconds": 37.9,
+      "peak_allocated_gib": 6.28,
+      "peak_reserved_gib": 8.34,
+      "allocated_after_gib": 5.96,
+      "model_loads": [
+        [
+          "vlm",
+          "reused",
+          0.0
+        ],
+        [
+          "vlm",
+          "reused",
+          0.0
+        ],
+        [
+          "vlm",
+          "reused",
+          0.0
+        ],
+        [
+          "vlm",
+          "reused",
+          0.0
+        ],
+        [
+          "vlm",
+          "reused",
+          0.0
+        ],
+        [
+          "vlm",
+          "reused",
+          0.0
+        ],
+        [
+          "vlm",
+          "reused",
+          0.0
+        ],
+        [
+          "vlm",
+          "reused",
+          0.0
+        ]
+      ],
+      "progress": [
+        "0/8 프레임을 분석하고 있습니다. (0/8)",
+        "1/8 프레임을 분석하고 있습니다. (1/8)",
+        "2/8 프레임을 분석하고 있습니다. (2/8)",
+        "3/8 프레임을 분석하고 있습니다. (3/8)",
+        "4/8 프레임을 분석하고 있습니다. (4/8)",
+        "5/8 프레임을 분석하고 있습니다. (5/8)",
+        "6/8 프레임을 분석하고 있습니다. (6/8)",
+        "7/8 프레임을 분석하고 있습니다. (7/8)",
+        "8/8 프레임을 분석하고 있습니다. (8/8)",
+        "8/8 프레임 분석이 완료되었습니다."
+      ]
+    },
+    "final": {
+      "status": "completed",
+      "message": "최종 요약 생성이 완료되었습니다.",
+      "error": null,
+      "seconds": 80.5,
+      "peak_allocated_gib": 6.62,
+      "peak_reserved_gib": 8.34,
+      "allocated_after_gib": 5.96,
+      "model_loads": [
+        [
+          "llm",
+          "reused",
+          0.0
+        ]
+      ],
+      "progress": [
+        "0/1 최종 요약을 생성하고 있습니다.",
+        "1/1 최종 요약 생성이 완료되었습니다."
+      ]
+    }
+  },
+  "lectures": {
+    "short_13min": {
+      "duration_min": 13.0,
+      "chars": 4689,
+      "segments": 235
+    },
+    "lecture_33min": {
+      "duration_min": 32.8,
+      "chars": 11610,
+      "segments": 345
+    },
+    "long_73min": {
+      "duration_min": 72.6,
+      "chars": 26537,
+      "segments": 1110
+    }
+  },
+  "max_input_tokens": 16384,
+  "attn_implementation": "sdpa_no_gqa"
+}

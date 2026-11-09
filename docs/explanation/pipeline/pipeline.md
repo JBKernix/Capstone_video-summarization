@@ -38,14 +38,15 @@ main()
 | --- | --- | --- |
 | `--video` | `data/input/*.mp4` | 분석할 영상 경로 또는 glob 패턴 |
 | `--run-dir` | `runs` | 결과 저장 루트 |
-| `--method` | `interval` | `interval` 또는 `scene_change` |
+| `--method` | `representative` | `representative`(중요 구간마다 화면이 바뀐 만큼 대표 프레임), `interval`, `scene_change` |
+| `--max-frames-per-segment` | `4` | representative 방식에서 중요 구간 하나당 남길 최대 대표 프레임 수 |
 | `--interval-seconds` | `5.0` | interval 방식 프레임 추출 간격 |
 | `--scene-threshold` | `0.5` | FFmpeg scene score 임계값 |
 | `--scene-min-gap-seconds` | `1.0` | 장면 전환 프레임 간 최소 간격 |
 | `--ocr-lang` | `korean` | EasyOCR 언어 설정 |
 | `--skip-ocr` | false | OCR 단계 건너뛰기 |
 | `--skip-vlm` | false | VLM 단계 건너뛰기 |
-| `--summary-level` | `standard` | 요약 크기/속도 프리셋 (`simple`/`standard`/`detailed`, `modules/llm/summary_levels.py`) |
+| `--summary-level` | `standard` | Whisper 크기 프리셋 (`simple`=small / `standard`=medium / `detailed`=large, `modules/llm/summary_levels.py`). 요약·화면 분석 범위는 같음 |
 | `--stt-config` | `configs/stt_config.yaml` | STT 설정 파일 |
 | `--stt-model-size` | 설정 파일 또는 `medium` | Whisper 모델 크기 |
 | `--stt-language` | 설정 파일 또는 `ko` | STT 언어 |
@@ -58,18 +59,19 @@ main()
 
 `build_stt_options()`는 `modules.common.config.load_yaml_config()`로 `--stt-config` YAML을 읽은 뒤, 명령줄 인자가 있으면 그 값을 우선하고 없으면 설정 파일 값을, 그마저도 없으면 `modules.stt`의 `DEFAULT_STT_*` 상수를 사용합니다. `run_stt.py`와 동일한 `load_yaml_config()`를 공유하므로 두 스크립트의 STT 설정 로딩 방식이 일치합니다. (과거에는 `run_pipeline.py`에 별도의 `load_stt_config()`/`_parse_simple_stt_config()` 함수가 있었으나 삭제되었습니다.)
 
-`model_size`만 예외입니다. `--stt-model-size`가 없으면 설정 파일 값보다 `modules/llm/summary_levels.py`의 `SUMMARY_LEVEL_STT_MODELS`(`simple`=`base`, `standard`=`small`, `detailed`=`medium`)가 먼저 적용됩니다(`--stt-model-size > SUMMARY_LEVEL_STT_MODELS[--summary-level] > configs/stt_config.yaml의 model_size > DEFAULT_STT_MODEL_SIZE`). 요약 프리셋이 빠를수록 더 작은 Whisper 모델을 써서 STT 자체도 함께 빨라집니다. 자세한 우선순위는 [`configs.md`](../configs/configs.md)를 참고하세요.
+`model_size`만 예외입니다. `--stt-model-size`가 없으면 설정 파일 값보다 `modules/llm/summary_levels.py`의 `SUMMARY_LEVEL_STT_MODELS`(`simple`=`small`, `standard`=`medium`, `detailed`=`large`)가 먼저 적용됩니다(`--stt-model-size > SUMMARY_LEVEL_STT_MODELS[--summary-level] > configs/stt_config.yaml의 model_size > DEFAULT_STT_MODEL_SIZE`). 프리셋은 Whisper 크기만 바꾸며, 작은 모델일수록 STT가 빨라집니다. 자세한 우선순위는 [`configs.md`](../configs/configs.md)를 참고하세요.
 
 ## 건너뛰기 동작
 
-- `--summary-level simple`이면 `skip_visual_stages = True`가 되어 프레임 추출(4단계)부터 아예 건너뛰고, OCR/VLM도 이어서 건너뜁니다.
-- 프레임 메타데이터가 없거나 `--skip-ocr`가 지정되면(또는 위 `simple` 프리셋이면) OCR 결과가 생성되지 않습니다.
+- `--summary-level`은 단계를 건너뛰지 않습니다. 간단·기본·상세 모두 프레임 추출·OCR·VLM을 실행합니다(예전 `simple` 프리셋의 시각 단계 생략 동작은 없어졌으며, 실행 기록에는 `preset_semantics: "whisper_only_v1"`로 구분됩니다).
+- STT 요약 결과(중요 구간)가 없으면 프레임 추출(4단계)을 건너뜁니다.
+- 프레임 메타데이터가 없거나 `--skip-ocr`가 지정되면 OCR 결과가 생성되지 않습니다.
 - OCR 결과가 없거나 `--skip-vlm`가 지정되면 VLM 요약이 실행되지 않습니다.
-- VLM 요약이 없는 상태로 최종 요약 단계에 도달하면(`simple` 프리셋 또는 `--skip-vlm`), `run_final_summary_step()`(서버 호출) 대신 `write_stt_only_final_summary_step()`으로 STT 요약을 최종 요약으로 그대로 저장합니다. 이때 진행 상황 메시지는 "완료 (STT 요약만 사용)"으로 표시됩니다. STT 요약 자체가 없으면(`llm_summary_path`/`llm_summary_json_path`가 `None`) 최종 요약 단계 자체가 "건너뜀"으로 표시됩니다.
+- VLM 요약이 없는 상태로 최종 요약 단계에 도달하면(`--skip-ocr`/`--skip-vlm`), `run_final_summary_step()`(서버 호출) 대신 `write_stt_only_final_summary_step()`으로 STT 요약을 최종 요약으로 그대로 저장합니다. 이때 진행 상황 메시지는 "완료 (STT 요약만 사용)"으로 표시됩니다. STT 요약 자체가 없으면(`llm_summary_path`/`llm_summary_json_path`가 `None`) 최종 요약 단계 자체가 "건너뜀"으로 표시됩니다.
 
 ## 진행률 보고
 
-각 단계는 `modules.common.progress.report_progress(step, message, percent)`를 호출해 표준 출력에 `##PROGRESS##`로 시작하는 JSON 마커 줄을 남깁니다. 앱(Streamlit UI)은 파이프라인 프로세스의 로그를 폴링하며 이 마커를 파싱해 단계별 진행 상황을 표시합니다.
+각 단계는 `modules.common.progress.report_progress(step, message, percent)`를 호출해 표준 출력에 `##PROGRESS##`로 시작하는 JSON 마커 줄을 남깁니다. 앱은 파이프라인 프로세스의 로그를 폴링하며 이 마커를 파싱해 단계별 진행 상황을 표시합니다(`app/pipeline_log.py`, React 화면은 앱 API `GET /api/runs/{run_id}`로 받음).
 
 | 단계 번호(`STEP_*`) | 이름 | 진행률 표시 방식 |
 | --- | --- | --- |
