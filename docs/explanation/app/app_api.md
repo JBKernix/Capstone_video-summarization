@@ -64,7 +64,8 @@ python -m uvicorn app.api.server:app --host 127.0.0.1 --port 8501
 | `GET /api/models` | **개발자 전용.** 추론 서버 `/models`를 대신 조회(모델 설치 상태) |
 | `PUT /api/dev/user-defaults` | **개발자 전용.** `{analysis_backend, local_model}` — 사용자 화면에서 시작한 분석에 쓸 분석 방식을 `runs/user_defaults.json`에 저장하고 저장된 값을 반환 |
 | `POST /api/uploads` | multipart `file` 업로드. 확장자(MP4/MOV/AVI)·크기·디스크 여유·ffprobe 검증 후 `data/input/uploads/<업로드 ID>/input.<확장자>`에 저장. `{upload_id, filename, title, source_key}` 반환 |
-| `POST /api/uploads/youtube` | `{url}` — 서버가 `yt-dlp`로 직접 내려받아 같은 형식으로 반환 |
+| `POST /api/uploads/youtube` | `{url}` — 서버가 `yt-dlp` 다운로드를 백그라운드로 시작하고 `{upload_id, status: "downloading"}`을 바로 반환. 긴 영상은 다운로드가 Cloudflare 응답 제한(100초)을 넘겨 HTTP 524가 나기 때문입니다 |
+| `GET /api/uploads/youtube/{upload_id}` | 다운로드 상태. 받는 중이면 `{status: "downloading"}`, 끝나면 `{status: "done", upload: {upload_id, filename, title, source_key}}`, 실패하면 400(실패 원인). 상태는 메모리에만 있어 서버를 다시 시작하면 404. 받는 중인 업로드로 분석을 시작하거나 삭제하면 409 |
 | `DELETE /api/uploads/{upload_id}` | 다른 영상으로 바꿀 때 이전 업로드 삭제(실행 중인 작업의 영상은 보존) |
 
 `user_defaults`는 `runs/user_defaults.json`에서 읽으며, 파일이 없거나 값이 잘못됐으면 `{analysis_backend: "local", local_model: <기본 로컬 모델>}`입니다. 일반 사용자가 유료 API 사용 여부 등을 고르지 못하게 하려는 것입니다.

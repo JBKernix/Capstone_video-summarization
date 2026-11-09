@@ -56,7 +56,7 @@ data/
 
 기본값으로 실행할 때는 `data/input/`에 MP4 파일을 하나만 두는 것이 안전합니다. 여러 파일이 있으면 `--video` 옵션으로 분석할 파일을 직접 지정하세요.
 
-앱에서는 파일 업로드 대신 유튜브 링크를 입력해 영상을 준비할 수도 있습니다. `modules/preprocess/youtube_downloader.py`의 `download_youtube_video()`가 `yt-dlp`로 다운로드해 `data/input/uploads/<업로드 ID>/input.mp4`로 저장합니다. 업로드 용량 제한은 React 화면은 `MAX_UPLOAD_MB`(기본 500MB), Streamlit은 `.streamlit/config.toml`의 `maxUploadSize`(기본 500MB)입니다. Cloudflare를 거친 외부 접속은 둘 다 `EXTERNAL_UPLOAD_LIMIT_MB`(기본 100MB)로 낮춥니다.
+앱에서는 파일 업로드 대신 유튜브 링크를 입력해 영상을 준비할 수도 있습니다. `modules/preprocess/youtube_downloader.py`의 `download_youtube_video()`가 `yt-dlp`로 다운로드해 `data/input/uploads/<업로드 ID>/input.mp4`로 저장합니다. React 화면은 다운로드를 백그라운드로 맡기고 끝날 때까지 상태를 확인하므로, Cloudflare를 거친 외부 접속에서도 긴 영상이 응답 시간 제한(100초)에 걸리지 않습니다. 업로드 용량 제한은 React 화면은 `MAX_UPLOAD_MB`(기본 500MB), Streamlit은 `.streamlit/config.toml`의 `maxUploadSize`(기본 500MB)입니다. Cloudflare를 거친 외부 접속은 둘 다 `EXTERNAL_UPLOAD_LIMIT_MB`(기본 100MB)로 낮춥니다.
 
 ## STT 설정
 

@@ -159,7 +159,7 @@ Streamlit에서는 뱃지 클릭을 `st.html` + `<script>`로 우회했지만(Re
 
 ### 사용자 화면의 요약 시작·진행 (`user/HomeView.tsx`, `user/ProgressView.tsx`)
 
-- 유튜브 링크는 주소 형식(youtube.com/youtu.be)을 확인한 뒤 `POST /api/uploads/youtube`, 영상 파일은 확장자·크기를 확인한 뒤 XHR로 올립니다. 이어서 `POST /api/runs`에 업로드 ID와 요약 방식만 보내고 `/summarize/<실행 ID>`로 이동합니다. 분석 방식은 보내지 않으며, 서버가 개발자가 지정한 값(`user_defaults`)을 씁니다. 요약을 시작하지 못하면 받은 영상을 지웁니다.
+- 유튜브 링크는 주소 형식(youtube.com/youtu.be)을 확인한 뒤 `POST /api/uploads/youtube`로 다운로드를 시작하고 `GET /api/uploads/youtube/<업로드 ID>`를 2초마다 확인해 끝날 때까지 기다립니다(`downloadYoutube`, 일시적인 네트워크·5xx 오류는 5번까지 재시도). 영상 파일은 확장자·크기를 확인한 뒤 XHR로 올립니다. 이어서 `POST /api/runs`에 업로드 ID와 요약 방식만 보내고 `/summarize/<실행 ID>`로 이동합니다. 분석 방식은 보내지 않으며, 서버가 개발자가 지정한 값(`user_defaults`)을 씁니다. 요약을 시작하지 못하면 받은 영상을 지웁니다.
 - 요약 방식·단계 이름은 서버 이름 대신 `labels.ts`의 쉬운 표현(빠르게·표준·꼼꼼하게, "받아쓰기"·"판서·자막 읽기" 등)으로 보여 줍니다.
 - 5초마다 `GET /api/runs/active`로 다른 요약이 진행 중인지 확인해 시작 버튼을 막고 "진행 상황 보기" 링크를 보여 줍니다. 요약 서버가 준비되지 않았으면(`backend_ready: false`) 안내를 띄웁니다.
 - 진행 화면은 1.5초마다 `GET /api/runs/<ID>`를 조회해, 끝난 단계 + 현재 단계 진행분으로 전체 %(완료 전 최대 99%)를 계산합니다. 실패·취소면 안내와 "다시 요약하기"를 보여 주고, 성공하면 `/note/run/<ID>`로 이동합니다.

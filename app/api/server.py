@@ -15,6 +15,8 @@ import json
 import os
 import re
 import shutil
+import threading
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -86,6 +88,8 @@ SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 CSRF_HEADER = "x-requested-with"
 CSRF_VALUE = "XMLHttpRequest"
 USER_DEFAULTS_PATH = PROJECT_ROOT / "runs" / "user_defaults.json"
+# 끝난 유튜브 다운로드 상태를 메모리에 남겨 두는 시간(초)입니다.
+YOUTUBE_STATE_TTL_SECONDS = 3600
 
 
 @asynccontextmanager
@@ -236,6 +240,8 @@ def models() -> dict:
 def _upload_dir(upload_id: str) -> Path:
     if not UPLOAD_ID_PATTERN.fullmatch(upload_id or ""):
         raise HTTPException(404, "업로드한 영상을 찾을 수 없습니다.")
+    if _youtube_state(upload_id).get("status") == "downloading":
+        raise HTTPException(409, "아직 유튜브 영상을 내려받는 중입니다.")
     directory = run_registry.UPLOAD_DIR / upload_id
     if not directory.is_dir():
         raise HTTPException(404, "업로드한 영상을 찾을 수 없습니다. 보존 기간이 지나 정리되었을 수 있습니다.")
@@ -297,24 +303,69 @@ class YoutubeBody(BaseModel):
     url: str
 
 
+# 유튜브 다운로드 상태(업로드 ID → 상태)입니다. 서버를 다시 시작하면 사라집니다.
+_youtube_downloads: dict[str, dict] = {}
+_youtube_lock = threading.Lock()
+
+
+def _youtube_state(upload_id: str) -> dict:
+    with _youtube_lock:
+        return dict(_youtube_downloads.get(upload_id) or {})
+
+
+def _set_youtube_state(upload_id: str, state: dict) -> None:
+    now = time.time()
+    with _youtube_lock:
+        for key, old in list(_youtube_downloads.items()):
+            if old.get("status") != "downloading" and now - old.get("updated", now) > YOUTUBE_STATE_TTL_SECONDS:
+                del _youtube_downloads[key]
+        _youtube_downloads[upload_id] = {**state, "updated": now}
+
+
+def _download_youtube(url: str, upload_dir: Path) -> None:
+    try:
+        save_path, video_title = download_youtube_video(url, upload_dir / "input")
+        info = {"filename": save_path.name, "title": video_title, "source_key": f"youtube_{url}"}
+        (upload_dir / UPLOAD_INFO_FILENAME).write_text(json.dumps(info, ensure_ascii=False), encoding="utf-8")
+    except Exception as error:
+        remove_upload_dir(upload_dir)
+        _set_youtube_state(upload_dir.name, {"status": "error",
+                                             "detail": f"유튜브 영상 다운로드에 실패했습니다: {error}"})
+        return
+    _set_youtube_state(upload_dir.name, {"status": "done", "upload": _upload_response(upload_dir, info)})
+
+
 @app.post("/api/uploads/youtube", dependencies=protected)
 def upload_youtube(body: YoutubeBody) -> dict:
+    """다운로드를 백그라운드로 시작하고 업로드 ID를 바로 돌려줍니다.
+
+    긴 영상은 다운로드가 Cloudflare 응답 제한(100초)보다 오래 걸려(HTTP 524),
+    화면은 ``GET /api/uploads/youtube/{upload_id}``로 끝났는지 확인합니다.
+    """
     url = body.url.strip()
     if not is_youtube_url(url):
         raise HTTPException(400, "유효한 유튜브 링크가 아닙니다.")
     cleanup_expired()
-    upload_dir = None
     try:
         check_free_space(0)
         upload_dir = new_upload_dir()
-        save_path, video_title = download_youtube_video(url, upload_dir / "input")
-    except Exception as error:
-        remove_upload_dir(upload_dir)
+    except OSError as error:
         raise HTTPException(400, f"유튜브 영상 다운로드에 실패했습니다: {error}")
+    _set_youtube_state(upload_dir.name, {"status": "downloading"})
+    threading.Thread(target=_download_youtube, args=(url, upload_dir), daemon=True).start()
+    return {"upload_id": upload_dir.name, "status": "downloading"}
 
-    info = {"filename": save_path.name, "title": video_title, "source_key": f"youtube_{url}"}
-    (upload_dir / UPLOAD_INFO_FILENAME).write_text(json.dumps(info, ensure_ascii=False), encoding="utf-8")
-    return _upload_response(upload_dir, info)
+
+@app.get("/api/uploads/youtube/{upload_id}", dependencies=protected)
+def youtube_status(upload_id: str) -> dict:
+    state = _youtube_state(upload_id) if UPLOAD_ID_PATTERN.fullmatch(upload_id or "") else {}
+    if not state:
+        raise HTTPException(404, "유튜브 다운로드 작업을 찾을 수 없습니다. 서버가 다시 시작되었을 수 있습니다.")
+    if state["status"] == "error":
+        raise HTTPException(400, state["detail"])
+    if state["status"] == "done":
+        return {"status": "done", "upload": state["upload"]}
+    return {"status": "downloading"}
 
 
 @app.delete("/api/uploads/{upload_id}", dependencies=protected)

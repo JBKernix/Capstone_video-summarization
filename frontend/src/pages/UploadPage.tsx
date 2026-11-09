@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   api,
+  downloadYoutube,
   uploadWithProgress,
   type ModelCatalogueEntry,
   type Options,
@@ -379,7 +380,7 @@ function YoutubeUpload({
     onError('')
     setBusy(true)
     try {
-      onUploaded(await api.post<Upload>('/api/uploads/youtube', { url }))
+      onUploaded(await downloadYoutube(url))
     } catch (err) {
       onError((err as Error).message)
     } finally {

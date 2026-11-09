@@ -1,4 +1,6 @@
 import json
+import threading
+import time
 
 import pytest
 from fastapi.testclient import TestClient
@@ -155,6 +157,56 @@ def test_external_upload_limit_is_checked_before_reading_body(client, monkeypatc
                            headers={**HEADERS, **CF})
     # 본문을 받기 전에 크기 확인 단계에서 먼저 거절되어야 합니다.
     assert response.status_code == 413
+
+
+def wait_for_youtube(client, upload_id):
+    for _ in range(200):
+        response = client.get(f"/api/uploads/youtube/{upload_id}")
+        if response.status_code != 200 or response.json()["status"] != "downloading":
+            return response
+        time.sleep(0.01)
+    raise AssertionError("유튜브 다운로드가 끝나지 않았습니다.")
+
+
+def test_youtube_download_runs_in_background(client, monkeypatch):
+    started, release = threading.Event(), threading.Event()
+
+    def fake_download(url, output_path):
+        started.set()
+        release.wait(5)
+        path = output_path.with_suffix(".mp4")
+        path.write_bytes(b"video")
+        return path, "강의 제목"
+
+    monkeypatch.setattr(server, "download_youtube_video", fake_download)
+    response = client.post("/api/uploads/youtube", json={"url": "https://youtu.be/abc"}, headers=HEADERS)
+    assert response.status_code == 200
+    upload_id = response.json()["upload_id"]
+    assert started.wait(5)
+    # 다운로드가 끝나기 전에는 상태만 알려 주고, 받는 중인 영상으로 분석을 시작할 수 없습니다.
+    assert client.get(f"/api/uploads/youtube/{upload_id}").json() == {"status": "downloading"}
+    body = {"upload_id": upload_id, "summary_level": "standard"}
+    assert client.post("/api/runs", json=body, headers=HEADERS).status_code == 409
+    release.set()
+    done = wait_for_youtube(client, upload_id).json()
+    assert done["status"] == "done"
+    assert done["upload"] == {"upload_id": upload_id, "filename": "input.mp4", "title": "강의 제목",
+                              "source_key": "youtube_https://youtu.be/abc"}
+
+
+def test_youtube_download_failure_is_reported_and_cleaned_up(client, monkeypatch):
+    def broken(url, output_path):
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        raise RuntimeError("비공개 영상")
+
+    monkeypatch.setattr(server, "download_youtube_video", broken)
+    upload_id = client.post("/api/uploads/youtube", json={"url": "https://youtu.be/abc"},
+                            headers=HEADERS).json()["upload_id"]
+    response = wait_for_youtube(client, upload_id)
+    assert response.status_code == 400 and "비공개 영상" in response.json()["detail"]
+    assert not (run_registry.UPLOAD_DIR / upload_id).exists()
+    assert client.get("/api/uploads/youtube/20990101-000000-000000000000").status_code == 404
+    assert client.post("/api/uploads/youtube", json={"url": "https://example.com"}, headers=HEADERS).status_code == 400
 
 
 def test_upload_ids_cannot_escape_upload_folder(client):

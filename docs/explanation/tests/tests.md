@@ -19,7 +19,7 @@ cd gpu-server && python -m pytest   # 추론 서버 테스트
 | `tests/test_stt.py` | STT 포맷팅/실행 관련 동작 |
 | `tests/test_vlm_summary.py` | VLM 요약 클라이언트 |
 | `tests/test_summary_result.py` | 앱 최종 요약 로더와 영상 경로 해석 |
-| `tests/test_api_server.py` | React 화면용 앱 API 서버(`app/api/`): 로그인·잠금·CSRF, 개발자 모드, 사용자 화면 분석 방식, 업로드 검증, 분석 실행·진행 상황, 결과·프레임·영상, 강의노트 `outline`, 저장·삭제, 실행 이력·CSV, 결과 다시 열기(`has_result`), React 라우트 |
+| `tests/test_api_server.py` | React 화면용 앱 API 서버(`app/api/`): 로그인·잠금·CSRF, 개발자 모드, 사용자 화면 분석 방식, 업로드 검증, 유튜브 백그라운드 다운로드(상태 조회·받는 중 409·실패 시 정리), 분석 실행·진행 상황, 결과·프레임·영상, 강의노트 `outline`, 저장·삭제, 실행 이력·CSV, 결과 다시 열기(`has_result`), React 라우트 |
 | `tests/test_run_registry.py` | 업로드·실행 폴더, 단일 실행 슬롯, 보존 기간 정리 |
 | `tests/test_pipeline_process.py` | 파이프라인 실행·중지 |
 | `tests/test_pipeline_history.py`, `tests/test_run_history.py`, `tests/test_model_load_history.py` | 실행 이력 기록(`metrics.json`)과 모델 로딩 지표 |

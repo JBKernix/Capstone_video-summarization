@@ -71,6 +71,32 @@ export function uploadWithProgress(file: File, onProgress: (percent: number) => 
   })
 }
 
+const YOUTUBE_POLL_MS = 2000
+// 상태 확인이 일시적인 네트워크·터널 오류로 실패해도 이 횟수까지는 다시 시도합니다.
+const YOUTUBE_POLL_RETRIES = 5
+
+/**
+ * 서버가 유튜브 영상을 내려받게 하고 끝날 때까지 기다립니다.
+ * 긴 영상은 다운로드가 Cloudflare 응답 제한(100초)을 넘기므로 서버는 바로 응답하고, 여기서 상태를 확인합니다.
+ */
+export async function downloadYoutube(url: string): Promise<Upload> {
+  const { upload_id } = await api.post<{ upload_id: string }>('/api/uploads/youtube', { url })
+  let failures = 0
+  for (;;) {
+    await new Promise((resolve) => setTimeout(resolve, YOUTUBE_POLL_MS))
+    let state: { status: string; upload?: Upload }
+    try {
+      state = await api.get(`/api/uploads/youtube/${upload_id}`)
+    } catch (err) {
+      const transient = !(err instanceof ApiError) || err.status === 0 || err.status >= 500
+      if (!transient || ++failures > YOUTUBE_POLL_RETRIES) throw err
+      continue
+    }
+    failures = 0
+    if (state.status === 'done' && state.upload) return state.upload
+  }
+}
+
 /** 서버 응답을 파일로 내려받습니다. */
 export async function downloadPost(url: string, body: unknown, filename: string) {
   const response = await fetch(url, {

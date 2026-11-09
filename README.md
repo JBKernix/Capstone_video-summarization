@@ -158,7 +158,7 @@ streamlit run app/main.py
 앱(React `/upload`, Streamlit `app/pages/1_upload.py`)은 두 가지 방식으로 분석할 영상을 지정할 수 있습니다. 업로드마다 고유 폴더를 만들어 여러 사용자의 파일이 섞이지 않습니다.
 
 - 파일 업로드: `data/input/uploads/<업로드 ID>/input.<확장자>` (mp4/mov/avi)로 저장
-- 유튜브 링크: `modules/preprocess/youtube_downloader.py`의 `download_youtube_video()`가 `yt-dlp`로 다운로드해 `data/input/uploads/<업로드 ID>/input.mp4`로 저장
+- 유튜브 링크: `modules/preprocess/youtube_downloader.py`의 `download_youtube_video()`가 `yt-dlp`로 다운로드해 `data/input/uploads/<업로드 ID>/input.mp4`로 저장. React 화면에서는 서버가 백그라운드로 내려받고 화면이 `GET /api/uploads/youtube/<업로드 ID>`로 완료를 확인합니다(긴 영상이 Cloudflare 응답 제한 100초를 넘겨 HTTP 524가 나지 않도록)
 
 업로드 화면에는 **분석 방식**과 **Whisper 음성 인식**을 독립적으로 선택하는 설정이 있습니다.
 

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { api, uploadWithProgress, type Options, type Upload } from '../api'
+import { api, downloadYoutube, uploadWithProgress, type Options, type Upload } from '../api'
 import { FRIENDLY_LEVELS } from './labels'
 
 type Phase = 'idle' | 'downloading' | 'uploading' | 'starting'
@@ -71,7 +71,7 @@ export function HomeView() {
     try {
       if (mode === 'youtube') {
         setPhase('downloading')
-        upload = await api.post<Upload>('/api/uploads/youtube', { url: url.trim() })
+        upload = await downloadYoutube(url.trim())
       } else if (file) {
         setPhase('uploading')
         setUploadPercent(0)
