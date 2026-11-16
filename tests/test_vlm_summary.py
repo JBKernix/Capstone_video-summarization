@@ -132,4 +132,4 @@ def test_client_extracts_vlm_results_from_wrapped_server_result(tmp_path):
         )
 
     assert result == [{"frame_id": 0, "vlm_summary": "summary"}]
-    assert posted["data"] == {"summary_level": "standard", "local_model": "legacy-qwen"}
+    assert posted["data"] == {"summary_level": "standard", "local_model": "qwen3-vl-8b"}

@@ -24,6 +24,8 @@ ACTIVE_RUN = ContextVar("active_run", default=None)
 TERMINAL_STATUSES = {"success", "failed", "cancelled", "interrupted"}
 MODEL_LOAD_FIELDS = ["model_load_seconds", "llm_load_seconds", "vlm_load_seconds",
                      "model_load_count", "model_load_failed_count", "model_reuse_count"]
+# Windows refuses to replace a file another process has open (e.g. the status API reading metrics.json).
+REPLACE_RETRY_DELAYS = (0.05, 0.1, 0.2, 0.4, 0.8)
 
 
 def now_iso():
@@ -45,6 +47,12 @@ def atomic_json(path, value):
     temp = path.with_name(path.name + "." + uuid4().hex + ".tmp")
     try:
         temp.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
+        for delay in REPLACE_RETRY_DELAYS:
+            try:
+                os.replace(temp, path)
+                return
+            except PermissionError:
+                time.sleep(delay)
         os.replace(temp, path)
     finally:
         temp.unlink(missing_ok=True)

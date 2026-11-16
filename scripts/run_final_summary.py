@@ -16,6 +16,11 @@ from modules.common import (  # noqa: E402
     run_path,
     save_json,
 )
+from modules.llm.category import (  # noqa: E402
+    default_classification,
+    format_video_info,
+    normalize_classification,
+)
 from modules.llm.final_summarizer_client import GPUFinalSummaryClient  # noqa: E402
 from modules.llm.summary_levels import (  # noqa: E402
     DEFAULT_SUMMARY_LEVEL,
@@ -38,7 +43,9 @@ def run_final_summary_step(
     output_path: str | Path,
     output_json_path: str | Path | None = None,
     summary_level: str = DEFAULT_SUMMARY_LEVEL,
+    video_context: dict | None = None,
 ) -> tuple[Path, Path]:
+    """``video_context``(제목·채널·설명)는 최종 요약 요청에 함께 넣어 카테고리 분류에 참고합니다."""
     output_path = Path(output_path)
     output_json_path = Path(output_json_path or output_path.with_name("final_summary_result.json"))
 
@@ -47,6 +54,7 @@ def run_final_summary_step(
         stt_summary_json_path=stt_summary_json_path,
         vlm_summary_json_path=vlm_summary_json_path,
         summary_level=DEFAULT_SUMMARY_LEVEL,
+        video_info=format_video_info(video_context),
     )
 
     result = {
@@ -55,6 +63,8 @@ def run_final_summary_step(
             "vlm_summary_json_path": Path(vlm_summary_json_path).as_posix(),
         },
         **result,
+        # 분류 결과가 없거나 잘못되어도 요약은 그대로 저장하고 미분류(OTHER/NEEDS_REVIEW)로 둡니다.
+        "classification": normalize_classification(result.get("classification")),
     }
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -90,6 +100,8 @@ def write_stt_only_final_summary_step(
             "mode": "stt_only",
         },
         "summary": summary_text,
+        # 최종 요약 LLM을 부르지 않으므로 분류 결과가 없습니다.
+        "classification": default_classification("최종 요약 단계를 건너뜀"),
     }
 
     output_path.parent.mkdir(parents=True, exist_ok=True)

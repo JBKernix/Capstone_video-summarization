@@ -23,7 +23,7 @@ DEFAULT_VIDEO_PATH = PROJECT_ROOT / "data" / "input" / "input.mp4"
 OCR_RESULT_PATH = PROJECT_ROOT / "runs" / "ocr" / "ocr_result.json"
 
 
-def render_summary_data(summary_data: dict) -> None:
+def render_summary_data(summary_data: dict, ocr_result_path: Path | None = None) -> None:
     if has_structured_summary(summary_data):
         title = summary_data.get("title", "영상 요약")
         main_topic = summary_data.get("main_topic", "")
@@ -69,7 +69,7 @@ def render_summary_data(summary_data: dict) -> None:
 
     summary_markdown = get_summary_markdown(summary_data)
     if summary_markdown:
-        render_summary_with_timeline(summary_markdown, OCR_RESULT_PATH, PROJECT_ROOT)
+        render_summary_with_timeline(summary_markdown, ocr_result_path or OCR_RESULT_PATH, PROJECT_ROOT)
     else:
         st.json(summary_data)
 
@@ -119,7 +119,7 @@ def render_video_and_summary(
                 st.caption(f"파일 경로: {final_summary.source_path}")
 
             if final_summary.mode == "json":
-                render_summary_data(final_summary.content)
+                render_summary_data(final_summary.content, ocr_result_path)
             else:
                 render_summary_with_timeline(final_summary.content, ocr_result_path, PROJECT_ROOT)
 

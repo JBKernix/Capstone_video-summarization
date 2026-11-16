@@ -16,12 +16,13 @@ def is_youtube_url(url: str) -> bool:
     return bool(YOUTUBE_URL_PATTERN.match(url.strip()))
 
 
-def download_youtube_video(url: str, output_path: str | Path) -> tuple[Path, str]:
+def download_youtube_video(url: str, output_path: str | Path, metadata: dict | None = None) -> tuple[Path, str]:
     """유튜브 영상을 다운로드해 mp4 파일로 저장합니다.
 
     Args:
         url: 다운로드할 유튜브 영상 링크입니다.
         output_path: 저장할 파일 경로입니다. 확장자는 무시되고 항상 mp4로 저장됩니다.
+        metadata: 주어지면 채널 이름(``channel``)과 영상 설명(``description``)을 채웁니다.
 
     Returns:
         다운로드된 mp4 파일의 실제 경로와 영상 제목의 튜플입니다.
@@ -71,4 +72,7 @@ def download_youtube_video(url: str, output_path: str | Path) -> tuple[Path, str
         raise RuntimeError(f"다운로드된 파일을 찾을 수 없습니다: {output_path}")
 
     title = str((info or {}).get("title") or "").strip()
+    if metadata is not None:
+        metadata["channel"] = str((info or {}).get("channel") or (info or {}).get("uploader") or "").strip()
+        metadata["description"] = str((info or {}).get("description") or "").strip()
     return output_path, title

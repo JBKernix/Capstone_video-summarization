@@ -1,0 +1,4 @@
+# 실행 로그와 요약 출력물은 커밋하지 않고, 측정값(JSONL)과 종단 간 검증 보고서(report.json)만 남깁니다.
+*.log
+e2e_*/*
+!e2e_*/report.json

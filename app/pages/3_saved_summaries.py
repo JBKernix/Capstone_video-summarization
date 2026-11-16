@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
 from pathlib import Path
-import re
 import shutil
 import sys
 
@@ -15,51 +13,8 @@ if str(PROJECT_ROOT) not in sys.path:
 from app.auth import require_login
 from app.final_summary_view import render_video_and_summary
 from app.styles import apply_global_styles
+from app.saved_results import find_saved_video, list_saved_items
 from app.summary_result import load_final_summary
-
-SAVE_ROOT = PROJECT_ROOT / "data" / "saved"
-VIDEO_EXTENSIONS = (".mp4", ".mov", ".avi")
-
-# result_export.build_save_folder_name()이 만드는 "[제목] - 년월일-시분초" 형식입니다.
-SAVED_FOLDER_NAME_PATTERN = re.compile(r"^\[(?P<title>.*)\] - (?P<timestamp>\d{8}-\d{6})$")
-
-
-def parse_saved_folder_name(folder_name: str) -> tuple[str, datetime | None]:
-    """저장 폴더명에서 영상 제목과 저장 시각을 추출합니다."""
-    match = SAVED_FOLDER_NAME_PATTERN.match(folder_name)
-    timestamp_text = match.group("timestamp") if match else folder_name
-
-    try:
-        timestamp = datetime.strptime(timestamp_text, "%Y%m%d-%H%M%S")
-    except ValueError:
-        timestamp = None
-
-    title = match.group("title") if match else folder_name
-    return title, timestamp
-
-
-def find_saved_video(folder: Path) -> Path | None:
-    for extension in VIDEO_EXTENSIONS:
-        matches = sorted(folder.glob(f"*{extension}"))
-        if matches:
-            return matches[0]
-    return None
-
-
-def list_saved_items() -> list[dict]:
-    if not SAVE_ROOT.exists():
-        return []
-
-    items = []
-    for folder in SAVE_ROOT.iterdir():
-        if not folder.is_dir():
-            continue
-        title, timestamp = parse_saved_folder_name(folder.name)
-        items.append({"folder": folder, "title": title, "timestamp": timestamp})
-
-    items.sort(key=lambda item: item["timestamp"] or datetime.min, reverse=True)
-    return items
-
 
 st.set_page_config(
     page_title="저장된 요약",

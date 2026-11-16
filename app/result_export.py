@@ -11,6 +11,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from modules.common import find_existing_path, load_json, save_json
+from modules.llm.category import store_auto_classification
 
 # Windows 파일/폴더명에 사용할 수 없는 문자입니다: \ / : * ? " < > |
 INVALID_FOLDER_CHARS_PATTERN = re.compile(r'[\\/:*?"<>|]')
@@ -126,4 +127,14 @@ def save_analysis_result(
     if not saved_anything:
         raise FileNotFoundError("저장할 영상과 요약 결과를 찾을 수 없습니다.")
 
+    store_auto_classification(target_dir, _summary_classification(final_dir))
     return target_dir
+
+
+def _summary_classification(final_dir: Path) -> dict | None:
+    """최종 요약 결과 JSON의 자동 분류 결과입니다. 없거나 읽을 수 없으면 ``None``(미분류로 저장)입니다."""
+    try:
+        data = load_json(final_dir / "final_summary_result.json")
+    except (OSError, ValueError):
+        return None
+    return data.get("classification") if isinstance(data, dict) else None

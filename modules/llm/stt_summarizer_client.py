@@ -15,6 +15,7 @@ from modules.common import (
 )
 from modules.common.progress import STEP_STT_SUMMARY, report_progress
 from modules.llm.gpu_job_client import GPUJobClientMixin
+from modules.llm.local_models import DEFAULT_LOCAL_MODEL
 from modules.llm.summary_levels import DEFAULT_SUMMARY_LEVEL
 from . import GPU_SERVER_URL
 
@@ -27,7 +28,7 @@ DEFAULT_STT_JSON_PATH = run_path(
 @dataclass
 class GPULLMClientConfig:
     server_url: str = GPU_SERVER_URL
-    local_model: str = "legacy-qwen"
+    local_model: str = DEFAULT_LOCAL_MODEL
     timeout: int = 600
     poll_interval: int = 10
     job_timeout: int = 3600
