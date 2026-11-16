@@ -1,306 +1,216 @@
-# Multimodal Video Summarization
+# 핵심만PLZ
 
-영상에서 음성, 주요 프레임, OCR 텍스트를 추출하고 로컬 모델 서버 또는 Claude Haiku API를 사용해 최종 요약을 만드는 캡스톤 프로젝트입니다.
+**멀티모달 AI 기반 강의 영상 요약 · 강의 노트 생성 시스템** (Multimodal Lecture Video Summarization)
 
-현재 저장소는 `scripts/` CLI 파이프라인과 웹 UI를 함께 제공합니다. 웹 UI는 React 화면(`frontend/`)과 이를 내보내는 FastAPI 앱 서버(`app/api/`)가 기본이며, 기존 Streamlit 화면(`app/main.py`)도 예비로 남아 있습니다. UI는 영상 업로드, 파이프라인 실행, 원본 영상과 최종 요약 결과 확인을 담당합니다.
+긴 강의 영상은 필요한 부분을 다시 찾기 어렵고, 음성만 받아 적어서는 슬라이드·판서 내용이 빠집니다. 핵심만PLZ는 영상의 **음성(STT)** 과 **화면(OCR·VLM)** 을 함께 분석해, 챕터별 타임라인이 붙은 강의 노트를 만들어 줍니다. 노트의 시간 뱃지를 누르면 영상이 그 지점으로 이동합니다.
+
+모든 분석은 RTX 4090 서버 PC 한 대에서 로컬 모델(Qwen3-VL 8B)로 처리하며, 다른 PC·스마트폰은 웹브라우저로 접속만 합니다.
+
+<!-- TODO: 실제 화면 캡처를 assets/screenshots/ 에 넣은 뒤 아래 주석을 풀어 주세요.
+## 화면
+
+| 영상 입력 | 분석 진행 |
+| --- | --- |
+| ![홈 화면](assets/screenshots/home.png) | ![진행 화면](assets/screenshots/progress.png) |
+
+| 강의 노트 | 노트 라이브러리 |
+| --- | --- |
+| ![강의 노트](assets/screenshots/note.png) | ![라이브러리](assets/screenshots/library.png) |
+-->
 
 ## 주요 기능
 
-- FFmpeg/FFprobe 기반 영상 정보 확인, 오디오 추출, MP4 변환
-- 일정 간격 또는 장면 전환 기반 프레임 샘플링
-- Whisper 기반 STT 결과 생성
-- EasyOCR 기반 프레임 텍스트 추출
-- STT 결과를 LLM 서버로 보내 주요 구간과 요약 생성
-- OCR/프레임 결과를 VLM 서버로 보내 프레임별 요약 생성
-- STT 요약과 VLM 요약을 결합한 최종 요약 생성
-- 파일 업로드 또는 유튜브 링크로 분석할 영상 지정 (`yt-dlp` 기반 다운로드)
-- 로컬 모델 서버 / Claude API 분석 방식 선택
-- Whisper 크기 선택: 간단(small) / 기본(medium) / 상세(large)
-- 분석 진행 중 7단계 진행 상황을 원형 아이콘/퍼센트로 실시간 표시, 실패 시 오류 표시
-- 분석 완료 후 영상과 요약 결과를 `data/saved/`에 함께 저장
-- 저장된 요약 결과를 다시 불러와 확인/삭제
-- 완료된 분석 결과를 "분석 결과" 탭·실행 이력에서 다시 열기
-- 요약 결과의 타임라인을 분:초 뱃지로 표시하고 클릭 시 영상 재생 위치 이동
-- 비밀번호 로그인 게이트와 Cloudflare Tunnel을 이용한 외부 공개(둘 다 선택 사항)
+- **영상 입력**: 영상 파일(MP4/MOV/AVI) 업로드 또는 유튜브 링크
+- **강의 노트 생성**: 제목, 핵심 내용, 주요 용어, 챕터별 요약, 화면 자료(표·그래프·수식·코드·도식·판서), 강조 사항, 공지 사항, 결론
+- **챕터 타임라인**: 챕터와 화면 자료의 시간 뱃지를 누르면 영상이 해당 위치로 이동
+- **진행 상황 표시**: 7단계 분석 진행률을 실시간으로 표시하고, 실패하면 어느 단계에서 멈췄는지 표시
+- **노트 라이브러리**: 완성된 노트를 영상과 함께 저장하고 다시 열기·인쇄·삭제
+- **카테고리 분류**: 노트를 과학·공학, 의학·건강, 역사·인문, 시사·사회, 문화·엔터테인먼트, 기타로 자동 분류
+- **요약 방식 선택**: 빠르게 / 표준 / 꼼꼼하게 — 음성 인식 모델 크기(Whisper small / medium / large)만 달라지고 분석 단계는 같습니다
+- **개발자 화면**: 분석 방식(로컬 모델 / Claude API)·모델 선택, 실행 이력과 단계별 소요 시간, 분석 로그 확인 (개발자 비밀번호 필요)
+- **외부 접속(선택)**: 비밀번호 로그인과 Cloudflare Tunnel
 
-## 처리 흐름
+## 시스템 구조
 
-```text
-입력 영상
-  -> 오디오 추출
-  -> Whisper STT
-  -> LLM 기반 STT 요약 및 주요 구간 추출
-  -> 주요 구간 프레임 샘플링
-  -> EasyOCR 분석
-  -> VLM 기반 프레임 요약
-  -> 최종 LLM 요약
+```mermaid
+flowchart TD
+    B["웹브라우저<br/>React + TypeScript"] -->|HTTP API| A["앱 서버 :8501<br/>FastAPI · 업로드 · 실행 관리 · 결과 저장 · 로그인"]
+    A -->|백그라운드 실행| P["분석 파이프라인<br/>scripts/run_pipeline.py"]
+    P --> F["FFmpeg<br/>오디오·프레임 추출"]
+    P --> W["Whisper<br/>음성 인식(STT)"]
+    P --> O["EasyOCR<br/>화면 글자 인식"]
+    P -->|요약 요청| G["추론 서버 :8000<br/>FastAPI · gpu-server/"]
+    G --> Q["Qwen3-VL 8B (NF4, 기본)<br/>또는 Claude API (선택)"]
+    P --> N["강의 노트 JSON<br/>챕터 · 용어 · 화면 자료 · 결론 · 카테고리"]
+    N --> A
 ```
+
+앱 서버와 추론 서버는 같은 PC에서 도는 별개의 프로세스이며, 외부에 공개되는 것은 앱 서버(8501) 하나뿐입니다.
+
+분석은 다음 7단계로 진행됩니다.
+
+| 단계 | 내용 | 사용 기술 |
+| --- | --- | --- |
+| 1 | 오디오 추출 | FFmpeg |
+| 2 | 음성 인식(STT) | Whisper |
+| 3 | 대본 요약, 중요 구간 추출 | Qwen3-VL 8B |
+| 4 | 중요 구간의 대표 프레임 추출 | FFmpeg, OpenCV |
+| 5 | 프레임 글자 인식(OCR) | EasyOCR |
+| 6 | 프레임 내용 요약(VLM) | Qwen3-VL 8B |
+| 7 | 최종 통합 요약, 강의 노트 생성 | Qwen3-VL 8B |
+
+## 기술 스택
+
+| 구분 | 사용 기술 |
+| --- | --- |
+| 화면 | React, TypeScript, Vite |
+| 앱 서버 | Python 3.11, FastAPI, Uvicorn |
+| 전처리 | FFmpeg, OpenCV, yt-dlp |
+| 음성·화면 인식 | Whisper, EasyOCR |
+| 요약 모델 | Qwen3-VL-8B-Instruct (NF4 4비트, 기본) / Claude API (선택) |
+| AI 프레임워크 | PyTorch (CUDA), Transformers |
+| 실행 환경 | Windows 11, RTX 4090 24GB, conda |
+| 외부 접속 | Cloudflare Tunnel |
+
+## 기술적 성과
+
+### 1. Attention 메모리 사용량 절감
+
+Windows용 PyTorch에서는 Qwen3-VL의 GQA attention이 메모리 효율 커널을 쓰지 못하고 Math 커널로 떨어져, 메모리가 입력 길이의 제곱으로 늘었습니다. K/V를 query head 수만큼 복제해 메모리 효율 커널을 쓰도록 한 `sdpa_no_gqa` attention을 구현해 해결했습니다.
+
+| 입력 길이 | 개선 전 (기본 SDPA) | 개선 후 (`sdpa_no_gqa`) |
+| --- | --- | --- |
+| 7,000 토큰 | 21.0 GB | 7.6 GB |
+| 8,000 토큰 | 메모리 부족(OOM) | — |
+| 16,000 토큰 | — | 9.8 GB |
+| 입력 상한 | 7,000 토큰 | 16,384 토큰 |
+
+RTX 4090 기준. 구현은 [gpu-server/models/attention.py](gpu-server/models/attention.py), 설명은 [gpu-server/models/README.md](gpu-server/models/README.md), 재현 스크립트는 [gpu-server/benchmarks/qwen3vl_context_bench.py](gpu-server/benchmarks/qwen3vl_context_bench.py)에 있습니다.
+
+### 2. 입력 상한을 넘는 긴 강의 처리
+
+대본이 모델 입력 상한(16,384 토큰)을 넘으면 구간별로 나눠 요약한 뒤 하나로 통합합니다. 73분 강의(대본 약 26,859 토큰)는 구간 분할 전에는 입력 초과로 실패했고, 적용 후 세 번의 측정에서 모두 완료됐습니다.
+
+| 측정 | 결과 | 소요 시간 | 최대 예약 VRAM |
+| --- | --- | --- | --- |
+| 구간 분할 전 | 실패 (입력 상한 초과) | — | — |
+| 구간 분할 후 (3회) | 완료 | 361 ~ 398초 | 8.4 ~ 9.1 GiB |
+
+이 수치는 준비된 대본으로 추론 서버의 대본 요약·중요 구간 추출 단계(3단계)만 잰 것으로(2026-10-26), 음성 인식·OCR·프레임 요약 시간은 들어 있지 않습니다. 원본 기록은 [gpu-server/benchmarks/results/](gpu-server/benchmarks/results/)에 있습니다.
+
+### 3. 단일 멀티모달 모델로 단순화
+
+초기에는 요약용 LLM(Qwen3-8B)과 화면 분석용 VLM(Qwen2.5-VL-7B)을 FP16으로 단계마다 올리고 내렸습니다. 지금은 NF4 4비트 Qwen3-VL 8B 하나가 대본 요약·프레임 분석·최종 통합을 모두 맡고, 한 번 올린 모델을 작업 안에서 계속 재사용합니다.
+
+### 전체 처리 시간 (참고)
+
+영상 입력부터 강의 노트 완성까지 걸린 시간입니다. 서버 PC의 실행 이력에서 가져온 값으로, 영상마다 한 번씩 실행한 결과이며 원본 기록은 저장소에 포함되지 않습니다(표준 설정, Whisper medium, Qwen3-VL 8B).
+
+| 영상 길이 | 분석한 프레임 | 전체 소요 시간 |
+| --- | --- | --- |
+| 56분 | 46장 | 약 9분 |
+| 107분 | 281장 | 약 46분 |
+| 184분 | 423장 | 약 75분 |
+
+소요 시간은 영상 길이보다 중요 구간에서 뽑은 프레임 수에 크게 좌우됩니다(184분 영상은 전체 시간의 절반가량이 프레임 요약 단계).
+
+## 빠른 실행
+
+Windows 11과 NVIDIA GPU(RTX 4090 24GB에서 개발·확인)를 기준으로 합니다.
+
+**1. 사전 준비**
+
+- [FFmpeg](https://ffmpeg.org/) — `ffmpeg`, `ffprobe`가 PATH에서 실행되어야 합니다
+- [Node.js LTS](https://nodejs.org/) — React 화면 빌드용
+- Anaconda 또는 Miniconda
+
+**2. 앱 환경** (`capstone`)
+
+```bash
+git clone https://github.com/JBKernix/Capstone_video-summarization.git
+cd Capstone_video-summarization
+conda create -n capstone python=3.11
+conda activate capstone
+pip install -r requirements.txt
+```
+
+**3. 추론 서버 환경** (`video_summarization`)과 기본 모델 다운로드 (약 18GB)
+
+```bash
+conda create -n video_summarization python=3.11
+conda activate video_summarization
+cd gpu-server
+pip install -r requirements.txt
+pip install -r requirements-local.txt
+python scripts/download_models.py --model qwen3-vl-8b
+cd ..
+```
+
+**4. 실행**
+
+```bat
+start_all.bat
+```
+
+추론 서버(8000)와 앱 서버(8501)를 차례로 띄우고, React 화면이 빌드되어 있지 않으면 먼저 빌드합니다. 브라우저에서 `http://127.0.0.1:8501`로 접속합니다.
+
+| 명령 | 동작 |
+| --- | --- |
+| `start_all.bat` | 추론 서버 + 앱 서버 실행 |
+| `start_all.bat -Tunnel` | 위 + Cloudflare Tunnel로 외부 접속 주소 발급 |
+| `restart_servers.bat` | 두 서버만 재시작 (터널 주소는 유지) |
+| `stop_all.bat` | 모두 종료 |
+
+`start_all`은 conda 환경이 `%USERPROFILE%\anaconda3\envs\` 아래에 있다고 가정합니다. 위치가 다르면 `APP_PYTHON`, `SERVER_PYTHON` 환경변수로 각 `python.exe` 경로를 지정하세요.
+
+> **외부에 공개하기 전에** 개발자 화면 비밀번호(`DEV_PASSWORD`, 기본값 `admin`)를 반드시 바꾸고, 입장 비밀번호(`APP_PASSWORD`)를 설정하세요. 설정하지 않으면 주소를 아는 누구나 로그인 없이 사용할 수 있습니다.
+
+자세한 설치·운영 방법은 [단일 서버 운영 가이드](docs/single_server_deployment.md)와 [설치 및 실행 가이드](docs/setup_guide.md)를, Claude API 사용은 [분석 방식 설정](docs/analysis_backends.md)을 참고하세요. 웹 화면 없이 명령줄로 실행하는 방법은 [CLI 스크립트 설명](docs/explanation/scripts/scripts.md)에 있습니다.
 
 ## 폴더 구조
 
 ```text
 Capstone_video-summarization/
-├── app/                  # 앱 서버(app/api, React용 FastAPI)와 예비 Streamlit UI
-├── frontend/             # React 화면 (Vite + TypeScript)
-├── gpu-server/           # LLM/VLM 추론 서버 (예전 gpu-server 브랜치, 설명은 gpu-server/README.md)
-├── configs/              # STT 등 설정 파일
-├── data/input/           # 기본 입력 영상 위치
-├── data/saved/           # 분석 결과 저장 위치 (영상 + 요약본)
-├── docs/                 # 설계 및 모듈 설명 문서
-├── modules/              # 전처리, STT, OCR, LLM/VLM 클라이언트
-├── runs/                 # 기본 실행 결과 출력 위치
-├── scripts/              # CLI 실행 스크립트
-├── tests/                # 테스트 코드
-├── pytest.ini            # 앱 테스트(tests/)만 실행. 서버 테스트는 gpu-server/에서 따로 실행
-├── requirements.txt
-└── README.md
+├── frontend/      # React 화면 (사용자용 · 개발자용)
+├── app/           # 앱 서버 (app/api, FastAPI) · 예비 Streamlit 화면
+├── modules/       # 전처리, STT, OCR, 요약 클라이언트, 강의 노트·카테고리 규칙
+├── scripts/       # 파이프라인 실행 스크립트 (run_pipeline.py 등)
+├── gpu-server/    # LLM/VLM 추론 서버, 모델 로더, 벤치마크
+├── configs/       # STT 등 설정
+├── docs/          # 설치·운영·데이터 형식·모듈별 설명 문서
+├── tests/         # 앱 테스트 (추론 서버 테스트는 gpu-server/tests)
+├── assets/        # 실행 파일 아이콘
+└── start_all.bat, stop_all.bat, restart_servers.bat, start_tunnel.bat
 ```
 
-## 설치
+## 구현 및 검증 상태
 
-Python 3.11 환경을 권장합니다.
-
-```bash
-git clone https://github.com/JBKernix/Capstone_video-summarization.git
-cd Capstone_video-summarization
-
-conda create -n capstone_test python=3.11
-conda activate capstone_test
-
-pip install -r requirements.txt
-```
-
-`requirements.txt`에는 EasyOCR, OpenCV, PyTorch(cu130), Whisper(`openai-whisper`), 앱 서버용 FastAPI(0.118.0)·uvicorn·python-multipart, Streamlit(1.58.0), 유튜브 다운로드용 `yt-dlp`, requests, PyYAML 등이 포함되어 있습니다. FastAPI가 쓰는 pydantic 2.14 때문에 `typing-extensions`는 4.16.0으로 고정되어 있습니다.
-
-React 화면을 빌드하려면 [Node.js LTS](https://nodejs.org/)가 필요합니다(Windows: `winget install OpenJS.NodeJS.LTS`). `start_all.bat`은 빌드 결과가 없을 때 자동으로 빌드합니다.
-
-FFmpeg와 FFprobe가 시스템 PATH에서 실행 가능해야 합니다.
-
-```bash
-ffmpeg -version
-ffprobe -version
-```
-
-## 실행 전 준비
-
-기본 입력 경로는 `data/input/*.mp4`입니다. 기본값으로 실행하려면 `data/input/`에 MP4 파일을 하나만 두세요.
-
-STT 기본 설정은 `configs/stt_config.yaml`에 있습니다.
-
-```yaml
-model_size: small
-language: ko
-device:
-temperature: 0.0
-beam_size:
-```
-
-LLM/VLM/최종 요약은 `--analysis-backend local|claude`로 선택합니다. 로컬 모드는 `gpu-server/` 폴더의 로컬 모델 서버(기본 모델 Qwen3-VL 8B, `--local-model`로 변경)를, API 모드는 같은 분석 서버를 거쳐 Claude Haiku를 사용합니다. 두 모드 모두 같은 강의용 프롬프트로 같은 형식의 강의 노트 JSON(`lecture_note`)을 만듭니다(로컬 모델이 JSON을 만들지 못하면 마크다운 요약으로 대체). 키는 서버 컴퓨터의 `ANTHROPIC_API_KEY` 환경변수에서만 읽습니다. 서버 업데이트 방법은 [분석 방식 설정](docs/analysis_backends.md)을 참고하세요.
-
-## React 앱 실행 (기본)
-
-화면은 React(`frontend/`), 화면이 호출하는 API는 FastAPI 앱 서버(`app/api/server.py`)입니다. 앱 서버가 React 빌드 결과(`frontend/dist`)도 함께 제공하므로 포트 하나(기본 8501)만 열면 됩니다. LLM/VLM 추론 서버(`GPU_SERVER_URL`, 기본 8000)와는 별개의 서버입니다.
-
-`start_all.bat`은 기본으로 React 앱 서버를 띄우고, `frontend/dist`가 없으면 먼저 빌드합니다(Node.js LTS 필요). 직접 실행하는 방법은 아래와 같습니다.
-
-```bash
-cd frontend
-npm ci
-npm run build
-cd ..
-python -m uvicorn app.api.server:app --host 127.0.0.1 --port 8501
-```
-
-화면 코드를 고친 뒤에는 `npm run build`를 다시 실행하세요. 개발 중에는 앱 서버를 8501에 띄운 상태에서 `frontend`에서 `npm run dev`를 실행하면 `/api` 요청이 8501로 전달됩니다.
-
-화면은 **사용자용 화면(핵심만PLZ)** 과 **개발자용 화면**으로 나뉩니다. 그냥 접속하면 사용자용 화면이 열리고, 오른쪽 위 `🛠️ 개발자` 버튼에서 개발자 비밀번호(기본 `admin`, `DEV_PASSWORD` 환경변수로 변경)를 입력해야 개발자용 화면(`/dev`)에 들어갈 수 있습니다.
-
-사용자용 화면
-
-| 경로 | 화면 |
-| --- | --- |
-| `/` | 유튜브 링크·영상 파일 입력, 요약 방식(빠르게/표준/꼼꼼하게) 선택 후 요약 시작 |
-| `/summarize/<실행 ID>` | 요약 진행 상황 |
-| `/note/run/<실행 ID>`, `/note/saved/<이름>` | 강의노트(영상 + 시간대별 요약), 저장·인쇄 |
-| `/library` | 저장한 강의노트 목록 |
-
-개발자용 화면 (개발자 비밀번호 필요)
-
-| 경로 | 화면 |
-| --- | --- |
-| `/dev/upload` | 영상 업로드·분석 설정·진행 상황 (`?run=<실행 ID>`로 새로고침 후 다시 연결) |
-| `/dev/result/<실행 ID>` | 원본 영상과 최종 요약, 결과 저장 |
-| `/dev/saved` | 저장된 요약 목록·확인·삭제 |
-| `/dev/history` | 실행 이력과 성능 지표 |
-
-- 일반 사용자는 분석 방식(로컬 모델 / Claude API)을 고를 수 없습니다. 개발자 화면의 분석 설정에서 `사용자 화면에 적용`을 누른 방식이 쓰이며(`runs/user_defaults.json`), 지정 전에는 로컬 기본 모델(Qwen3-VL 8B)을 씁니다.
-- 실행 이력·모델 상태·분석 로그 API는 개발자 모드에서만 응답합니다.
-
-- 입장 비밀번호는 선택 사항입니다. `APP_PASSWORD` 환경변수 또는 `.streamlit/secrets.toml`의 `APP_PASSWORD`를 설정하면 모든 접속에 로그인 화면이 나오고, 설정하지 않으면 로컬·Cloudflare Tunnel 외부 접속 모두 로그인 없이 사용자 화면으로 들어갑니다(개발자 화면은 항상 개발자 비밀번호 필요).
-- 로그인 세션은 서버를 재시작하면 풀립니다. 유지하려면 `APP_SESSION_SECRET`을 고정값으로 설정하세요(유효 시간 `APP_SESSION_HOURS`, 기본 12시간).
-- 업로드 한도는 `MAX_UPLOAD_MB`(기본 500MB), 외부 접속은 `EXTERNAL_UPLOAD_LIMIT_MB`(기본 100MB)입니다.
-- 기존 Streamlit 화면이 필요하면 `start_all.bat -Streamlit`(또는 `APP_UI=streamlit`)으로 같은 포트에 띄울 수 있습니다. 두 화면은 같은 실행 기록·저장 결과를 공유하지만 같은 포트를 쓰므로 하나만 실행하세요.
-
-## Streamlit 앱 실행 (예비)
-
-Windows에서는 배치 파일로 실행할 수 있습니다.
-
-```bat
-run_app.bat
-```
-
-직접 실행할 수도 있습니다.
-
-```bash
-streamlit run app/main.py
-```
-
-앱(React `/upload`, Streamlit `app/pages/1_upload.py`)은 두 가지 방식으로 분석할 영상을 지정할 수 있습니다. 업로드마다 고유 폴더를 만들어 여러 사용자의 파일이 섞이지 않습니다.
-
-- 파일 업로드: `data/input/uploads/<업로드 ID>/input.<확장자>` (mp4/mov/avi)로 저장
-- 유튜브 링크: `modules/preprocess/youtube_downloader.py`의 `download_youtube_video()`가 `yt-dlp`로 다운로드해 `data/input/uploads/<업로드 ID>/input.mp4`로 저장. React 화면에서는 서버가 백그라운드로 내려받고 화면이 `GET /api/uploads/youtube/<업로드 ID>`로 완료를 확인합니다(긴 영상이 Cloudflare 응답 제한 100초를 넘겨 HTTP 524가 나지 않도록)
-
-업로드 화면에는 **분석 방식**과 **Whisper 음성 인식**을 독립적으로 선택하는 설정이 있습니다.
-
-| Whisper 설정 | 모델 | 화면 분석 |
+| 기능 | 구현 | 검증 |
 | --- | --- | --- |
-| 간단 (`simple`) | small | OCR·VLM 실행 |
-| 기본 (`standard`, 기본값) | medium | OCR·VLM 실행 |
-| 상세 (`detailed`) | large | OCR·VLM 실행 |
+| 파일·유튜브 입력 | ✅ | 서버 PC에서 실사용 |
+| 7단계 분석 + 진행률 표시 | ✅ | 단위 테스트, 서버 PC에서 실사용 (최장 184분 영상) |
+| Qwen3-VL 8B 로컬 추론 | ✅ | 벤치마크 기록 ([results](gpu-server/benchmarks/results/)) |
+| 긴 강의 구간 요약 | ✅ | 73분 강의 벤치마크 3회 완료 |
+| 강의 노트 · 챕터 타임라인 | ✅ | 단위 테스트 |
+| 카테고리 분류 | ✅ | 단위 테스트 |
+| 로그인 · 개발자 권한 | ✅ | 단위 테스트 |
+| Claude API 분석 | ✅ | 모의 응답 테스트, 실제 호출은 1회만 확인 |
+| Cloudflare 외부 접속 | ✅ | 터널 연결 확인, 외부 기기 접속 점검 기록은 없음 |
+| Qwen3-VL 외 로컬 모델 5종 | 로더만 | GPU 추론 검증 기록 없음 |
+| 영상 기반 질의응답 | ❌ | 초기 목표였으나 미구현 |
 
-세 설정은 Whisper 크기만 변경하며 요약 생성 정책은 동일합니다.
+### 알려진 한계
 
-영상이 준비되면 `scripts/run_pipeline.py --summary-level <선택값>`을 백그라운드 프로세스로 실행합니다. 실행 로그는 `runs/history/<실행 ID>/process.log`에 저장되며, 파이프라인이 `modules/common/progress.py`의 `report_progress()`로 남기는 `##PROGRESS##` 마커를 앱이 폴링해 7단계 진행 상황을 원형 아이콘과 퍼센트로 보여줍니다. 파이프라인 프로세스가 오류로 종료되면 진행 중이던 단계가 빨간 오류 아이콘으로 표시됩니다.
+- 요약 품질(정확도, 환각 여부)과 음성 인식 오류율을 정량으로 평가하지 않았습니다.
+- 한 번에 하나의 영상만 분석하며, 사용자 계정 구분이 없습니다.
+- 프롬프트가 강의에 맞춰져 있어 회의·뉴스 등 다른 유형의 영상에서는 결과 형식이 어색할 수 있습니다.
+- 프레임이 많은 영상은 프레임 요약 단계 때문에 처리 시간이 길어집니다.
 
-분석이 끝나면 `pages/2_analysis_result.py`에서 원본 영상과 최종 요약을 함께 확인할 수 있고, "영상과 요약 결과 저장" 버튼(`app/result_export.py`)으로 `data/saved/[영상 제목] - 년월일시분초/` 폴더에 영상과 요약 파일을 복사해 보관할 수 있습니다(표/차트 스크린샷 복원용 프레임/OCR 결과도 있으면 함께 저장). 요약 화면의 타임라인은 `분:초` 형식의 클릭 가능한 뱃지로 표시되며, 클릭하면 영상이 해당 지점으로 이동합니다. `pages/3_saved_summaries.py`에서는 저장된 결과 목록을 다시 불러와 확인하거나 삭제할 수 있습니다.
+### 향후 계획
 
-## 로그인 보호 및 외부 공개 (선택)
+영상 기반 질의응답(RAG), 요약 품질 평가 체계, 회의·세미나용 프롬프트, 동시 요청 대기열.
 
-앱을 로컬에서만 쓸 때는 아래 설정이 필요 없습니다. Cloudflare Tunnel 등으로 외부에 공개할 때만 설정하세요.
-
-- **로그인 게이트**: `.streamlit/secrets.toml`(React 앱 서버는 `APP_PASSWORD` 환경변수도 가능)에 `APP_PASSWORD`를 설정하면 모든 화면 진입 전에 비밀번호 입력 화면이 표시됩니다(React: `app/api/auth.py`, Streamlit: `app/auth.py`의 `require_login()`). `APP_PASSWORD`가 없으면 React 앱 서버는 로컬·외부 접속 모두 로그인 없이 통과시킵니다(예비 Streamlit 화면은 여전히 외부 접속을 차단).
-- **Cloudflare Tunnel**: `start_tunnel.bat`(Windows) 또는 `start_tunnel.ps1`을 실행하면 `cloudflared`가 로컬 8501 포트(앱 서버 기본 포트)를 외부 URL로 연결하고, 발급된 URL을 `tunnel_url.txt`에 저장합니다. `cloudflared`가 PATH에 설치되어 있어야 합니다.
-
-## 전체 파이프라인 실행
-
-```bash
-python scripts/run_pipeline.py --video data/input/sample.mp4 --run-dir runs
-```
-
-자주 쓰는 옵션은 다음과 같습니다.
-
-```bash
-python scripts/run_pipeline.py \
-  --video data/input/sample.mp4 \
-  --run-dir runs \
-  --method representative \
-  --max-frames-per-segment 4 \
-  --stt-model-size small \
-  --stt-language ko \
-  --summary-level standard
-```
-
-`--summary-level`은 Whisper 모델만 선택합니다: `simple=small`, `standard=medium`, `detailed=large`. 모든 선택에서 전체 분석 단계를 수행합니다.
-
-일부 단계를 건너뛸 수 있습니다.
-
-```bash
-python scripts/run_pipeline.py --skip-ocr
-python scripts/run_pipeline.py --skip-vlm
-```
-
-명시적으로 `--skip-ocr` 또는 `--skip-vlm`을 사용해 VLM 요약이 없으면, 최종 통합 요약 단계는 서버에 병합 요청을 보내지 않고 STT 요약을 그대로 최종 요약으로 저장합니다.
-
-`--skip-stt` 옵션은 현재 비활성화되어 있습니다(`scripts/run_pipeline.py`에서 주석 처리). STT를 건너뛰면 이후 요약/프레임/OCR/VLM/최종요약 단계가 모두 연쇄적으로 건너뛰어져 옵션 설명과 실제 동작이 달라 혼란을 줄 수 있기 때문입니다. STT는 항상 실행됩니다.
-
-## 단계별 실행
-
-전처리와 프레임 샘플링:
-
-```bash
-python scripts/run_preprocess.py --video data/input/sample.mp4 --run-dir runs
-```
-
-STT:
-
-```bash
-python scripts/run_stt.py --audio runs/audio/audio.wav
-```
-
-STT 요약:
-
-```bash
-python scripts/run_llm_summary.py --stt-json runs/stt/stt_result.json
-```
-
-OCR:
-
-```bash
-python scripts/run_ocr.py
-```
-
-VLM 프레임 요약:
-
-```bash
-python scripts/run_vlm_summary.py --ocr-json runs/ocr/ocr_result.json
-```
-
-최종 요약:
-
-```bash
-python scripts/run_final_summary.py
-```
-
-참고로 `scripts/run_pipeline.py`는 최종 통합 요약까지 실행합니다. 개별 단계만 다시 실행해야 할 때는 `scripts/run_final_summary.py`를 별도로 사용할 수 있습니다.
-
-## 주요 출력 파일
-
-기본 출력 루트는 `runs/`입니다.
-
-| 경로 | 설명 |
-| --- | --- |
-| `runs/audio/audio.wav` | 영상에서 추출한 오디오 |
-| `runs/stt/stt_result.json` | Whisper STT 구조화 결과 |
-| `runs/stt/stt_result.txt` | STT 텍스트 결과 |
-| `runs/llm/stt_summary.txt` | STT 기반 LLM 요약 |
-| `runs/llm/stt_summary_result.json` | 주요 구간을 포함한 STT 요약 결과 |
-| `runs/metadata/frame_metadata.json` | 샘플링된 프레임 메타데이터 |
-| `runs/ocr/ocr_result.json` | 프레임별 OCR 결과 |
-| `runs/vlm/vlm_summary.txt` | 프레임별 VLM 요약 |
-| `runs/vlm/vlm_summary_result.json` | VLM 요약 구조화 결과 |
-| `runs/final/final_summary.txt` | 최종 통합 요약 |
-| `runs/final/final_summary_result.json` | 최종 통합 요약 결과 (`source`/`final_summary`/`summary` 3개 키만 있으며, 실제 요약 내용은 `summary` 안에 마크다운 텍스트로 들어있음. VLM 요약이 없을 때는 `final_summary` 키 없이 `source`/`summary`만 있고 `source.mode`가 `"stt_only"`) |
-
-## 문서
-
-- `docs/setup_guide.md`: 설치 및 실행 환경 안내
-- `docs/data_format.md`: 주요 JSON 데이터 형식
-- `docs/system_overvies.md`: 시스템 개요 문서
-- `docs/explanation/README.md`: 모듈별 상세 설명 문서 색인
-- `docs/explanation/scripts/scripts.md`: CLI 스크립트 설명
-- `docs/single_server_deployment.md`: 단일 서버 실행(`start_all`)과 Cloudflare 외부 접속
-- `docs/explanation/app/app.md`: 앱 공통 모듈과 Streamlit UI 구조
-- `docs/explanation/app/app_api.md`: React 화면용 앱 API 서버(엔드포인트, 로그인·보안)
-- `docs/explanation/frontend/frontend.md`: React 화면 구조, 개발·빌드 방법
-- `docs/explanation/configs/configs.md`: 설정 파일 설명
-- `docs/explanation/tests/tests.md`: 테스트 구성 설명
-
-## 현재 구현 상태
-
-| 영역 | 상태 |
-| --- | --- |
-| 영상 전처리 | 구현됨 |
-| 프레임 샘플링 | 구현됨 |
-| 오디오 추출 | 구현됨 |
-| Whisper STT | 구현됨 |
-| EasyOCR | 구현됨 |
-| STT 요약 LLM 클라이언트 | 구현됨, GPU 서버 필요 |
-| VLM 요약 클라이언트 | 구현됨, GPU 서버 필요 |
-| 최종 요약 클라이언트 | 구현됨, GPU 서버 필요 |
-| React 화면 + 앱 API 서버 | 구현됨 (기본 UI) |
-| Streamlit UI | 구현됨 (예비) |
-
-## 팀 역할
+## 팀
 
 | 이름 | 담당 |
 | --- | --- |
@@ -309,6 +219,16 @@ python scripts/run_final_summary.py
 | 정병두 | OCR 데이터, AI 모델 조사, VLM/LLM 모듈 설계 |
 | 조윤호 | 입출력 UI |
 
-## 실행 이력과 성능 분석
+## 문서
 
-실행별 소요 시간, 프레임 수, OCR/VLM 처리량과 원본 로그가 `runs/history/<실행 ID>/`에 자동 보관됩니다. 앱의 **실행 이력** 화면(React·Streamlit 모두)에서 조회·필터링하고 CSV/JSON/로그를 다운로드할 수 있습니다. [자세한 사용법](docs/run_history.md)을 참고하세요.
+| 문서 | 내용 |
+| --- | --- |
+| [단일 서버 운영 가이드](docs/single_server_deployment.md) | `start_all` 동작, 환경변수, Cloudflare Tunnel, 외부 접속 비밀번호 |
+| [설치 및 실행 가이드](docs/setup_guide.md) | 환경 준비, 개별 실행, 예비 Streamlit 화면, 문제 해결 |
+| [분석 방식 설정](docs/analysis_backends.md) | 로컬 모델 / Claude API 선택 |
+| [시스템 개요](docs/system_overvies.md) | 전체 구조와 처리 흐름 |
+| [데이터 형식](docs/data_format.md) | 단계별 출력 파일과 강의 노트 JSON 구조 |
+| [실행 이력](docs/run_history.md) | 실행별 소요 시간·처리량 기록과 조회 방법 |
+| [모듈별 설명](docs/explanation/README.md) | 앱 API, React 화면, 파이프라인, 각 모듈 상세 |
+| [추론 서버](gpu-server/README.md) · [로컬 모델 가이드](gpu-server/docs/local_models.md) | 추론 서버 API, 모델 목록과 다운로드 |
+| [Notion 기술 문서](https://app.notion.com/p/41aaf0b394da8159a4defcfd92d4b650) | 개발 기록, 기술적 의사결정, 문제 해결, 회고 |

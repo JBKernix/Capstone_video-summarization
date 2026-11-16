@@ -17,8 +17,8 @@
 ## Python 환경 생성
 
 ```bash
-conda create -n capstone_test python=3.11
-conda activate capstone_test
+conda create -n capstone python=3.11
+conda activate capstone
 pip install -r requirements.txt
 ```
 
