@@ -36,3 +36,6 @@ runs/
 
 # 발표용 자료(패널 PPT, 미리보기 이미지)는 저장소에 넣지 않습니다.
 panel/
+
+# launcher shortcuts hold absolute paths; regenerate with scripts/create_shortcuts.ps1
+*.lnk
