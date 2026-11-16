@@ -262,6 +262,7 @@ class InferenceJobRunner:
         vlm_json: bytes | None,
         max_new_tokens: int,
         max_important_segments: int | None = None,
+        video_info: str | None = None,
     ) -> None:
         try:
             self.job_store.update(
@@ -279,6 +280,7 @@ class InferenceJobRunner:
                     vlm_json=vlm_json,
                     max_new_tokens=max_new_tokens,
                     max_important_segments=max_important_segments,
+                    video_info=video_info,
                 )
             for attempt in final_note["attempts"]:
                 if attempt["error"]:
@@ -288,6 +290,7 @@ class InferenceJobRunner:
             result = FinalSummaryResponse(
                 final_summary=final_note["markdown"],
                 lecture_note=final_note["lecture_note"],
+                classification=final_note.get("classification"),
             )
             self.job_store.update(
                 job_id,

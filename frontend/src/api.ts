@@ -277,10 +277,30 @@ export type SummaryResult = SummaryContent & {
   saved_at?: string | null
 }
 
+export type NoteCategory =
+  | 'SCIENCE_ENGINEERING'
+  | 'MEDICAL_HEALTH'
+  | 'HISTORY_HUMANITIES'
+  | 'CURRENT_AFFAIRS_SOCIETY'
+  | 'CULTURE_ENTERTAINMENT'
+  | 'OTHER'
+
+export interface NoteClassification {
+  category: NoteCategory
+  confidence: number | null
+  status: 'CLASSIFIED' | 'NEEDS_REVIEW' | 'MANUALLY_CLASSIFIED'
+  reason: string
+  tags: string[]
+  suggested_category: NoteCategory | null
+}
+
 export interface SavedItem {
   name: string
   title: string
   saved_at: string | null
+  // 분류 기능 이전 서버 응답에는 없을 수 있습니다(화면에서는 기타·미분류로 표시).
+  category?: NoteCategory
+  classification?: NoteClassification
 }
 
 export interface HistoryStage {

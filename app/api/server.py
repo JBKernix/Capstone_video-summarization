@@ -66,6 +66,7 @@ from modules.common.run_history import (
 )
 from modules.llm import GPU_SERVER_URL
 from modules.llm.backends import BACKEND_LABELS, DEFAULT_CLAUDE_MODEL
+from modules.llm.category import CATEGORIES, CATEGORY_LABELS, read_classification, store_manual_classification
 from modules.llm.local_models import DEFAULT_LOCAL_MODEL, LOCAL_MODEL_LABELS
 from modules.llm.summary_levels import (
     DEFAULT_SUMMARY_LEVEL,
@@ -324,9 +325,13 @@ def _set_youtube_state(upload_id: str, state: dict) -> None:
 
 def _download_youtube(url: str, upload_dir: Path) -> None:
     try:
-        save_path, video_title = download_youtube_video(url, upload_dir / "input")
+        metadata: dict = {}
+        save_path, video_title = download_youtube_video(url, upload_dir / "input", metadata=metadata)
         info = {"filename": save_path.name, "title": video_title, "source_key": f"youtube_{url}"}
-        (upload_dir / UPLOAD_INFO_FILENAME).write_text(json.dumps(info, ensure_ascii=False), encoding="utf-8")
+        # 채널·설명은 카테고리 분류에만 쓰므로 업로드 정보 파일에만 남깁니다(설명은 앞부분만).
+        extra = {"channel": metadata.get("channel", ""), "description": metadata.get("description", "")[:2000]}
+        (upload_dir / UPLOAD_INFO_FILENAME).write_text(json.dumps({**info, **extra}, ensure_ascii=False),
+                                                       encoding="utf-8")
     except Exception as error:
         remove_upload_dir(upload_dir)
         _set_youtube_state(upload_dir.name, {"status": "error",
@@ -439,6 +444,7 @@ def start_run(body: RunBody, request: Request) -> dict:
                 "video_title": info.get("title"),
                 "upload_id": upload_dir.name,
             },
+            video_context={"title": title, "channel": info.get("channel"), "description": info.get("description")},
         )
     except PipelineBusyError as error:
         raise HTTPException(409, str(error))
@@ -565,12 +571,21 @@ def _saved(name: str) -> Path:
 
 
 @app.get("/api/saved", dependencies=protected)
-def saved_list() -> dict:
-    return {"items": [
-        {"name": item["folder"].name, "title": item["title"],
-         "saved_at": item["timestamp"].isoformat() if item["timestamp"] else None}
-        for item in list_saved_items(SAVE_ROOT)
-    ]}
+def saved_list(category: str | None = None) -> dict:
+    """저장된 강의노트 목록입니다. ``category``를 주면 그 카테고리의 노트만 돌려줍니다."""
+    if category is not None and category not in CATEGORIES:
+        raise HTTPException(400, "지원하지 않는 카테고리입니다.")
+    return {
+        "items": [
+            {"name": item["folder"].name, "title": item["title"],
+             "saved_at": item["timestamp"].isoformat() if item["timestamp"] else None,
+             "category": item["classification"]["category"],
+             "classification": item["classification"]}
+            for item in list_saved_items(SAVE_ROOT)
+            if category is None or item["classification"]["category"] == category
+        ],
+        "categories": [{"id": key, "label": label} for key, label in CATEGORY_LABELS.items()],
+    }
 
 
 @app.get("/api/saved/{name}", dependencies=protected)
@@ -585,6 +600,7 @@ def saved_detail(name: str) -> dict:
         "name": name,
         "title": title,
         "saved_at": timestamp.isoformat() if timestamp else None,
+        "classification": read_classification(folder),
         "video_url": f"/api/saved/{quote(name, safe='')}/video" if find_saved_video(folder) else None,
         **summary,
     }
@@ -604,6 +620,18 @@ def saved_frame(name: str, index: int) -> FileResponse:
     if path is None:
         raise HTTPException(404, "해당 구간 화면을 찾을 수 없습니다.")
     return FileResponse(path)
+
+
+class CategoryBody(BaseModel):
+    category: str
+
+
+@app.put("/api/saved/{name}/category", dependencies=protected)
+def set_saved_category(name: str, body: CategoryBody) -> dict:
+    """사용자가 고른 카테고리로 바꿉니다. 이후 자동 분류는 이 값을 덮어쓰지 않습니다."""
+    if body.category not in CATEGORIES:
+        raise HTTPException(400, "지원하지 않는 카테고리입니다.")
+    return {"classification": store_manual_classification(_saved(name), body.category)}
 
 
 @app.delete("/api/saved/{name}", dependencies=protected)

@@ -1,4 +1,5 @@
 // 사용자용 화면에서 쓰는 쉬운 표현입니다. 서버의 단계·설정 이름(개발자용)을 그대로 보여 주지 않습니다.
+import type { NoteCategory } from '../api'
 
 export const FRIENDLY_STEPS: Record<number, { title: string; description: string }> = {
   1: { title: '강의 음성 분리', description: '영상에서 선생님 목소리를 꺼내고 있어요' },
@@ -14,6 +15,22 @@ export const FRIENDLY_LEVELS: Record<string, { name: string; description: string
   simple: { name: '빠르게', description: '짧은 시간 안에 훑어보기' },
   standard: { name: '표준', description: '속도와 정확도의 균형 · 추천' },
   detailed: { name: '꼼꼼하게', description: '받아쓰기 정확도 우선 · 시간이 더 걸려요' },
+}
+
+// 서버 modules/llm/category.py의 CATEGORY_LABELS와 같은 순서·이름입니다.
+export const CATEGORY_LABELS: Record<NoteCategory, string> = {
+  SCIENCE_ENGINEERING: '과학·공학',
+  MEDICAL_HEALTH: '의학·건강',
+  HISTORY_HUMANITIES: '역사·인문',
+  CURRENT_AFFAIRS_SOCIETY: '시사·사회',
+  CULTURE_ENTERTAINMENT: '문화·엔터테인먼트',
+  OTHER: '기타·미분류',
+}
+export const CATEGORIES = Object.keys(CATEGORY_LABELS) as NoteCategory[]
+
+/** 알 수 없는 값(이전 노트 등)은 기타·미분류로 봅니다. */
+export function noteCategory(value: string | null | undefined): NoteCategory {
+  return value && value in CATEGORY_LABELS ? (value as NoteCategory) : 'OTHER'
 }
 
 export function formatClock(totalSeconds: number) {

@@ -45,6 +45,7 @@ from modules.stt import (  # noqa: E402
     DEFAULT_STT_BEAM_SIZE,
 )
 from modules.ocr import DEFAULT_OCR_LANGUAGE  # noqa: E402
+from modules.llm.category import load_video_context  # noqa: E402
 from modules.llm.summary_levels import (  # noqa: E402
     DEFAULT_SUMMARY_LEVEL,
     SUMMARY_LEVEL_STT_MODELS,
@@ -525,6 +526,7 @@ def _run_pipeline(args, recorder):
                 output_path=run_path(run_dir, DEFAULT_FINAL_SUMMARY_RELATIVE_PATH),
                 output_json_path=run_path(run_dir, DEFAULT_FINAL_SUMMARY_JSON_RELATIVE_PATH),
                 summary_level=DEFAULT_SUMMARY_LEVEL,
+                video_context=load_video_context(run_dir, getattr(args, "input_name", None)),
             )
             print(f"최종 요약 저장(txt): {final_summary_path}")
             print(f"최종 요약 저장(json): {final_summary_json_path}")

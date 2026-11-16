@@ -8,6 +8,8 @@ import re
 from datetime import datetime
 from pathlib import Path
 
+from modules.llm.category import read_classification
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SAVE_ROOT = PROJECT_ROOT / "data" / "saved"
 VIDEO_EXTENSIONS = (".mp4", ".mov", ".avi")
@@ -47,7 +49,9 @@ def list_saved_items(save_root: Path = SAVE_ROOT) -> list[dict]:
         if not folder.is_dir():
             continue
         title, timestamp = parse_saved_folder_name(folder.name)
-        items.append({"folder": folder, "title": title, "timestamp": timestamp})
+        # 분류 정보가 없는 이전 노트는 기타·미분류(OTHER / NEEDS_REVIEW)로 읽습니다.
+        items.append({"folder": folder, "title": title, "timestamp": timestamp,
+                      "classification": read_classification(folder)})
 
     items.sort(key=lambda item: item["timestamp"] or datetime.min, reverse=True)
     return items

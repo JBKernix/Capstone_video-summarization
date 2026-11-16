@@ -41,11 +41,14 @@ class GPUFinalSummaryClient(GPUJobClientMixin):
         stt_summary_json_path: str | Path,
         vlm_summary_json_path: str | Path,
         summary_level: str = DEFAULT_SUMMARY_LEVEL,
+        video_info: str = "",
     ) -> dict:
+        """``video_info``는 카테고리 분류에 참고할 영상 제목·채널·설명입니다(category.format_video_info)."""
         return self._post_final_summary_files(
             stt_summary_json_path=Path(stt_summary_json_path),
             vlm_summary_json_path=Path(vlm_summary_json_path),
             summary_level=summary_level,
+            video_info=video_info,
         )
 
     def _post_final_summary_files(
@@ -53,6 +56,7 @@ class GPUFinalSummaryClient(GPUJobClientMixin):
         stt_summary_json_path: Path,
         vlm_summary_json_path: Path,
         summary_level: str,
+        video_info: str = "",
     ) -> dict:
         self._validate_summary_files(
             stt_summary_json_path=stt_summary_json_path,
@@ -79,7 +83,9 @@ class GPUFinalSummaryClient(GPUJobClientMixin):
             response = requests.post(
                 url,
                 files=files,
-                data={"summary_level": summary_level, "local_model": self.config.local_model},
+                # 이전 서버는 모르는 video_info 필드를 무시합니다(분류 결과가 없으면 미분류로 저장).
+                data={"summary_level": summary_level, "local_model": self.config.local_model,
+                      "video_info": video_info},
                 timeout=self.config.timeout,
             )
 

@@ -171,7 +171,7 @@ def wait_for_youtube(client, upload_id):
 def test_youtube_download_runs_in_background(client, monkeypatch):
     started, release = threading.Event(), threading.Event()
 
-    def fake_download(url, output_path):
+    def fake_download(url, output_path, metadata=None):
         started.set()
         release.wait(5)
         path = output_path.with_suffix(".mp4")
@@ -195,7 +195,7 @@ def test_youtube_download_runs_in_background(client, monkeypatch):
 
 
 def test_youtube_download_failure_is_reported_and_cleaned_up(client, monkeypatch):
-    def broken(url, output_path):
+    def broken(url, output_path, metadata=None):
         output_path.parent.mkdir(parents=True, exist_ok=True)
         raise RuntimeError("비공개 영상")
 
@@ -556,3 +556,62 @@ def test_result_outline_from_lecture_note_json(client, tmp_path):
     # 유형을 알 수 없는 이전 결과의 "기타" 자료는 유형 표시 없이 보여 줍니다.
     assert (outline["visuals"][1]["kind"], outline["visuals"][1]["title"]) == ("", "판서 식")
     assert outline["conclusion"] == ["학습률이 중요"]
+
+
+def test_saved_list_shows_categories_filters_and_accepts_manual_change(client, tmp_path):
+    saved = tmp_path / "saved"
+    legacy = saved / "[이전 강의] - 20260101-120000"
+    legacy.mkdir(parents=True)
+    (legacy / "final_summary.txt").write_text("# 이전 강의", encoding="utf-8")
+    drama = saved / "[김사부 명장면] - 20260102-120000"
+    drama.mkdir()
+    (drama / "final_summary.txt").write_text("# 명장면", encoding="utf-8")
+    (drama / "classification.json").write_text(json.dumps({
+        "category": "CULTURE_ENTERTAINMENT", "confidence": 0.9, "status": "CLASSIFIED", "reason": "드라마",
+        "tags": ["드라마"], "suggested_category": None}), encoding="utf-8")
+
+    items = {item["title"]: item for item in client.get("/api/saved").json()["items"]}
+    # 분류 정보가 없는 이전 노트도 오류 없이 기타·미분류로 보입니다(기존 필드는 그대로).
+    assert items["이전 강의"]["category"] == "OTHER" and items["이전 강의"]["classification"]["status"] == "NEEDS_REVIEW"
+    assert {"name", "title", "saved_at"} <= set(items["이전 강의"])
+    assert items["김사부 명장면"]["category"] == "CULTURE_ENTERTAINMENT"
+    filtered = client.get("/api/saved", params={"category": "CULTURE_ENTERTAINMENT"}).json()["items"]
+    assert [item["title"] for item in filtered] == ["김사부 명장면"]
+    assert client.get("/api/saved", params={"category": "NOPE"}).status_code == 400
+    assert client.get(f"/api/saved/{legacy.name}").json()["classification"]["category"] == "OTHER"
+
+    url = f"/api/saved/{legacy.name}/category"
+    assert client.put(url, json={"category": "HISTORY_HUMANITIES"}).status_code == 403  # CSRF 헤더 필요
+    assert client.put(url, json={"category": "SPORTS"}, headers=HEADERS).status_code == 400
+    changed = client.put(url, json={"category": "HISTORY_HUMANITIES"}, headers=HEADERS).json()["classification"]
+    assert (changed["category"], changed["status"]) == ("HISTORY_HUMANITIES", "MANUALLY_CLASSIFIED")
+    assert [item["title"] for item in client.get("/api/saved", params={"category": "HISTORY_HUMANITIES"}).json()["items"]] \
+        == ["이전 강의"]
+    assert client.put("/api/saved/missing/category", json={"category": "OTHER"}, headers=HEADERS).status_code == 404
+
+
+def test_youtube_channel_and_description_reach_the_pipeline(client, monkeypatch):
+    def fake_download(url, output_path, metadata=None):
+        path = output_path.with_suffix(".mp4")
+        path.write_bytes(b"video")
+        metadata.update(channel="SBS 드라마", description="닥터X를 잇는 명장면")
+        return path, "낭만닥터 김사부 명장면"
+
+    monkeypatch.setattr(server, "download_youtube_video", fake_download)
+    upload_id = client.post("/api/uploads/youtube", json={"url": "https://youtu.be/abc"}, headers=HEADERS).json()["upload_id"]
+    wait_for_youtube(client, upload_id)
+    calls = {}
+
+    def fake_launch(video_path, summary_level, title, **kwargs):
+        calls.update(kwargs)
+        return object(), MagicLog(), run_registry.JOBS_DIR / "run-1"
+
+    monkeypatch.setattr(server, "launch_pipeline", fake_launch)
+    client.post("/api/runs", json={"upload_id": upload_id}, headers=HEADERS)
+    assert calls["video_context"] == {"title": "낭만닥터 김사부 명장면", "channel": "SBS 드라마",
+                                      "description": "닥터X를 잇는 명장면"}
+
+
+class MagicLog:
+    def close(self):
+        pass

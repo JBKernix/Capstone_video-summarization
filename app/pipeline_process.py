@@ -11,6 +11,7 @@ from app.run_registry import PipelineBusyError, active_job, job_dir, start_job
 from modules.common.run_history import DEFAULT_HISTORY_DIR, prepare_run, finish_external
 from modules.llm import GPU_SERVER_URL
 from modules.llm.backends import DEFAULT_CLAUDE_MODEL
+from modules.llm.category import write_video_context
 from modules.llm.local_models import DEFAULT_LOCAL_MODEL
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -18,8 +19,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 def launch_pipeline(video_path, summary_level, input_name, *, analysis_backend="local",
                     local_server_url=GPU_SERVER_URL, claude_model=DEFAULT_CLAUDE_MODEL,
-                    local_model=DEFAULT_LOCAL_MODEL, job_info=None):
+                    local_model=DEFAULT_LOCAL_MODEL, job_info=None, video_context=None):
     """파이프라인을 실행별 산출물 폴더(runs/jobs/<run_id>)로 시작합니다.
+
+    ``video_context``(영상 제목·채널·설명)는 산출물 폴더에 남겨 최종 요약의 카테고리 분류에 씁니다.
 
     GPU 서버 한 대에서 전체 파이프라인은 동시에 하나만 실행합니다. 다른 분석이 실행 중이면
     ``PipelineBusyError``를 발생시킵니다.
@@ -37,6 +40,8 @@ def launch_pipeline(video_path, summary_level, input_name, *, analysis_backend="
 
     def spawn():
         run_dir.mkdir(parents=True, exist_ok=True)
+        if video_context:
+            write_video_context(run_dir, video_context)
         return subprocess.Popen(
             [sys.executable, "-u", str(PROJECT_ROOT / "scripts" / "run_pipeline.py"),
              "--video", str(video_path), "--summary-level", summary_level,

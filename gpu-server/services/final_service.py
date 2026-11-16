@@ -47,6 +47,22 @@ EMPHASIS_IN_NOTICE = re.compile(r"시험에\s*(?:나온|나와|나올|출제)|�
 SCREEN_NOTE_PREFIX = re.compile(r"^VLM\s*요약\s*자료(?:에서는|에서|에는|에)\s*,?\s*")
 PLACEHOLDER_PATTERN = re.compile(r"^<[^<>]*>$")
 NO_VLM_CONTENT = "(화면 자료에서 확인된 강의 내용이 없습니다.)"
+NO_VIDEO_INFO = "(영상 정보 없음)"
+# 카테고리 분류 기준입니다. 앱의 modules/llm/category.py(CATEGORY_GUIDE)와 같게 유지하세요.
+# 모델 답의 검증과 신뢰도 기준 적용은 앱에서 합니다. 여기서는 받은 값을 그대로 넘깁니다.
+CATEGORY_GUIDE = """[카테고리 분류]
+classification에는 영상 전체 내용을 보고 아래 카테고리 중 하나를 고르세요.
+- SCIENCE_ENGINEERING: 물리, 화학, 생명과학, 수학, 공학, 컴퓨터, 프로그래밍, 에너지, 우주과학
+- MEDICAL_HEALTH: 실제 질병, 증상, 진단, 치료, 의학 지식, 건강관리
+- HISTORY_HUMANITIES: 역사, 철학, 문학, 언어, 종교, 인문학
+- CURRENT_AFFAIRS_SOCIETY: 뉴스, 정치, 경제, 국제정세, 외교, 전쟁, 사회 문제
+- CULTURE_ENTERTAINMENT: 영화, 드라마, 예능, 음악, 게임, 스포츠, 작품 줄거리·명장면 요약
+- OTHER: 위 다섯 분야에 속하지 않는 콘텐츠
+제목의 단어 하나로 고르지 말고 영상 정보와 요약 내용 전체로 판단하세요.
+의료 드라마(예: 닥터X, 낭만닥터 김사부)의 줄거리·명장면처럼 '수술', '의사' 같은 단어가 나와도
+실제 의학 지식을 설명하는 내용이 아니면 MEDICAL_HEALTH가 아니라 CULTURE_ENTERTAINMENT입니다.
+confidence는 0~1 사이 숫자, reason은 근거 한 문장, tags는 주제 키워드 1~5개입니다.
+판단할 정보가 부족하면 OTHER와 낮은 confidence를 쓰세요."""
 
 NOTE_PROMPT = """
 당신은 강의 영상을 학습용 강의 노트로 정리하는 한국어 요약 전문가입니다.
@@ -62,6 +78,11 @@ NOTE_PROMPT = """
 - emphasis에는 강사가 "중요하다", "시험에 나온다", "꼭 기억하라" 등으로 강조한 내용을 쓰세요.
 - notices에는 과제 제출, 시험 일정, 다음 수업 안내 같은 일정·행정 공지만 쓰세요. 강조한 내용은 넣지 마세요.
 - visuals에는 표, 그래프, 수식, 코드, 도식, 판서 자료만 넣으세요. 일반 화면이나 강사 화면은 넣지 마세요.
+
+{category_guide}
+
+[영상 정보]
+{video_section}
 
 [STT 요약 자료]
 {stt_section}
@@ -102,7 +123,13 @@ NOTE_PROMPT = """
   ],
   "conclusion": ["<복습할 때 꼭 기억할 내용, 2~4개>"],
   "emphasis": ["<강사가 강조한 내용, 없으면 빈 배열>"],
-  "notices": ["<과제 제출·시험 일정·다음 수업 안내, 없으면 빈 배열>"]
+  "notices": ["<과제 제출·시험 일정·다음 수업 안내, 없으면 빈 배열>"],
+  "classification": {
+    "category": "<SCIENCE_ENGINEERING | MEDICAL_HEALTH | HISTORY_HUMANITIES | CURRENT_AFFAIRS_SOCIETY | CULTURE_ENTERTAINMENT | OTHER 중 하나>",
+    "confidence": <0~1 사이 숫자>,
+    "reason": "<분류 근거 한 문장>",
+    "tags": ["<주제 키워드 1~5개>"]
+  }
 }
 """
 
@@ -211,11 +238,14 @@ class FinalService:
         vlm_json: JSONInput | None = None,
         max_new_tokens: int = DEFAULT_FINAL_MAX_NEW_TOKENS,
         max_important_segments: int | None = None,
+        video_info: str | None = None,
     ) -> dict[str, Any]:
         """STT 요약과 VLM 요약을 종합해 강의 노트 JSON과 마크다운을 만듭니다.
 
         JSON을 읽지 못하면 오류 내용을 덧붙여 한 번 다시 요청하고, 그래도 실패하면
         마크다운 프롬프트로 대체합니다. 이때 ``lecture_note``는 ``None``입니다.
+        ``video_info``(영상 제목·채널·설명)는 카테고리 분류에 참고하며, 분류 결과는
+        검증 없이 ``classification``으로 넘깁니다(검증은 앱에서 합니다).
         """
         if vlm_text is None and vlm_json is None:
             raise ValueError("VLM 요약 내용이 비어 있습니다.")
@@ -233,7 +263,9 @@ class FinalService:
         known_times = self.collect_known_times(stt_data, vlm_data)
 
         prompt = (
-            NOTE_PROMPT.replace("{stt_section}", stt_section)
+            NOTE_PROMPT.replace("{category_guide}", CATEGORY_GUIDE)
+            .replace("{video_section}", (video_info or "").strip() or NO_VIDEO_INFO)
+            .replace("{stt_section}", stt_section)
             .replace("{vlm_section}", vlm_section)
         )
         attempts: list[dict[str, Any]] = []
@@ -243,13 +275,16 @@ class FinalService:
                 current_prompt += NOTE_RETRY_SUFFIX.format(error=attempts[-1]["error"])
             raw = self._generate(current_prompt, max_new_tokens)
             try:
-                note, warnings = normalize_lecture_note(extract_json_object(raw), known_times)
+                data = extract_json_object(raw)
+                note, warnings = normalize_lecture_note(data, known_times)
             except ValueError as error:
                 attempts.append({"raw": raw, "error": str(error)})
                 continue
             attempts.append({"raw": raw, "error": None})
+            classification = data.get("classification")
             return {
                 "lecture_note": note,
+                "classification": classification if isinstance(classification, dict) else None,
                 "markdown": render_note_markdown(note),
                 "format": "json",
                 "attempts": attempts,
@@ -262,6 +297,7 @@ class FinalService:
         )
         return {
             "lecture_note": None,
+            "classification": None,
             "markdown": self._generate(fallback_prompt, max_new_tokens).strip(),
             "format": "markdown_fallback",
             "attempts": attempts,

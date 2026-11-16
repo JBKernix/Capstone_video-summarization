@@ -272,6 +272,34 @@
 .u-card-body { padding: 1rem 1.1rem 1.2rem; display: flex; flex-direction: column; gap: 0.35rem; }
 .u-card-body strong { color: var(--u-ink); line-height: 1.45; word-break: keep-all; overflow-wrap: anywhere; }
 
+/* 카테고리: 필터 칩, 카드 배지, 카드 아래 변경 선택 */
+.u-category-filter { flex-wrap: wrap; margin-bottom: 1.2rem; }
+.u-chip-count { margin-left: 0.35rem; font-size: 0.78rem; opacity: 0.65; }
+.u-note-card {
+  display: flex; flex-direction: column; background: var(--u-card); border: 1px solid var(--u-line);
+  border-radius: var(--u-radius); overflow: hidden; transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.u-note-card:hover { transform: translateY(-3px); box-shadow: var(--u-shadow); }
+.u-shell .u-note-card a.u-card { flex: 1; border: 0; border-radius: 0; }
+.u-shell .u-note-card a.u-card:hover { transform: none; box-shadow: none; }
+.u-category-badge {
+  align-self: flex-start; font-size: 0.76rem; font-weight: 800; border-radius: 999px; padding: 0.15rem 0.6rem;
+  background: #f0eee8; color: var(--u-text);
+}
+.u-category-badge.cat-SCIENCE_ENGINEERING { background: var(--u-primary-soft); color: #22348f; }
+.u-category-badge.cat-MEDICAL_HEALTH { background: var(--u-green-soft); color: var(--u-green); }
+.u-category-badge.cat-HISTORY_HUMANITIES { background: #fdf3e1; color: #8a5300; }
+.u-category-badge.cat-CURRENT_AFFAIRS_SOCIETY { background: var(--u-red-soft); color: #a8261a; }
+.u-category-badge.cat-CULTURE_ENTERTAINMENT { background: #f6ecff; color: #6b2fa8; }
+.u-card-category {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
+  padding: 0.6rem 1.1rem; border-top: 1px solid var(--u-line);
+}
+.u-card-category select {
+  border: 1px solid var(--u-line); border-radius: 10px; background: #fff; color: var(--u-ink);
+  padding: 0.3rem 0.5rem; font: inherit; font-size: 0.85rem; max-width: 60%;
+}
+
 /* 개발자 모드 팝업 ------------------------------------------------------- */
 .u-modal-backdrop {
   position: fixed; inset: 0; z-index: 50; background: rgba(20, 27, 52, 0.45);

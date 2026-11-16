@@ -39,6 +39,8 @@ class FinalSummaryResponse(BaseModel):
     final_summary: str
     # 강의 노트 JSON입니다. 모델 출력을 JSON으로 읽지 못해 마크다운으로 대체했으면 None입니다.
     lecture_note: dict[str, Any] | None = None
+    # 강의 노트와 같은 응답으로 받은 카테고리 분류 원본입니다. 검증은 앱에서 합니다.
+    classification: dict[str, Any] | None = None
 
 
 class JobSubmissionResponse(BaseModel):

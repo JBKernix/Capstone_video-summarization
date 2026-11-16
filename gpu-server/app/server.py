@@ -258,6 +258,7 @@ async def summarize_final(
     vlm_summary: UploadFile | None = File(default=None),
     summary_level: str = Form(default=DEFAULT_SUMMARY_LEVEL),
     local_model: str | None = Form(default=None),
+    video_info: str | None = Form(default=None),
 ):
     local_model = validate_local_model(local_model)
     try:
@@ -304,6 +305,7 @@ async def summarize_final(
         vlm_summary_result_data,
         max_new_tokens,
         preset.final_important_segments,
+        (video_info or "")[:2000],
     )
     return JobSubmissionResponse(
         job_id=job_id,

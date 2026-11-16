@@ -20,6 +20,7 @@ from modules.llm import GPU_SERVER_URL
 from modules.llm.stt_summarizer_client import GPULLMClient
 from modules.llm.vlm_summarizer_client import GPUVLMClient
 from modules.llm.final_summarizer_client import GPUFinalSummaryClient
+from modules.llm.category import CATEGORY_GUIDE, CLASSIFICATION_SCHEMA
 from modules.llm.lecture_note import (
     SCREEN_TYPES,
     VISUAL_TYPES,
@@ -114,6 +115,11 @@ FINAL_PROMPT = """강의 영상을 학습용 강의 노트로 정리하세요.
 - notices: 과제 제출, 시험 일정, 다음 수업 안내 같은 일정·행정 공지만(없으면 빈 배열). 강조한 내용은 넣지 마세요.
 - 각 문자열은 한 문장으로 짧게 쓰세요.
 
+{category_guide}
+
+[영상 정보]
+{video_section}
+
 [STT 요약 자료]
 {stt_section}
 
@@ -144,8 +150,10 @@ LECTURE_NOTE_SCHEMA = {
         "conclusion": STRINGS,
         "emphasis": STRINGS,
         "notices": STRINGS,
+        "classification": CLASSIFICATION_SCHEMA,
     },
-    "required": ["title", "key_points", "terms", "chapters", "visuals", "conclusion", "emphasis", "notices"],
+    "required": ["title", "key_points", "terms", "chapters", "visuals", "conclusion", "emphasis", "notices",
+                 "classification"],
 }
 
 
@@ -314,7 +322,7 @@ class ClaudeFinalClient(GPUFinalSummaryClient):
         super().__init__()
         self.api = ClaudeMessages(model, server_url)
 
-    def _post_final_summary_files(self, stt_summary_json_path, vlm_summary_json_path, summary_level):
+    def _post_final_summary_files(self, stt_summary_json_path, vlm_summary_json_path, summary_level, video_info=""):
         self._validate_summary_files(stt_summary_json_path, vlm_summary_json_path)
         report_progress(self.progress_step, "Claude 최종 통합 요약 생성 중")
         stt = load_json(stt_summary_json_path)
@@ -327,16 +335,20 @@ class ClaudeFinalClient(GPUFinalSummaryClient):
             stt_section += f"\n\n[STT 주요 구간]\n{format_important_segments(important)}"
         # 강사 화면만 있는 강의도 있으므로 화면 자료가 걸러져 비면 안내 문구를 넣습니다.
         vlm_section = format_vlm_entries(frames, FINAL_VLM_ITEMS) or "(화면 자료에서 확인된 강의 내용이 없습니다.)"
-        prompt = FINAL_PROMPT.replace("{stt_section}", stt_section).replace("{vlm_section}", vlm_section)
+        prompt = (FINAL_PROMPT.replace("{category_guide}", CATEGORY_GUIDE)
+                  .replace("{video_section}", video_info or "(영상 정보 없음)")
+                  .replace("{stt_section}", stt_section).replace("{vlm_section}", vlm_section))
 
         known_times = collect_known_times(important, frames)
         error = None
         for _ in range(2):
             try:
-                note, warnings = normalize_lecture_note(
-                    self.api.request([text_block(prompt)], LECTURE_NOTE_SCHEMA, FINAL_MAX_TOKENS), known_times)
+                answer = self.api.request([text_block(prompt)], LECTURE_NOTE_SCHEMA, FINAL_MAX_TOKENS)
+                note, warnings = normalize_lecture_note(answer, known_times)
             except ValueError as exc:
                 error = exc
                 continue
-            return {"summary": render_note_markdown(note), "lecture_note": note, "warnings": warnings}
+            # 분류 결과는 검증 전 원본 그대로 넘기고 run_final_summary_step에서 한 번만 검증합니다.
+            return {"summary": render_note_markdown(note), "lecture_note": note, "warnings": warnings,
+                    "classification": answer.get("classification")}
         raise ValueError(f"Claude 강의 노트를 만들 수 없습니다: {error}")
