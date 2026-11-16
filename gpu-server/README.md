@@ -182,10 +182,11 @@ curl.exe -X POST "http://localhost:8000/vlm/summarize" `
 | `vlm_summary` | TXT 파일 1개 (선택) | VLM 전체 요약 텍스트 |
 | `summary_level` | 문자열 | `simple` / `standard`(기본값) / `detailed` |
 | `local_model` | 문자열 (선택) | 이 요청에 사용할 로컬 모델 선택 ID. 생략 시 `LLM_BACKEND=local`이면 `qwen3-vl-8b`, `claude`면 기본 서비스 사용 |
+| `video_info` | 문자열 (선택) | 카테고리 분류에 참고할 영상 정보(제목·채널·설명). 앞 2000자만 사용 |
 
 VLM 결과 중 강사 화면처럼 강의 내용이 없는 프레임은 최종 요약 입력에서 제외되며, 남는 화면 자료가 없어도 오류 없이 STT 요약만으로 최종 요약을 만듭니다. 최종 요약 입력에 넣는 STT 중요 구간은 `summary_level`별로 최대 `simple` 8개, `standard` 12개, `detailed` 16개이며 넘으면 시간순으로 고르게 추립니다. `qwen3-vl-8b`는 STT·VLM 입력 텍스트를 각각 4000자(기본 5000자)로 줄여 넣습니다.
 
-완료된 작업의 `result`는 마크다운 최종 요약(`final_summary`)과 강의 노트 JSON(`lecture_note`)을 함께 담습니다. 모델 출력을 JSON으로 읽지 못하면 오류 내용을 덧붙여 한 번 더 요청하고, 그래도 실패하면 마크다운 프롬프트로 대체하며 이때 `lecture_note`는 `null`입니다. 타임라인은 HH:MM:SS가 아닌 초 단위 숫자입니다.
+완료된 작업의 `result`는 마크다운 최종 요약(`final_summary`)과 강의 노트 JSON(`lecture_note`)을 함께 담습니다. 모델 출력을 JSON으로 읽지 못하면 오류 내용을 덧붙여 한 번 더 요청하고, 그래도 실패하면 마크다운 프롬프트로 대체하며 이때 `lecture_note`는 `null`입니다. 강의 노트와 같은 응답으로 받은 카테고리 분류(`classification`: `category`, `confidence`, `reason`, `tags`)도 검증 없이 그대로 담습니다(검증은 앱에서 하며, 없거나 대체 경로면 `null`). 타임라인은 HH:MM:SS가 아닌 초 단위 숫자입니다.
 
 ```json
 {
@@ -442,7 +443,7 @@ GPU 전송은 CUDA 동기화까지 기다린 뒤 측정을 마칩니다. 작업 
 
 ## 테스트
 
-`tests/`에는 GPU나 실제 모델 없이 동작하는 단위 테스트가 있습니다(`/health` 응답 형태, Claude 프록시 검증, 로컬 모델 카탈로그, 모델 로딩 계측, 모델별 입력 한도, 긴 강의 구간 요약, 강조 사항·공지·판서 분류 규칙). 서비스 모듈을 불러오는 테스트(`test_lecture_rules.py`, `test_stt_sections.py`, `test_profile_limits.py` 일부)는 `transformers`가 없는 환경에서 건너뜁니다. `pytest`는 `requirements.txt`에 포함되어 있지 않으므로 별도로 설치합니다.
+`tests/`에는 GPU나 실제 모델 없이 동작하는 단위 테스트가 있습니다(`/health` 응답 형태, Claude 프록시 검증, 로컬 모델 카탈로그, 모델 로딩 계측, 모델별 입력 한도, 긴 강의 구간 요약, 강조 사항·공지·판서 분류 규칙, 카테고리 분류 전달). 서비스 모듈을 불러오는 테스트(`test_lecture_rules.py`, `test_stt_sections.py`, `test_profile_limits.py` 일부)는 `transformers`가 없는 환경에서 건너뜁니다. `pytest`는 `requirements.txt`에 포함되어 있지 않으므로 별도로 설치합니다.
 
 ```powershell
 pip install pytest

@@ -183,6 +183,14 @@ runs/final/final_summary_result.json
     "conclusion": ["..."],
     "emphasis": ["..."],
     "notices": []
+  },
+  "classification": {
+    "category": "SCIENCE_ENGINEERING",
+    "confidence": 0.92,
+    "status": "CLASSIFIED",
+    "reason": "운영체제 스케줄링을 설명하는 강의",
+    "tags": ["운영체제", "스케줄링"],
+    "suggested_category": null
   }
 }
 ```
@@ -193,6 +201,7 @@ runs/final/final_summary_result.json
 | `final_summary` | string | GPU 서버가 반환한 마크다운 텍스트 (`summary`와 동일한 내용) |
 | `summary` | string | 위와 동일한 마크다운 텍스트. `runs/final/final_summary.txt`에 그대로 저장됨 |
 | `lecture_note` | object 또는 null | GPU 서버(또는 Claude 경로)가 만든 강의 노트 JSON. 서버가 모델 출력을 JSON으로 읽지 못해 마크다운 프롬프트로 대체했으면 `null`, 이전 서버 버전의 결과에는 키 자체가 없음 |
+| `classification` | object | 강의 노트 카테고리 분류 결과(`scripts/run_final_summary.py`가 검증해 추가). 아래 [카테고리 분류](#카테고리-분류-classification) 참고 |
 
 `lecture_note`의 필드는 `title`, `key_points`(1~3개), `terms`(`{term, definition}`), `chapters`(`{title, start, end, points, screen_notes}`), `visuals`(`{type, title, start, end, content, meaning}`, `type`은 표·그래프·수식·코드·도식·판서), `conclusion`, `emphasis`(강사가 "시험에 나온다"·"중요하다" 등으로 강조한 내용), `notices`(과제 제출·시험 일정·다음 수업 안내 같은 일정·행정 공지)입니다. 모델이 강조 표현을 `notices`에 넣으면 `emphasis`로 옮깁니다. 이전 결과에는 `emphasis`가 없고 `visuals`의 `type`이 "기타"일 수 있습니다. `start`/`end`는 초 단위 숫자이며, 서버가 입력 자료의 시간 범위를 벗어난 값을 `null`로 바꿉니다. 마크다운(`summary`)은 서버가 이 JSON에서 만든 것으로 `## 주요 용어`, `## 강조 사항`, `## 공지 사항` 섹션이 더 있을 수 있습니다. 클라이언트(`modules/llm/final_summarizer_client.py`)는 응답 필드를 그대로 보존하므로 이 키도 결과 JSON에 저장됩니다.
 
@@ -220,6 +229,33 @@ Claude API 경로(`--analysis-backend claude`, `modules/llm/claude_backend.py`�
 
 최종 JSON은 GPU 서버 응답을 그대로 보존하므로 위 키 외에 서버 구현 변경에 따라 추가 필드가 포함될 수 있습니다.
 
+### 카테고리 분류 (`classification`)
+
+최종 요약 요청이 강의 노트와 함께 카테고리 분류도 받습니다(분류용 LLM 요청을 따로 보내지 않음). 로컬 GPU 서버와 Claude 경로 모두 같은 분류 기준(`modules/llm/category.py`의 `CATEGORY_GUIDE`, gpu-server `services/final_service.py`에 같은 내용)을 프롬프트에 넣고, 영상 제목·채널·설명(`[영상 정보]`)을 참고 자료로 함께 보냅니다. 모델 답은 검증 없이 넘어오고, 앱의 `normalize_classification()`이 한 곳에서 검증합니다.
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `category` | string | `SCIENCE_ENGINEERING`(과학·공학), `MEDICAL_HEALTH`(의학·건강), `HISTORY_HUMANITIES`(역사·인문), `CURRENT_AFFAIRS_SOCIETY`(시사·사회), `CULTURE_ENTERTAINMENT`(문화·엔터테인먼트), `OTHER`(기타·미분류) 중 하나 |
+| `confidence` | number 또는 null | 0~1 신뢰도. 모델이 `92`처럼 백분율로 답하면 0.92로 바꿈 |
+| `status` | string | `CLASSIFIED`(자동 분류), `NEEDS_REVIEW`(미분류), `MANUALLY_CLASSIFIED`(사용자가 직접 고름) |
+| `reason` | string | 분류 근거 한 문장(최대 200자) |
+| `tags` | string[] | 주제 키워드 최대 5개(각 20자 이하, 중복·`#` 제거) |
+| `suggested_category` | string 또는 null | 신뢰도가 기준보다 낮아 `OTHER`로 둔 경우 모델이 고른 카테고리 |
+
+검증 규칙:
+
+- 허용되지 않은 카테고리, 읽을 수 없는 신뢰도, 형식이 틀린 답이면 `OTHER` / `NEEDS_REVIEW`입니다. 분류가 실패해도 요약 자체는 그대로 저장됩니다.
+- 신뢰도가 `CATEGORY_CONFIDENCE_THRESHOLD`(환경변수, 기본 0.7)보다 낮으면 `OTHER` / `NEEDS_REVIEW`로 두고 모델이 고른 값을 `suggested_category`에 남깁니다.
+- 모델이 신뢰도 높게 `OTHER`라고 답하면 `OTHER` / `CLASSIFIED`입니다.
+- 분류를 돌려주지 않는 이전 gpu-server의 결과와 STT만 쓴 결과(`stt_only`)는 미분류입니다.
+
+영상 정보는 다음과 같이 전달됩니다.
+
+- 유튜브 업로드는 `download_youtube_video(..., metadata=...)`가 채널 이름·영상 설명을 받아 업로드 폴더의 `upload_info.json`에 `channel`, `description`(앞 2,000자)으로 함께 저장합니다.
+- 분석을 시작하면 `launch_pipeline(video_context=...)`이 실행 폴더에 `video_context.json`(`title`, `channel`, `description` 중 있는 값)을 남기고, `run_pipeline.py`가 이를 읽어(`load_video_context`, 없으면 입력 영상 이름을 제목으로) 최종 요약에 넘깁니다. 프롬프트에는 설명을 500자까지만 넣습니다(`format_video_info`).
+
+저장할 때(`app/result_export.py`) 분류 결과는 저장 폴더의 `classification.json`으로 따로 남습니다(`store_auto_classification`). 사용자가 강의노트 목록에서 카테고리를 바꾸면 `MANUALLY_CLASSIFIED`로 저장되며, 이후 자동 분류가 이 값을 덮어쓰지 않습니다. `classification.json`이 없는 이전 저장본은 `OTHER` / `NEEDS_REVIEW`로 읽습니다.
+
 ### VLM 요약이 없을 때 (`source.mode == "stt_only"`)
 
 VLM 요약이 없는 상태로 최종 요약 단계에 도달하면(요약 레벨 `simple` 또는 `--skip-vlm`), `scripts/run_final_summary.py`의 `write_stt_only_final_summary_step()`이 GPU 서버 호출 없이 STT 요약을 그대로 최종 요약으로 저장합니다. 이 경우 JSON 형태가 다릅니다(`final_summary` 키 없음).
@@ -231,7 +267,9 @@ VLM 요약이 없는 상태로 최종 요약 단계에 도달하면(요약 레�
     "vlm_summary_json_path": null,
     "mode": "stt_only"
   },
-  "summary": "STT 기반 요약 텍스트"
+  "summary": "STT 기반 요약 텍스트",
+  "classification": {"category": "OTHER", "confidence": null, "status": "NEEDS_REVIEW",
+                     "reason": "최종 요약 단계를 건너뜀", "tags": [], "suggested_category": null}
 }
 ```
 

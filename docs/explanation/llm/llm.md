@@ -16,6 +16,7 @@
 | `modules/llm/backends.py` | 분석 방식(로컬/Claude) 선택·사전 검사와 단계별 클라이언트 선택(`get_summary_client`) |
 | `modules/llm/claude_backend.py` | Claude API 경로의 세 클라이언트(`ClaudeSTTClient`, `ClaudeVLMClient`, `ClaudeFinalClient`). 분석 서버의 `/claude/messages`를 호출 |
 | `modules/llm/lecture_note.py` | 강의 노트(`lecture_note`) 공통 규칙. 화면 자료 선택, 모델 출력 검증·정리(`normalize_lecture_note`), 마크다운 변환(`render_note_markdown`) |
+| `modules/llm/category.py` | 강의 노트 카테고리 분류 기준(`CATEGORY_GUIDE`)·결과 검증(`normalize_classification`)·저장(`classification.json`)과 영상 정보(`video_context.json`) 읽기/쓰기 |
 | `scripts/run_llm_summary.py` | STT 요약 단독 실행 |
 | `scripts/run_vlm_summary.py` | VLM 요약 단독 실행 |
 | `scripts/run_final_summary.py` | 최종 요약 단독 실행 |
@@ -151,7 +152,7 @@ runs/final/final_summary.txt
 runs/final/final_summary_result.json
 ```
 
-최종 요약 클라이언트는 STT/VLM 요약 JSON(`modules.common.load_json()`로 읽음) 안의 `summary`(STT)/`results`(VLM)가 비어 있지 않은지 먼저 검증합니다. 과거에는 `stt_summary.txt`/`vlm_summary.txt`도 함께 전송했지만, 두 텍스트 파일 내용이 각 JSON 안에 이미 들어있는 중복 데이터였기 때문에 JSON 2개만 보내도록 변경했습니다. `summarize_files_result(stt_summary_json_path, vlm_summary_json_path, summary_level=DEFAULT_SUMMARY_LEVEL)`은 `summary_level`도 폼 데이터로 함께 전송합니다.
+최종 요약 클라이언트는 STT/VLM 요약 JSON(`modules.common.load_json()`로 읽음) 안의 `summary`(STT)/`results`(VLM)가 비어 있지 않은지 먼저 검증합니다. 과거에는 `stt_summary.txt`/`vlm_summary.txt`도 함께 전송했지만, 두 텍스트 파일 내용이 각 JSON 안에 이미 들어있는 중복 데이터였기 때문에 JSON 2개만 보내도록 변경했습니다. `summarize_files_result(stt_summary_json_path, vlm_summary_json_path, summary_level=DEFAULT_SUMMARY_LEVEL)`은 `summary_level`도 폼 데이터로 함께 전송합니다. `video_info`(영상 제목·채널·설명을 `format_video_info()`로 만든 글)도 함께 보내 카테고리 분류에 참고하게 합니다. 이 필드를 모르는 이전 서버는 무시하며, 그때는 분류 결과가 없어 미분류로 저장됩니다. `run_final_summary_step()`은 응답의 `classification`을 `normalize_classification()`으로 검증해 결과 JSON에 넣습니다([데이터 형식](../../data_format.md#카테고리-분류-classification)).
 
 ### VLM 요약이 없을 때 (`write_stt_only_final_summary_step`)
 
@@ -164,7 +165,8 @@ runs/final/final_summary_result.json
     "vlm_summary_json_path": null,
     "mode": "stt_only"
   },
-  "summary": "STT 기반 요약 텍스트"
+  "summary": "STT 기반 요약 텍스트",
+  "classification": {"category": "OTHER", "status": "NEEDS_REVIEW", "reason": "최종 요약 단계를 건너뜀", "...": "..."}
 }
 ```
 
@@ -178,7 +180,7 @@ runs/final/final_summary_result.json
 | --- | --- |
 | `ClaudeSTTClient` | 12,000자 묶음마다 `## 강의 요약` 형식 요약과 중요 구간 최대 3개(`index`, `topic`, `reason`)를 받고 부분 요약을 통합. 중요 구간 시간은 입력 STT에서 가져옴. 글자 수 줄(`strip_char_count`)을 지움 |
 | `ClaudeVLMClient` | 프레임마다 `screen_type`(`SCREEN_TYPES` 중 하나)·`title`·`content`·`formula`를 받아 gpu-server와 같은 4줄 `vlm_summary`와 `vlm_fields` 저장 |
-| `ClaudeFinalClient` | STT 요약(최대 20,000자)·중요 구간·화면 자료(최대 40개)로 강의 노트 JSON(`LECTURE_NOTE_SCHEMA`)을 받아 `normalize_lecture_note()`로 정리하고 `{summary, lecture_note, warnings}` 반환. 챕터가 없으면 한 번 더 요청하고 그래도 없으면 `ValueError` |
+| `ClaudeFinalClient` | STT 요약(최대 20,000자)·중요 구간·화면 자료(최대 40개)로 강의 노트 JSON(`LECTURE_NOTE_SCHEMA`)을 받아 `normalize_lecture_note()`로 정리하고 `{summary, lecture_note, warnings, classification}` 반환(스키마에 `classification` 포함, 분류 결과는 검증 전 원본). 챕터가 없으면 한 번 더 요청하고 그래도 없으면 `ValueError` |
 
 `lecture_note.py`는 gpu-server `services/final_service.py`·`vlm_service.py`의 순수 함수를 옮긴 것입니다(gpu-server 모듈은 torch를 함께 불러오므로 앱에서 직접 import하지 않음). 규칙을 바꾸면 두 곳을 함께 고쳐야 합니다.
 

@@ -20,7 +20,7 @@
 | `app/pipeline_process.py` | `scripts/run_pipeline.py` 실행(`launch_pipeline`)과 중지(`stop_pipeline`) |
 | `app/pipeline_log.py` | `process.log` 읽기, `##PROGRESS##`·Whisper tqdm 파싱, 단계 상태 계산, 화면용 로그 필터 (예전에는 `1_upload.py` 안에 있었음) |
 | `app/summary_parse.py` | 최종 요약의 타임라인 표기를 블록 구조로 해석, 분:초 변환, 표/차트 구간 프레임 찾기 (예전에는 `summary_timeline.py` 안에 있었음) |
-| `app/saved_results.py` | `data/saved/` 목록·폴더명 해석·영상 찾기·폴더명 검증 (예전에는 `3_saved_summaries.py` 안에 있었음) |
+| `app/saved_results.py` | `data/saved/` 목록(카테고리 분류 `classification.json` 포함)·폴더명 해석·영상 찾기·폴더명 검증 (예전에는 `3_saved_summaries.py` 안에 있었음) |
 | `app/login_throttle.py` | 같은 IP 연속 실패 시 로그인 잠금 (예전에는 `auth.py` 안에 있었음) |
 | `app/summary_result.py` | 결과 파일 로더와 요약 데이터 판별 |
 | `app/result_export.py` | 영상 + 최종 요약 결과를 `data/saved/`에 복사해 저장 |

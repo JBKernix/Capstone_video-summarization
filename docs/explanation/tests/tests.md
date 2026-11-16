@@ -19,7 +19,7 @@ cd gpu-server && python -m pytest   # 추론 서버 테스트
 | `tests/test_stt.py` | STT 포맷팅/실행 관련 동작 |
 | `tests/test_vlm_summary.py` | VLM 요약 클라이언트 |
 | `tests/test_summary_result.py` | 앱 최종 요약 로더와 영상 경로 해석 |
-| `tests/test_api_server.py` | React 화면용 앱 API 서버(`app/api/`): 로그인·잠금·CSRF, 개발자 모드, 사용자 화면 분석 방식, 업로드 검증, 유튜브 백그라운드 다운로드(상태 조회·받는 중 409·실패 시 정리), 분석 실행·진행 상황, 결과·프레임·영상, 강의노트 `outline`, 저장·삭제, 실행 이력·CSV, 결과 다시 열기(`has_result`), React 라우트 |
+| `tests/test_api_server.py` | React 화면용 앱 API 서버(`app/api/`): 로그인·잠금·CSRF, 개발자 모드, 사용자 화면 분석 방식, 업로드 검증, 유튜브 백그라운드 다운로드(상태 조회·받는 중 409·실패 시 정리), 분석 실행·진행 상황, 결과·프레임·영상, 강의노트 `outline`, 저장·삭제, 실행 이력·CSV, 결과 다시 열기(`has_result`), 저장 노트 카테고리 목록·필터·변경, React 라우트 |
 | `tests/test_run_registry.py` | 업로드·실행 폴더, 단일 실행 슬롯, 보존 기간 정리 |
 | `tests/test_pipeline_process.py` | 파이프라인 실행·중지 |
 | `tests/test_pipeline_history.py`, `tests/test_run_history.py`, `tests/test_model_load_history.py` | 실행 이력 기록(`metrics.json`)과 모델 로딩 지표 |
@@ -27,6 +27,7 @@ cd gpu-server && python -m pytest   # 추론 서버 테스트
 | `tests/test_auth.py`, `tests/test_analysis_options.py`, `tests/test_local_models.py` | Streamlit 로그인 게이트, 분석 설정 위젯, 로컬 모델 선택 |
 | `tests/test_analysis_backends.py` | 로컬/Claude 분석 방식 설정과 오류 처리, Claude 경로의 강의용 프롬프트·중요 구간(`topic`/`reason`)·화면 분석 4항목·강의 노트 JSON 최종 요약 |
 | `tests/test_lecture_note.py` | 강의 노트 공통 규칙(`modules/llm/lecture_note.py`): 글자 수 줄 제거, 판서 자료 유지·자료가 아닌 유형 제외, 공지에 섞인 강조 표현을 `emphasis`로 분리 |
+| `tests/test_category.py` | 카테고리 분류(`modules/llm/category.py`): Claude·로컬 서버 경로의 분류 전달, 의료 드라마는 문화·엔터테인먼트라는 프롬프트 기준, 잘못된 답·낮은 신뢰도·백분율 신뢰도 처리, 이전 서버·STT 전용 결과의 미분류, 직접 고른 카테고리 보존, 저장 시 복사 |
 
 `tests/conftest.py`는 모든 테스트에서 `app/run_registry.py`의 업로드·실행 폴더와 실행 슬롯 파일을 임시 폴더로 바꿔, 테스트가 실제 `runs/`·`data/`를 건드리지 않게 합니다.
 

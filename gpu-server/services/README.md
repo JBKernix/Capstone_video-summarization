@@ -91,6 +91,8 @@ LLM과 VLM에 같은 `Lock`을 전달하여 두 모델이 동시에 GPU 추론�
 
 `final_service.py`는 STT 요약 텍스트/JSON과 VLM 요약 텍스트/JSON을 하나의 프롬프트로 통합해 강의 노트를 생성합니다. `stt_text`/`vlm_text`(txt)는 선택 입력이며, STT 텍스트가 없으면 `stt_json`의 `summary` 필드를 대신 사용합니다. STT 중요 구간은 `- [시작초 ~ 끝초] topic: reason` 형식으로 전달하며, 개수는 `summarize_final_note(max_important_segments=...)`로 받은 프리셋의 `final_important_segments`(8/12/16, 생략 시 `MAX_IMPORTANT_SEGMENTS`=8)를 넘으면 시간순으로 고르게 추립니다. STT 요약 텍스트와 VLM 입력은 각각 `MAX_STT_TEXT_CHARS`/`MAX_VLM_TEXT_CHARS`(`5000`자)로 자르며, 생성자의 `max_stt_chars`/`max_vlm_chars`로 더 줄일 수 있습니다(`qwen3-vl-8b`는 각 `4000`자).
 
+프롬프트에는 카테고리 분류 기준(`CATEGORY_GUIDE`, 앱 `modules/llm/category.py`와 같은 내용으로 유지)과 `[영상 정보]`(`video_info`, 없으면 `(영상 정보 없음)`)가 들어가고, 모델은 강의 노트 JSON 안에 `classification`(`category`, `confidence`, `reason`, `tags`)을 함께 답합니다. 서비스는 이 값을 검증하지 않고 객체이면 그대로 결과의 `classification`으로 넘기며, 마크다운 대체 경로에서는 `None`입니다.
+
 VLM JSON은 `_format_vlm_json()`이 다음 순서로 줄여 `[VLM 화면별 요약]`으로 전달합니다.
 
 1. 각 결과의 `vlm_fields`(없는 이전 결과는 `vlm_summary`를 `parse_vlm_fields()`로 파싱)를 읽어 `has_content`가 거짓인 프레임(강사 화면, 내용 없음)을 제외

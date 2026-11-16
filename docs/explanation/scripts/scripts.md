@@ -12,7 +12,9 @@
 | `run_ocr.py` | 프레임 메타데이터 기반 OCR 실행 |
 | `run_llm_summary.py` | STT 결과를 LLM 서버로 요약 |
 | `run_vlm_summary.py` | OCR 결과와 프레임 이미지를 VLM 서버로 요약 |
-| `run_final_summary.py` | STT/VLM 요약 결과를 최종 통합 요약 |
+| `run_final_summary.py` | STT/VLM 요약 결과를 최종 통합 요약(카테고리 분류 결과 `classification` 포함) |
+| `make_icons.py` | 루트 실행 파일(.bat)용 아이콘 `assets/icons/*.ico` 생성(Pillow 필요) |
+| `create_shortcuts.ps1` | 아이콘을 붙인 바로가기(.lnk) 생성. 기본은 저장소 루트, `-Desktop`이면 바탕화면에도 |
 
 ## 기본 실행 순서
 
@@ -20,6 +22,12 @@
 
 ```bat
 start_all.bat
+```
+
+터널은 그대로 두고 앱 서버·추론 서버만 다시 시작(코드를 고친 뒤 등):
+
+```bat
+restart_servers.bat
 ```
 
 예비 Streamlit 앱만:

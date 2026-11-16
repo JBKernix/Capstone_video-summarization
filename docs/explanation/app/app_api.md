@@ -65,7 +65,7 @@ python -m uvicorn app.api.server:app --host 127.0.0.1 --port 8501
 | `PUT /api/dev/user-defaults` | **개발자 전용.** `{analysis_backend, local_model}` — 사용자 화면에서 시작한 분석에 쓸 분석 방식을 `runs/user_defaults.json`에 저장하고 저장된 값을 반환 |
 | `POST /api/uploads` | multipart `file` 업로드. 확장자(MP4/MOV/AVI)·크기·디스크 여유·ffprobe 검증 후 `data/input/uploads/<업로드 ID>/input.<확장자>`에 저장. `{upload_id, filename, title, source_key}` 반환 |
 | `POST /api/uploads/youtube` | `{url}` — 서버가 `yt-dlp` 다운로드를 백그라운드로 시작하고 `{upload_id, status: "downloading"}`을 바로 반환. 긴 영상은 다운로드가 Cloudflare 응답 제한(100초)을 넘겨 HTTP 524가 나기 때문입니다 |
-| `GET /api/uploads/youtube/{upload_id}` | 다운로드 상태. 받는 중이면 `{status: "downloading"}`, 끝나면 `{status: "done", upload: {upload_id, filename, title, source_key}}`, 실패하면 400(실패 원인). 상태는 메모리에만 있어 서버를 다시 시작하면 404. 받는 중인 업로드로 분석을 시작하거나 삭제하면 409 |
+| `GET /api/uploads/youtube/{upload_id}` | 다운로드 상태. 받는 중이면 `{status: "downloading"}`, 끝나면 `{status: "done", upload: {upload_id, filename, title, source_key}}`, 실패하면 400(실패 원인). 상태는 메모리에만 있어 서버를 다시 시작하면 404. 받는 중인 업로드로 분석을 시작하거나 삭제하면 409. 채널 이름·영상 설명은 카테고리 분류용으로 `upload_info.json`에만 남김 |
 | `DELETE /api/uploads/{upload_id}` | 다른 영상으로 바꿀 때 이전 업로드 삭제(실행 중인 작업의 영상은 보존) |
 
 `user_defaults`는 `runs/user_defaults.json`에서 읽으며, 파일이 없거나 값이 잘못됐으면 `{analysis_backend: "local", local_model: <기본 로컬 모델>}`입니다. 일반 사용자가 유료 API 사용 여부 등을 고르지 못하게 하려는 것입니다.
@@ -98,8 +98,9 @@ React 화면은 실행 중인 동안 `GET /api/runs/{run_id}`를 1초마다 호�
 
 | 메서드·경로 | 설명 |
 | --- | --- |
-| `GET /api/saved` | 저장 폴더 목록 `{name, title, saved_at}` (최신순) |
-| `GET /api/saved/{name}` | 저장본의 요약 결과, `title`·`saved_at`(폴더명에서 해석), `video_url` |
+| `GET /api/saved` | 저장 폴더 목록 `{items: [{name, title, saved_at, category, classification}], categories: [{id, label}]}` (최신순). `?category=<ID>`면 그 카테고리만, 모르는 ID는 400 |
+| `GET /api/saved/{name}` | 저장본의 요약 결과, `title`·`saved_at`(폴더명에서 해석), `video_url`, `classification` |
+| `PUT /api/saved/{name}/category` | `{category}` — 사용자가 고른 카테고리로 바꾸고 `{classification}`(`status: MANUALLY_CLASSIFIED`) 반환. 이후 자동 분류가 덮어쓰지 않음. 모르는 카테고리는 400 |
 | `GET /api/saved/{name}/video`, `/frames/{index}` | 저장본의 영상과 프레임 |
 | `DELETE /api/saved/{name}` | 저장 폴더 삭제(되돌릴 수 없음) |
 

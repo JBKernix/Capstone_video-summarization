@@ -127,10 +127,10 @@ POST /llm/final-summary
   -> InferenceJobRunner.run_final 제출 (preset.final_important_segments 전달)
   -> SummaryService.summarize_final_note()
   -> JSON 읽기 실패 시도는 warning, 최종 format(json/markdown_fallback)은 info 로그
-  -> FinalSummaryResponse(final_summary, lecture_note) 저장
+  -> FinalSummaryResponse(final_summary, lecture_note, classification) 저장
 ```
 
-`FinalSummaryResponse`의 `final_summary`는 마크다운 최종 요약이고, `lecture_note`는 강의 노트 JSON입니다. 모델 출력을 JSON으로 읽지 못해 마크다운 프롬프트로 대체한 경우 `lecture_note`는 `None`입니다. 강의 노트 구조와 대체 규칙은 [`services/README.md`](../services/README.md#최종-요약)를 참고하세요.
+`FinalSummaryResponse`의 `final_summary`는 마크다운 최종 요약이고, `lecture_note`는 강의 노트 JSON입니다. 모델 출력을 JSON으로 읽지 못해 마크다운 프롬프트로 대체한 경우 `lecture_note`는 `None`입니다. `classification`은 모델이 강의 노트와 함께 준 카테고리 분류 원본이며(없으면 `None`), 검증은 앱(`modules/llm/category.py`)에서 합니다. 요청의 `video_info`(앞 2000자)는 `run_final`을 거쳐 프롬프트의 `[영상 정보]`로 들어갑니다. 강의 노트 구조와 대체 규칙은 [`services/README.md`](../services/README.md#최종-요약)를 참고하세요.
 
 ## 요약 레벨(summary_level)
 

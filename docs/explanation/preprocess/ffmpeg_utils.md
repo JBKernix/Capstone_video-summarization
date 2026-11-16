@@ -75,13 +75,13 @@ ffmpeg -y -i input.mov -c:v libx264 -c:a aac -movflags +faststart output.mp4
 
 ```python
 is_youtube_url(url) -> bool
-download_youtube_video(url, output_path) -> tuple[Path, str]
+download_youtube_video(url, output_path, metadata=None) -> tuple[Path, str]
 ```
 
 | 함수 | 설명 |
 | --- | --- |
 | `is_youtube_url(url)` | `youtube.com/watch?v=`, `youtube.com/shorts/`, `youtube.com/embed/`, `youtu.be/` 형식인지 정규식으로 확인 |
-| `download_youtube_video(url, output_path)` | yt-dlp로 영상을 다운로드해 `output_path`(확장자는 항상 `.mp4`로 강제)에 저장하고 `(저장 경로, 영상 제목)` 튜플을 반환 |
+| `download_youtube_video(url, output_path)` | yt-dlp로 영상을 다운로드해 `output_path`(확장자는 항상 `.mp4`로 강제)에 저장하고 `(저장 경로, 영상 제목)` 튜플을 반환. `metadata` dict를 넘기면 채널 이름(`channel`, 없으면 업로더)과 영상 설명(`description`)을 채움(카테고리 분류용) |
 
 내부 동작:
 

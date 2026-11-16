@@ -40,7 +40,12 @@ start_all.bat -Tunnel    :: + Cloudflare Tunnel (외부 접속)
 start_all.bat -Streamlit :: React 대신 기존 Streamlit 화면 (APP_UI=streamlit과 같음)
 stop_all.bat             :: start_all이 시작한 프로세스 + 앱 포트(8501)의 앱 서버 종료
 stop_all.bat -TunnelOnly :: 터널만 종료 (외부 접속 차단, 서버는 유지)
+restart_servers.bat      :: 앱 서버 + 추론 서버만 재시작 (터널과 외부 주소는 유지)
 ```
+
+`restart_servers`는 앱 포트(8501)와 추론 서버 포트(`API_PORT`, 기본 8000)의 프로세스 중 명령줄이 앱 서버(`app.api.server`·`streamlit`)나 추론 서버(`app.server:app`)인 것만 종료하고(다른 프로그램이면 경고만 출력), `start_all.ps1 -NoTunnel`로 다시 띄웁니다. 진행 중인 분석(`runs\active_pipeline.json`)이 있으면 함께 중단된다고 경고합니다. `-Streamlit`을 붙이면 Streamlit 화면으로 다시 띄웁니다.
+
+실행 파일에 아이콘을 붙이려면 `powershell -ExecutionPolicy Bypass -File scripts\create_shortcuts.ps1`(바탕화면에도 만들려면 `-Desktop`)로 바로가기를 만듭니다. 바로가기에는 절대 경로가 들어가므로 저장소에 넣지 않습니다(`*.lnk`는 `.gitignore`). 아이콘은 `python scripts/make_icons.py`로 다시 만들 수 있습니다.
 
 `start_all`의 동작 순서
 
